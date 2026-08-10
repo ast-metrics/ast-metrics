@@ -196,6 +196,11 @@ func (c *ReviewCommand) evaluateRequirements(files []*pb.File) []requirement.Rul
 	aggregator := analyzer.NewAggregator(files, nil)
 	projectAggregated := aggregator.Aggregates()
 	evaluator := requirement.NewRequirementsEvaluator(*c.Configuration.Requirements)
+	if baselinePath := requirement.ResolveBaselinePath(c.Configuration.Requirements.Baseline); baselinePath != "" {
+		if baseline, err := requirement.LoadBaseline(baselinePath); err == nil {
+			evaluator.Baseline = baseline
+		}
+	}
 	evaluation := evaluator.Evaluate(files, requirement.ProjectAggregated{ProjectCtx: buildProjectContext(projectAggregated)})
 	return evaluation.Errors
 }

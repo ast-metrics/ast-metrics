@@ -119,6 +119,10 @@ requirements:
   # Files matching these patterns are excluded from requirement checks
   # exclude:
   #   - /tests/
+  # Path to a baseline file used to ignore pre-existing violations. Generate
+  # it with "ast-metrics baseline". Defaults to .ast-metrics-baseline.yaml
+  # when that file exists, so this is usually unnecessary.
+  # baseline: .ast-metrics-baseline.yaml
   rules:
     architecture:
       # Coupling between components

@@ -142,6 +142,13 @@ func (v *AnalyzeCommand) Execute() error {
 	// Evaluate requirements generating reports so templates can use results
 	if v.Configuration.Requirements != nil {
 		requirementsEvaluator := requirement.NewRequirementsEvaluator(*v.Configuration.Requirements)
+		if baselinePath := requirement.ResolveBaselinePath(v.Configuration.Requirements.Baseline); baselinePath != "" {
+			baseline, err := requirement.LoadBaseline(baselinePath)
+			if err != nil {
+				return err
+			}
+			requirementsEvaluator.Baseline = baseline
+		}
 		projectCtx := buildProjectContext(projectAggregated)
 		evaluation := requirementsEvaluator.Evaluate(allResults, requirement.ProjectAggregated{ProjectCtx: projectCtx})
 		projectAggregated.Evaluation = &evaluation

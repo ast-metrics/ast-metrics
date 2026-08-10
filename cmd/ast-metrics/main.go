@@ -552,6 +552,7 @@ func main() {
 					&cliV2.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Enable verbose mode", Category: "Global options"},
 					&cliV2.StringSliceFlag{Name: "exclude", Usage: "Regular expression to exclude files from analysis", Category: "File selection"},
 					&cliV2.StringFlag{Name: "config", Usage: "Load configuration from file", Category: "Configuration"},
+					&cliV2.StringFlag{Name: "baseline", Usage: "Path to the baseline file used to ignore pre-existing violations (default: .ast-metrics-baseline.yaml if it exists)", Category: "Configuration"},
 					&cliV2.StringFlag{Name: "report-sarif", Usage: "Write lint violations as SARIF 2.1.0 to the given file", Category: "Report"},
 					&cliV2.StringFlag{Name: "sarif-max-level", Usage: "Cap the level of the SARIF results: error, warning or note", Category: "Report"},
 					&cliV2.StringFlag{Name: "php-extensions", Usage: "Extra file extensions for PHP (comma-separated, e.g. .inc,.module)", Category: "File selection"},
@@ -584,17 +585,24 @@ func main() {
 						cfg.Reports.SarifMaxLevel = cCtx.String("sarif-max-level")
 					}
 
-					// paths from args
-					paths := cCtx.Args()
-					if paths.Len() > 0 {
-						pathsSlice := make([]string, paths.Len())
-						for i := 0; i < paths.Len(); i++ {
-							pathsSlice[i] = paths.Get(i)
+					// Paths from args, then configuration file, then current directory.
+					// Always resolved to absolute paths (like analyze/ci/review/baseline)
+					// so that file paths reported by rules, and matched against the
+					// baseline or exclude patterns, are consistent across commands.
+					pathsSlice := []string{}
+					for i := 0; i < cCtx.Args().Len(); i++ {
+						pathsSlice = append(pathsSlice, cCtx.Args().Get(i))
+					}
+					if len(pathsSlice) == 0 {
+						if len(cfg.SourcesToAnalyzePath) > 0 {
+							pathsSlice = cfg.SourcesToAnalyzePath
+						} else {
+							pathsSlice = []string{"."}
 						}
-						if err := cfg.SetSourcesToAnalyzePath(pathsSlice); err != nil {
-							cli.PrintError(err.Error())
-							return err
-						}
+					}
+					if err := cfg.SetSourcesToAnalyzePath(pathsSlice); err != nil {
+						cli.PrintError(err.Error())
+						return err
 					}
 					// exclude
 					if len(cfg.ExcludePatterns) == 0 {
@@ -605,6 +613,10 @@ func main() {
 					}
 					// Merge extra file extensions from CLI flags into config
 					mergeExtensionFlags(cCtx, cfg)
+					// baseline override
+					if cCtx.String("baseline") != "" && cfg.Requirements != nil {
+						cfg.Requirements.Baseline = cCtx.String("baseline")
+					}
 					// No report generation here; just lint
 					cmd := command.NewLintCommand(cfg, outWriter, runners)
 					// pass verbose to command
@@ -617,6 +629,67 @@ func main() {
 					cli.PrintSuccess("No lint violations found.")
 
 					return nil
+				},
+			},
+			{
+				Name:  "baseline",
+				Usage: "Generate a baseline file to ignore existing lint violations, like PHPStan",
+				Flags: []cliV2.Flag{
+					&cliV2.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Enable verbose mode", Category: "Global options"},
+					&cliV2.StringSliceFlag{Name: "exclude", Usage: "Regular expression to exclude files from analysis", Category: "File selection"},
+					&cliV2.StringFlag{Name: "config", Usage: "Load configuration from file", Category: "Configuration"},
+					&cliV2.StringFlag{Name: "baseline", Usage: "Path to the baseline file to write (default: .ast-metrics-baseline.yaml, or requirements.baseline from the configuration)", Category: "Configuration"},
+					&cliV2.StringFlag{Name: "php-extensions", Usage: "Extra file extensions for PHP (comma-separated, e.g. .inc,.module)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "go-extensions", Usage: "Extra file extensions for Go (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "python-extensions", Usage: "Extra file extensions for Python (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "rust-extensions", Usage: "Extra file extensions for Rust (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "typescript-extensions", Usage: "Extra file extensions for TypeScript (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "java-extensions", Usage: "Extra file extensions for Java (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "csharp-extensions", Usage: "Extra file extensions for C# (comma-separated)", Category: "File selection"},
+				},
+				Action: func(cCtx *cliV2.Context) error {
+					if cCtx.Bool("verbose") {
+						logrus.SetLevel(logrus.DebugLevel)
+					}
+					outWriter := bufio.NewWriter(os.Stdout)
+					config := configuration.NewConfiguration()
+					loader := configuration.NewConfigurationLoader()
+					if cCtx.String("config") != "" {
+						loader.FilenameToChecks = []string{cCtx.String("config")}
+					}
+					cfg, err := loader.Loads(config)
+					if err != nil {
+						cli.PrintError("Cannot load configuration file: " + err.Error())
+					}
+					// Paths from args, then configuration file, then current directory
+					pathsSlice := []string{}
+					for i := 0; i < cCtx.Args().Len(); i++ {
+						pathsSlice = append(pathsSlice, cCtx.Args().Get(i))
+					}
+					if len(pathsSlice) == 0 {
+						if len(cfg.SourcesToAnalyzePath) > 0 {
+							pathsSlice = cfg.SourcesToAnalyzePath
+						} else {
+							pathsSlice = []string{"."}
+						}
+					}
+					if err := cfg.SetSourcesToAnalyzePath(pathsSlice); err != nil {
+						cli.PrintError(err.Error())
+						return err
+					}
+					// exclude
+					if len(cfg.ExcludePatterns) == 0 {
+						ex := cCtx.StringSlice("exclude")
+						if len(ex) > 0 {
+							cfg.SetExcludePatterns(ex)
+						}
+					}
+					// Merge extra file extensions from CLI flags into config
+					mergeExtensionFlags(cCtx, cfg)
+
+					cmd := command.NewBaselineCommand(cfg, outWriter, runners)
+					cmd.Path = cCtx.String("baseline")
+					return cmd.Execute()
 				},
 			},
 			{
@@ -658,17 +731,24 @@ func main() {
 					if err != nil {
 						cli.PrintError("Cannot load configuration file: " + err.Error())
 					}
-					// Paths from args
-					paths := cCtx.Args()
-					if paths.Len() > 0 {
-						pathsSlice := make([]string, paths.Len())
-						for i := 0; i < paths.Len(); i++ {
-							pathsSlice[i] = paths.Get(i)
+					// Paths from args, then configuration file, then current directory.
+					// Always resolved to absolute paths so file paths reported by rules
+					// (and matched against a baseline or exclude patterns) are consistent
+					// with the lint/baseline/review commands.
+					pathsSlice := []string{}
+					for i := 0; i < cCtx.Args().Len(); i++ {
+						pathsSlice = append(pathsSlice, cCtx.Args().Get(i))
+					}
+					if len(pathsSlice) == 0 {
+						if len(cfg.SourcesToAnalyzePath) > 0 {
+							pathsSlice = cfg.SourcesToAnalyzePath
+						} else {
+							pathsSlice = []string{"."}
 						}
-						if err := cfg.SetSourcesToAnalyzePath(pathsSlice); err != nil {
-							cli.PrintError(err.Error())
-							return err
-						}
+					}
+					if err := cfg.SetSourcesToAnalyzePath(pathsSlice); err != nil {
+						cli.PrintError(err.Error())
+						return err
 					}
 					// Exclude patterns
 					if len(cfg.ExcludePatterns) == 0 {
