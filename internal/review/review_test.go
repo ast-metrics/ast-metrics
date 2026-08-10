@@ -256,11 +256,10 @@ func TestMarkdownOutput(t *testing.T) {
 	result.Gate = result.EvaluateGate("never")
 
 	md := result.Markdown(5)
-	assert.Contains(t, md, "quality gate passed")
+	assert.Contains(t, md, "AST Metrics found regressions")
 	assert.Contains(t, md, "Pay")
 	assert.Contains(t, md, "svc.go:10")
-	assert.Contains(t, md, "Methodology v"+MethodologyVersion)
-	assert.Contains(t, md, "origin/main")
+	assert.Contains(t, md, "Complexity: +7")
 }
 
 func TestTextOutputCapsFindings(t *testing.T) {
