@@ -181,8 +181,15 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // an else_clause holding an if_expression: the else costs nothing and the
 // nested if is counted on its own. The `_ => ...` arm is demoted to a Default
 // by Decision below.
+//
+// The `?` operator is counted as an if, because that is what it is: `foo()?`
+// returns from the function when foo fails, so it opens the same branch as the
+// `if err != nil { return err }` it replaces in Go. Leaving it out would make
+// idiomatic Rust look simpler than the very same code written elsewhere. It is
+// a try_expression, a node distinct from the `?Sized` of a trait bound, so a
+// relaxed bound is never mistaken for a branch.
 var rustDecisions = &Treesitter.DecisionSpec{
-	If:      []string{"if_expression", "if_let_expression"},
+	If:      []string{"if_expression", "if_let_expression", "try_expression"},
 	Else:    []string{"else_clause"},
 	Loop:    []string{"for_expression", "while_expression", "while_let_expression", "loop_expression"},
 	Switch:  []string{"match_expression"},

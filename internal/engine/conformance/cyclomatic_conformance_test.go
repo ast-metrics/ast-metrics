@@ -257,6 +257,20 @@ var scenarios = []scenario{
 		},
 	},
 	{
+		// Returning early on failure is a branch, whether the language spells
+		// it out or hides it in an operator. Rust `?` returns from the function
+		// exactly like the `if err != nil` it replaces in Go, and must cost the
+		// same, or idiomatic Rust would look simpler than the same code
+		// written anywhere else.
+		name: "early_return_on_error",
+		ccn:  3,
+		why:  "1 + one branch per early return on failure",
+		impl: map[string]string{
+			langRust: "fn f(a: i32) -> Option<i32> {\n\tlet x = g(a)?;\n\tlet y = h(x)?;\n\tSome(y)\n}\n",
+			langGo:   "package p\nfunc f(a int) (int, error) {\n\tx, err := g(a)\n\tif err != nil { return 0, err }\n\ty, err := h(x)\n\tif err != nil { return 0, err }\n\treturn y, nil\n}\n",
+		},
+	},
+	{
 		name: "nested_function_does_not_inflate_its_parent",
 		ccn:  2,
 		why:  "1 + the if of f; the branches of the nested declaration belong to it",
