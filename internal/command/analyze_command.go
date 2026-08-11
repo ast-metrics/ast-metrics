@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"os"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	Activity "github.com/ast-metrics/ast-metrics/internal/analyzer/activity"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer/classifier"
@@ -14,8 +14,9 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/cli"
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
-	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/ast-metrics/ast-metrics/internal/report"
+	pb "github.com/ast-metrics/ast-metrics/pb"
+	"github.com/fsnotify/fsnotify"
 	"github.com/inancgumus/screen"
 	"github.com/pterm/pterm"
 	log "github.com/sirupsen/logrus"
@@ -206,7 +207,18 @@ func (v *AnalyzeCommand) Execute() error {
 		}
 	}
 
-	// Interactive: ask user what to do next
+	// The summary is the report you get when you ask for no other one, so that
+	// an analysis always produces something readable. The dashboard replaces it
+	// when it is on.
+	if !v.isInteractive && v.Configuration.Reports.HasSummary() {
+		summary := report.NewSummaryReportGenerator(os.Stdout)
+		if _, err := summary.Generate(allResults, projectAggregated); err != nil {
+			cli.PrintError("Cannot print the summary: " + err.Error())
+		}
+	}
+
+	// Ask the user what to do next. Only the full-screen session does: plain
+	// output always gives the shell back instead of waiting on a keypress.
 	if v.isInteractive && !v.alreadyExecuted {
 		choice := cli.AskPostAnalysis(allResults, projectAggregated)
 		switch choice {
@@ -275,7 +287,6 @@ func buildProjectContext(pa analyzer.ProjectAggregated) ruleset.ProjectContext {
 	}
 	return ctx
 }
-
 
 func (v *AnalyzeCommand) ExecuteRunnerAnalysis(config *configuration.Configuration) ([]*pb.File, error) {
 	if v.moonSpinner != nil {

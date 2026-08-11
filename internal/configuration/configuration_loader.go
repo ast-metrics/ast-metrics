@@ -113,6 +113,9 @@ exclude:
 reports:
   html: ./build/report
   markdown: ./build/report.md
+  # The summary printed on the standard output. It is enabled by default, and
+  # is what you get when no other report is asked for
+  # summary: false
 
 # Requirements. If a file does not meet these requirements, it will be reported
 requirements:

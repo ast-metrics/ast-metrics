@@ -843,6 +843,17 @@ func (r *Aggregator) mapSums(file *pb.File, specificAggregation Aggregated) Aggr
 				result.HalsteadTime.Sum += *class.Stmts.Analyze.Volume.HalsteadTime
 				result.HalsteadTime.Counter++
 			}
+			// The estimated number of delivered bugs was declared and merged
+			// across chunks, but never collected here: it stayed at zero for
+			// every project.
+			if class.Stmts.Analyze.Volume.HalsteadBugs != nil && !math.IsNaN(*class.Stmts.Analyze.Volume.HalsteadBugs) {
+				bugs := *class.Stmts.Analyze.Volume.HalsteadBugs
+				result.HalsteadBugs.Sum += bugs
+				result.HalsteadBugs.Counter++
+				if bugs > result.HalsteadBugs.Max {
+					result.HalsteadBugs.Max = bugs
+				}
+			}
 		}
 
 		// LCOM
@@ -947,6 +958,9 @@ func (r *Aggregator) mergeChunks(aggregated Aggregated, chunk *Aggregated) Aggre
 	result.HalsteadTime.Counter += chunk.HalsteadTime.Counter
 	result.HalsteadBugs.Sum += chunk.HalsteadBugs.Sum
 	result.HalsteadBugs.Counter += chunk.HalsteadBugs.Counter
+	if chunk.HalsteadBugs.Max > result.HalsteadBugs.Max {
+		result.HalsteadBugs.Max = chunk.HalsteadBugs.Max
+	}
 
 	// LCOM
 	result.Lcom4PerClass.Sum += chunk.Lcom4PerClass.Sum
@@ -1044,6 +1058,9 @@ func (r *Aggregator) reduceMetrics(aggregated Aggregated) Aggregated {
 	}
 	if result.HalsteadTime.Counter > 0 {
 		result.HalsteadTime.Avg = result.HalsteadTime.Sum / float64(result.HalsteadTime.Counter)
+	}
+	if result.HalsteadBugs.Counter > 0 {
+		result.HalsteadBugs.Avg = result.HalsteadBugs.Sum / float64(result.HalsteadBugs.Counter)
 	}
 	if result.Lcom4PerClass.Counter > 0 {
 		result.Lcom4PerClass.Avg = result.Lcom4PerClass.Sum / float64(result.Lcom4PerClass.Counter)

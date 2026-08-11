@@ -513,6 +513,58 @@ func TestMergeChunksKeepsPerMethodAggregates(t *testing.T) {
 	assert.Equal(t, float64(14), result.CyclomaticComplexityPerMethod.Max)
 }
 
+// TestAggregatesHalsteadBugs covers the estimated number of delivered bugs: it
+// was declared and merged across chunks, but never collected from the classes,
+// so it stayed at zero for every project.
+func TestAggregatesHalsteadBugs(t *testing.T) {
+	// Classes are aggregated by qualified name, so each one needs its own.
+	classWithBugs := func(name string, bugs float64) *pb.StmtClass {
+		return &pb.StmtClass{
+			Name: &pb.Name{Qualified: name},
+			Stmts: &pb.Stmts{
+				Analyze: &pb.Analyze{
+					Volume: &pb.Volume{HalsteadBugs: &bugs},
+				},
+			},
+		}
+	}
+
+	files := []*pb.File{
+		{
+			Path:                "/project/a.php",
+			ProgrammingLanguage: "PHP",
+			Stmts: &pb.Stmts{
+				Analyze:   &pb.Analyze{},
+				StmtClass: []*pb.StmtClass{classWithBugs("Alpha", 0.5), classWithBugs("Beta", 1.5)},
+			},
+		},
+	}
+
+	project := NewAggregator(files, nil).Aggregates()
+
+	assert.Equal(t, float64(2), project.Combined.HalsteadBugs.Sum)
+	assert.Equal(t, 2, project.Combined.HalsteadBugs.Counter)
+	assert.Equal(t, float64(1), project.Combined.HalsteadBugs.Avg)
+	assert.Equal(t, float64(1.5), project.Combined.HalsteadBugs.Max)
+}
+
+// TestMergeChunksKeepsTheHighestBugEstimate checks that the maximum survives the
+// merge of two chunks analyzed in parallel.
+func TestMergeChunksKeepsTheHighestBugEstimate(t *testing.T) {
+	aggregator := Aggregator{}
+
+	result := aggregator.mergeChunks(Aggregated{}, &Aggregated{
+		HalsteadBugs: AggregateResult{Sum: 2, Counter: 2, Max: 1.5},
+	})
+	result = aggregator.mergeChunks(result, &Aggregated{
+		HalsteadBugs: AggregateResult{Sum: 3, Counter: 1, Max: 3},
+	})
+
+	assert.Equal(t, float64(5), result.HalsteadBugs.Sum)
+	assert.Equal(t, 3, result.HalsteadBugs.Counter)
+	assert.Equal(t, float64(3), result.HalsteadBugs.Max)
+}
+
 // TestAggregatesByDirectory checks the per-directory aggregation: one aggregate
 // per path given on the command line, each file belonging to exactly one scope.
 func TestAggregatesByDirectory(t *testing.T) {

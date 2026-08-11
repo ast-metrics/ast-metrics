@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strconv"
@@ -203,10 +204,18 @@ func PrintError(msg string) {
 	fmt.Println(style.Render("  ✗ " + msg))
 }
 
-// PrintWarning prints a warning message styled to match the TUI look.
+// PrintWarning prints a warning message on stdout, styled to match the TUI
+// look. Use it for warnings that belong to the analysis output itself.
 func PrintWarning(msg string) {
+	PrintWarningTo(os.Stdout, msg)
+}
+
+// PrintWarningTo prints a warning message on the given stream. Warnings about
+// how the CLI was invoked go to stderr, so they never end up in the output a
+// script parses or redirects to a file.
+func PrintWarningTo(writer io.Writer, msg string) {
 	style := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFB86C")).Bold(true)
-	fmt.Println(style.Render("  ⚠ " + msg))
+	fmt.Fprintln(writer, style.Render("  ⚠ "+msg))
 }
 
 // PrintInfo prints an info message styled to match the TUI look.

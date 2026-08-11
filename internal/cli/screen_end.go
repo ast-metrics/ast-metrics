@@ -84,6 +84,11 @@ func (r *ScreenEnd) Render() {
 		}
 
 		fmt.Println("")
+	} else {
+		// The analysis produced a summary on stdout and nothing else. Say how to
+		// get a durable report rather than writing a file nobody asked for.
+		fmt.Println("\n💡 No report file was generated. Use --report-html=DIR, --report-json=FILE, or declare the reports you want in a configuration file.")
+		fmt.Println("")
 	}
 
 	// Tips if configuration file does not exist
@@ -92,24 +97,8 @@ func (r *ScreenEnd) Render() {
 		fmt.Println("")
 	}
 
-	// Linting tips
-	if r.projectAggregated.Evaluation != nil {
-		fmt.Println(styleTitle.Render("\nLinting"))
-		fmt.Println(styleTitle.Render("--------------------------------"))
-
-		if r.projectAggregated.Evaluation.Succeeded {
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color("#00FF00")).Bold(true)
-			fmt.Println(style.Render("\n✅ Lint check passed!"))
-		} else {
-			style := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000")).Bold(true)
-			fmt.Println(style.Render("\n❌ Lint check failed!"))
-			fmt.Println("")
-			fmt.Println("Details about the violations can be found by running:")
-			styleCode := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFF00"))
-			fmt.Println("\n  " + styleCode.Render("ast-metrics lint"))
-			fmt.Println("")
-		}
-	}
+	// The lint verdict belongs to the summary report printed just above, so it
+	// is deliberately not repeated here.
 
 	fmt.Println("\n🌟 If you like AST Metrics, please consider starring the project on GitHub: https://github.com/ast-metrics/ast-metrics/. Thanks!")
 	fmt.Println("")
