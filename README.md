@@ -58,8 +58,16 @@ curl -fsSL https://install.ast-metrics.dev | sh
 Then analyze your project:
 
 ```console
+ast-metrics analyze /path/to/your/code
+```
+
+A summary is printed on the standard output: maintainability, estimated bug probability, coupling, then the usual counters and the hotspots worth refactoring first. Ask for a durable report when you need one, and nothing is ever written to disk unless you do:
+
+```console
 ast-metrics analyze --report-html=<directory> /path/to/your/code
 ```
+
+Run `ast-metrics` with no argument to open the interactive menu, or add `--tui` to any analysis to explore the results in the full-screen dashboard. Anything piped, redirected or run in CI gets plain output.
 
 > Docker image, `.deb`/`.rpm` packages and manual downloads: see the detailed [installation instructions](https://ast-metrics.dev/getting-started/install/).
 

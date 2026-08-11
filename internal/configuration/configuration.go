@@ -55,11 +55,24 @@ type ConfigurationReport struct {
 	// Empty keeps the level derived from the severity of the finding.
 	SarifMaxLevel string `yaml:"sarif_max_level,omitempty"`
 	OpenHtml      bool   `yaml:"open_html,omitempty"`
+	// Summary is the plain-text report written on stdout. It is the report you
+	// get when you ask for no other one, so that a run always produces something
+	// readable instead of analyzing a whole project for nothing. It is a pointer
+	// to tell "not configured" (defaults to enabled) from an explicit disabling.
+	Summary *bool `yaml:"summary,omitempty"`
 }
 
-// function HasReports() bool {
+// HasReports reports whether at least one report file has to be written. The
+// stdout summary is deliberately not counted here: it produces no file, and the
+// views listing the generated reports only deal with files.
 func (c *ConfigurationReport) HasReports() bool {
 	return c.Html != "" || c.Markdown != "" || c.Json != "" || c.OpenMetrics != "" || c.Sarif != ""
+}
+
+// HasSummary reports whether the plain-text summary has to be printed. It is
+// enabled unless it has been explicitly turned off.
+func (c *ConfigurationReport) HasSummary() bool {
+	return c.Summary == nil || *c.Summary
 }
 
 type ConfigurationRequirements struct {

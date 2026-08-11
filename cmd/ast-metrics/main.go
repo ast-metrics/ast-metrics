@@ -7,11 +7,11 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"strings"
+	"sync"
 
 	"github.com/ast-metrics/ast-metrics/internal/cli"
 	"github.com/ast-metrics/ast-metrics/internal/command"
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
-	mcpserver "github.com/ast-metrics/ast-metrics/internal/mcp"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	"github.com/ast-metrics/ast-metrics/internal/engine/csharp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/golang"
@@ -20,6 +20,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/engine/python"
 	"github.com/ast-metrics/ast-metrics/internal/engine/rust"
 	"github.com/ast-metrics/ast-metrics/internal/engine/typescript"
+	mcpserver "github.com/ast-metrics/ast-metrics/internal/mcp"
 	"github.com/ast-metrics/ast-metrics/internal/watcher"
 	"github.com/pterm/pterm"
 	"github.com/sirupsen/logrus"
@@ -35,27 +36,104 @@ var (
 	date    = "unknown"
 )
 
-// isInteractiveSession reports whether the full-screen interface should be used.
+// flagInLineage reports whether a bool flag is set on cCtx or any of its
+// parent contexts. Flags such as --tui and --non-interactive are declared both
+// globally and on individual commands, so "ast-metrics --tui analyze ." has to
+// be honoured just like "ast-metrics analyze --tui .".
+func flagInLineage(cCtx *cliV2.Context, name string) bool {
+	for _, ctx := range cCtx.Lineage() {
+		if ctx.Bool(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasTerminal reports whether a human can both drive and read a full-screen
+// interface: stdin carries the keystrokes, stdout carries the drawing. A pipe
+// on either end rules the dashboard out, so a CI job, a redirection or a tool
+// driving the CLI never gets escape sequences it cannot use.
 //
-// It requires a terminal on stdin: a CI job, a pipe, or a tool driving the CLI
-// must never get a full-screen interface, whether or not it knows about the
-// --non-interactive flag.
+// It is a variable so the tests can decide what the terminal looks like: a test
+// binary never runs attached to one.
+var hasTerminal = func() bool {
+	return osterm.IsTerminal(int(os.Stdin.Fd())) && osterm.IsTerminal(int(os.Stdout.Fd()))
+}
+
+// plainOutputForced reports whether plain output was explicitly asked for.
+func plainOutputForced(cCtx *cliV2.Context) bool {
+	return flagInLineage(cCtx, "non-interactive") || flagInLineage(cCtx, "ci")
+}
+
+// isInteractiveSession reports whether a command should show the full-screen
+// dashboard.
 //
-// The flag is looked up along the whole context lineage, because it is declared
-// as a global option: "ast-metrics --non-interactive analyze ." has to be
-// honoured just like "ast-metrics analyze --non-interactive .".
+// The dashboard is opt-in: ast-metrics is run far more often from a script, a
+// CI job or an editor than watched live, so commands print plain output and
+// --tui is what asks for the dashboard.
 func isInteractiveSession(cCtx *cliV2.Context) bool {
-	if !osterm.IsTerminal(int(os.Stdin.Fd())) {
+	if plainOutputForced(cCtx) {
 		return false
 	}
 
-	for _, ctx := range cCtx.Lineage() {
-		if ctx.Bool("non-interactive") || ctx.Bool("ci") {
-			return false
-		}
+	if !flagInLineage(cCtx, "tui") {
+		return false
+	}
+
+	if !hasTerminal() {
+		warnOnce("--tui needs a terminal on both stdin and stdout; falling back to plain output")
+		return false
 	}
 
 	return true
+}
+
+// shouldShowWelcomeScreen reports whether "ast-metrics", typed with no command
+// at all, should open the welcome screen. Nothing was asked for and someone is
+// watching, so a menu is more useful than a help page; anything piped or
+// scripted gets the help page instead.
+func shouldShowWelcomeScreen(cCtx *cliV2.Context) bool {
+	return !plainOutputForced(cCtx) && hasTerminal()
+}
+
+// warnIfNonInteractiveFlagUsed prints a deprecation notice when
+// --non-interactive is seen: plain output is now the default, so the flag only
+// forces what already happens, but scripts that pass it must keep working.
+func warnIfNonInteractiveFlagUsed(cCtx *cliV2.Context) {
+	if !flagInLineage(cCtx, "non-interactive") {
+		return
+	}
+
+	warnOnce("[DEPRECATION] --non-interactive is the default behaviour now and will be removed in a future release. Use --tui to ask for the full-screen dashboard.")
+}
+
+// warnOnce prints a warning on stderr, once per message and per run. The
+// interactivity helpers are called from several places, and the welcome screen
+// re-runs the application in-process, which would otherwise repeat the same
+// notice on every command.
+var warnedMessages sync.Map
+
+func warnOnce(message string) {
+	if _, alreadyWarned := warnedMessages.LoadOrStore(message, true); alreadyWarned {
+		return
+	}
+
+	cli.PrintWarningTo(os.Stderr, message)
+}
+
+// welcomeCommandArgs builds the command line the welcome screen runs for the
+// entry the user picked.
+//
+// It adds --tui, because reaching a command through the menu is a full-screen
+// session by definition: the results belong on screen, not in a scrollback the
+// menu is about to paint over. Typing "ast-metrics analyze ." directly stays
+// plain and gives the shell back, which is the whole point of the default.
+//
+// The flag goes before the command name since it is declared on the
+// application, and it is harmless for the commands that ignore it.
+func welcomeCommandArgs(appName string, result cli.WelcomeResult) []string {
+	args := []string{appName, "--tui", result.Command}
+	return append(args, result.Args...)
 }
 
 // isTerminalOutput reports whether stdout is a terminal, which is the only thing
@@ -92,8 +170,16 @@ func main() {
 		Usage: "Static code analysis tool",
 		Flags: []cliV2.Flag{
 			&cliV2.BoolFlag{
+				Name: "tui",
+				// No short alias: "-i" used to mean --non-interactive, and
+				// giving it the opposite meaning would silently flip the
+				// behaviour of the scripts that already pass it.
+				Aliases: []string{"interactive"},
+				Usage:   "Show the full-screen dashboard instead of plain output",
+			},
+			&cliV2.BoolFlag{
 				Name:  "non-interactive",
-				Usage: "Disable interactive mode",
+				Usage: "Deprecated: plain output is the default now, this flag only forces it",
 			},
 		},
 		Before: func(cCtx *cliV2.Context) error {
@@ -104,11 +190,13 @@ func main() {
 				pterm.DisableColor()
 			}
 
+			warnIfNonInteractiveFlagUsed(cCtx)
+
 			return nil
 		},
 		Action: func(cCtx *cliV2.Context) error {
-			if !isInteractiveSession(cCtx) {
-				// Non-interactive: print banner + help
+			if !shouldShowWelcomeScreen(cCtx) {
+				// Nothing to drive the menu with: print banner + help
 				fmt.Println(cli.RenderBanner(version))
 				return cliV2.ShowAppHelp(cCtx)
 			}
@@ -135,10 +223,7 @@ func main() {
 					continue
 				}
 
-				// Build args: app-name + command + any user-provided args
-				args := []string{cCtx.App.Name, result.Command}
-				args = append(args, result.Args...)
-				cmdErr := cCtx.App.Run(args)
+				cmdErr := cCtx.App.Run(welcomeCommandArgs(cCtx.App.Name, result))
 
 				// Commands that have their own interactive TUI: no pause needed
 				switch result.Command {
@@ -175,10 +260,23 @@ func main() {
 						Category: "File selection",
 					},
 					&cliV2.BoolFlag{
-						Name:     "non-interactive",
-						Aliases:  []string{"i"},
-						Usage:    "Disable interactive mode",
+						Name:     "tui",
+						Aliases:  []string{"interactive"},
+						Usage:    "Show the full-screen dashboard instead of plain output",
 						Category: "Global options",
+					},
+					&cliV2.BoolFlag{
+						Name:     "non-interactive",
+						Usage:    "Deprecated: plain output is the default now, this flag only forces it",
+						Category: "Global options",
+					},
+					// Summary report, printed on stdout. It is the report you
+					// get when you ask for no other one.
+					&cliV2.BoolFlag{
+						Name:     "report-summary",
+						Usage:    "Print a summary of the analysis on the standard output. Use --report-summary=false to silence it",
+						Value:    true,
+						Category: "Report",
 					},
 					// HTML report
 					&cliV2.StringFlag{
@@ -321,9 +419,9 @@ func main() {
 						}
 					}
 
-					// The interactive interface needs a terminal to drive it, so it
-					// is not enough to look at --non-interactive: an analysis run
-					// from a CI job or a script gets the plain output too.
+					// The dashboard is opt-in and needs a terminal to drive it:
+					// plain output is the default, and --tui is what turns it on.
+					warnIfNonInteractiveFlagUsed(cCtx)
 					isInteractive := isInteractiveSession(cCtx)
 
 					// Stdout
@@ -409,6 +507,13 @@ func main() {
 					}
 					if cCtx.Bool("open-html") {
 						config.Reports.OpenHtml = true
+					}
+					// The summary is enabled by default, so it is only worth
+					// touching the configuration when the flag was given: an
+					// untouched flag must not override the configuration file.
+					if cCtx.IsSet("report-summary") {
+						wantsSummary := cCtx.Bool("report-summary")
+						config.Reports.Summary = &wantsSummary
 					}
 
 					// CI mode
@@ -631,6 +736,7 @@ func main() {
 					&cliV2.StringFlag{Name: "report-json", Usage: "Generate a report in JSON format", Category: "Report"},
 					&cliV2.StringFlag{Name: "report-openmetrics", Usage: "Generate a report in OpenMetrics format", Category: "Report"},
 					&cliV2.StringFlag{Name: "report-sarif", Usage: "Generate a report in SARIF format (2.1.0)", Category: "Report"},
+					&cliV2.BoolFlag{Name: "report-summary", Usage: "Print a summary of the analysis on the standard output. Use --report-summary=false to silence it", Value: true, Category: "Report"},
 					&cliV2.StringFlag{Name: "config", Usage: "Load configuration from file", Category: "Configuration"},
 					&cliV2.StringFlag{Name: "compare-with", Usage: "Compare with another Git branch or commit", Category: "Global options"},
 					&cliV2.StringFlag{Name: "php-extensions", Usage: "Extra file extensions for PHP (comma-separated, e.g. .inc,.module)", Category: "File selection"},
@@ -697,6 +803,10 @@ func main() {
 					}
 					if cCtx.Bool("open-html") {
 						cfg.Reports.OpenHtml = true
+					}
+					if cCtx.IsSet("report-summary") {
+						wantsSummary := cCtx.Bool("report-summary")
+						cfg.Reports.Summary = &wantsSummary
 					}
 					// CI defaults for reports if not set
 					if cfg.Reports.Html == "" {

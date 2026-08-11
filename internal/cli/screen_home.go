@@ -5,7 +5,6 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/fsnotify/fsnotify"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	pb "github.com/ast-metrics/ast-metrics/pb"
@@ -74,9 +73,8 @@ func (r *ScreenHome) Render() {
 	r.currentModel = m
 
 	if !r.isInteractive {
-		// If not interactive
-		var style = lipgloss.NewStyle().Foreground(lipgloss.Color("#666666")).Italic(true)
-		fmt.Println(style.Render("No interactive mode detected."))
+		// Plain output has already been printed by the summary report: there is
+		// no full-screen interface to start here.
 		return
 	}
 

@@ -62,7 +62,7 @@ jobs:
       - name: Test the cli directly, generating HTML report
         run: |
           mkdir -p build
-          go run ./cmd/ast-metrics/ analyze --non-interactive --report-html=reporthtml internal
+          go run ./cmd/ast-metrics/ analyze --report-html=reporthtml internal
           ls reporthtml || (echo "No report generated" && exit 1) && (echo "Report generated" && exit 0)
 
       - name: Run Lighthouse CI
