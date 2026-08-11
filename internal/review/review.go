@@ -15,7 +15,7 @@ import (
 // MethodologyVersion identifies the formulas and thresholds used to compute
 // findings. It must be bumped whenever a threshold or a formula changes, so
 // that users can distinguish a code evolution from a calculation evolution.
-const MethodologyVersion = "1.0"
+const MethodologyVersion = "1.1"
 
 type Severity string
 
@@ -89,6 +89,10 @@ type Options struct {
 	ImprovementComplexityDrop int
 	// Minimum maintainability gain to report an improvement
 	ImprovementMaintainabilityGain float64
+	// Minimum increase of the Halstead estimated bugs to report a file
+	BugsIncrease float64
+	// Minimum decrease of the Halstead estimated bugs to report an improvement
+	BugsDrop float64
 }
 
 func DefaultOptions() Options {
@@ -102,6 +106,8 @@ func DefaultOptions() Options {
 		CouplingIncrease:               3,
 		ImprovementComplexityDrop:      3,
 		ImprovementMaintainabilityGain: 5,
+		BugsIncrease:                   0.1,
+		BugsDrop:                       0.1,
 	}
 }
 
@@ -332,6 +338,35 @@ func findingsForModifiedFile(head *pb.File, base *pb.File, path string, opts Opt
 		})
 	}
 
+	// Halstead estimated bugs, at file level
+	headBugs, headHasBugs := bugsOf(head)
+	baseBugs, baseHasBugs := bugsOf(base)
+	if headHasBugs && baseHasBugs {
+		if headBugs-baseBugs >= opts.BugsIncrease {
+			regressions = append(regressions, Finding{
+				Kind:       KindRegression,
+				Severity:   SeverityLow,
+				Rule:       "bugs-regression",
+				File:       path,
+				Message:    fmt.Sprintf("Estimated bugs (Halstead): %.2f -> %.2f", baseBugs, headBugs),
+				Suggestion: "This estimate grows with code volume and complexity; consider simplifying or splitting this file",
+				Before:     baseBugs,
+				After:      headBugs,
+			})
+		}
+		if baseBugs-headBugs >= opts.BugsDrop {
+			improvements = append(improvements, Finding{
+				Kind:     KindImprovement,
+				Severity: SeverityLow,
+				Rule:     "bugs-improvement",
+				File:     path,
+				Message:  fmt.Sprintf("Estimated bugs (Halstead): %.2f -> %.2f", baseBugs, headBugs),
+				Before:   baseBugs,
+				After:    headBugs,
+			})
+		}
+	}
+
 	return regressions, improvements
 }
 
@@ -453,6 +488,13 @@ func efferentOf(file *pb.File) (int32, bool) {
 		return 0, false
 	}
 	return file.Stmts.Analyze.Coupling.Efferent, true
+}
+
+func bugsOf(file *pb.File) (float64, bool) {
+	if file == nil || file.Stmts == nil || file.Stmts.Analyze == nil || file.Stmts.Analyze.Volume == nil || file.Stmts.Analyze.Volume.HalsteadBugs == nil {
+		return 0, false
+	}
+	return *file.Stmts.Analyze.Volume.HalsteadBugs, true
 }
 
 func relativize(path string, root string) string {
