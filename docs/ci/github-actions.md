@@ -71,7 +71,7 @@ If your repository has an [`.ast-metrics.yaml`](./linting-architecture.md) confi
 
 | Input | Default | Description |
 |---|---|---|
-| `version` | `latest` | AST Metrics version to install. Pinning (for example `v0.28.0`) is recommended for reproducible checks. `local` reuses an `ast-metrics` binary already present in the `PATH` instead of downloading a release. |
+| `version` | `latest` | AST Metrics version to install. Pinning (for example `v0.41.1`) is recommended for reproducible checks. `local` reuses an `ast-metrics` binary already present in the `PATH` instead of downloading a release. |
 | `directory` | `.` | Directory to analyze. |
 | `base` | base branch of the PR | Git reference to compare with. |
 | `fail-on` | `never` | Fail the check when a regression of at least this severity is introduced: `high`, `medium`, `any` or `never`. |

@@ -17,26 +17,32 @@ version in a temporary worktree, analyzes both, and diffs the results.
 ## Reading the output
 
 ```
-AST Metrics: quality gate passed
+AST Metrics found regressions
 
-24 file(s) changed, 0 new critical issue(s), 17 other regression(s), 5 improvement(s)
+0 new critical issue(s), 2 other regression(s), 1 improvement(s)
+
+Summary:
+- ⚠️  Complexity: +12
+- ➖ Ease of maintenance: -
+- ➖ Outgoing dependencies: -
+- ⚠️  Probability of bugs: +0.14
 
 Regressions:
 - [MEDIUM] internal/engine/php/php_halstead_test.go (internal/engine/php/php_halstead_test.go:47)
       LOC too high in method TestPhpAccessorsAreNotPerfectlyMaintainable(): got 33 (max: 30)
 - [MEDIUM] internal/engine/php/php_halstead_test.go (internal/engine/php/php_halstead_test.go:16)
       Function/method name 'TestPhpOperatorsOfAPlainReturn()' contains package name 'php'
-  ... and 15 more (see JSON or SARIF report)
 
 Improvements:
-- internal/engine/csharp/tree_sitter_csharp_adapter.go: Maintainability index: 43 -> 50
-- TreeSitterAdapter::ExtractOperatorsOperands (...:398): Cyclomatic complexity: 14 -> 2
-
-Existing debt is not reported. Methodology v1.0
+- TreeSitterAdapter::ExtractOperatorsOperands (internal/engine/csharp/tree_sitter_csharp_adapter.go:398): Cyclomatic complexity: 14 -> 2
 ```
 
-Three things are worth noting:
+Four things are worth noting:
 
+- the **Summary** checklist always shows the same four metrics. Each line is the net
+  change introduced by your branch; the icon judges the direction (a rising
+  maintainability is good news, a rising complexity is not), so the numbers can stay
+  honest about what actually changed;
 - every finding names a **file and a line**, so it is actionable without opening the
   report;
 - **improvements are reported too**. A review that only ever says "you made things

@@ -72,6 +72,7 @@ nav:
     - Rulesets & Linting: ci/linting-architecture.md
     - GitLab CI: ci/gitlab-ci.md
     - Tips: ci/tips.md
+    - Deploy to a GitHub organization: ci/deploy-github-org.md
   - AI Integration:
     - MCP Server: ai/mcp-server.md
 

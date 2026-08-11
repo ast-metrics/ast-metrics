@@ -21,12 +21,12 @@ It helps you answer critical questions:
 2.  **Graph**: It connects all components (classes, functions) to build a dependency graph.
 3.  **Analyze**: It applies graph theory and mathematical models to find patterns, clusters, and anomalies.
 
-![AST Metrics Report](https://raw.githubusercontent.com/ast-metrics/ast-metrics/main/docs/preview-html-report.png)
+![The AST Metrics HTML report, opening with a plain-language verdict](../images/report-overview.png)
 
 ??? tip "Also available as a CLI tool"
-    AST Metrics can also be used directly in your terminal for quick analysis or CI/CD pipelines.
+    AST Metrics can also be used directly in your terminal for quick analysis or CI/CD pipelines: `ast-metrics analyze` prints a summary ending with the hotspots worth refactoring first.
 
-    ![CLI application](https://raw.githubusercontent.com/ast-metrics/ast-metrics/main/docs/preview.gif)
+    ![The Hotspots section of the terminal summary](../images/capture-hotspots-cli.png)
 
 ## Key Benefits
 

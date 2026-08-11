@@ -57,7 +57,7 @@ Inventory of all classes, functions, and components.
       "mcpServers": {
         "ast-metrics": {
           "command": "ast-metrics",
-          "args": ["mcp"]
+          "args": ["mcp", "."]
         }
       }
     }
@@ -72,7 +72,7 @@ Inventory of all classes, functions, and components.
       "mcpServers": {
         "ast-metrics": {
           "command": "ast-metrics",
-          "args": ["mcp"]
+          "args": ["mcp", "."]
         }
       }
     }

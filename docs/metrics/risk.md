@@ -18,9 +18,11 @@ The Risk score is calculated based on two main factors:
 - **Complex code that changes often** is a **Time Bomb**. This is where bugs are most likely to be introduced.
 
 ## How to use it?
-In the CLI application, look at the `Top candidates for refactoring` section. These are the files with the highest Risk score.
+Run `ast-metrics analyze`: the summary printed in your terminal ends with a `Hotspots` section listing the files with the highest Risk score, with their maintainability index and recent commit count.
 
-![Risk Score report](../images/capture-risks.png)
+![The Hotspots section of the terminal summary](../images/capture-hotspots-cli.png)
+
+The HTML report tells the same story visually: the code map on the overview page draws one bubble per class, where size is the lines of code, color the complexity, and the ring the recent git activity. Big, red, ringed bubbles are your time bombs.
 
 !!! tip "Prioritize Refactoring"
 

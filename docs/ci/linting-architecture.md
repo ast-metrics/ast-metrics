@@ -143,7 +143,26 @@ The command exits with a non-zero status as soon as a requirement is violated, w
 makes it usable as-is in a pipeline. Add `--report-sarif=lint.sarif` to publish the
 violations to a platform that reads SARIF.
 
-!!! tip "Only report what a branch breaks"
-    `ast-metrics lint` reports every violation in the project, including the ones that
-    were already there. To gate a pull request on new violations only, use
-    [`ast-metrics review`](../getting-started/review-changes.md).
+## Starting on a legacy codebase: the baseline
+
+On an existing project, the first `ast-metrics lint` can easily report hundreds of
+violations. You are not going to fix them all today, and they should not block your
+pipeline. Snapshot them instead:
+
+```bash
+ast-metrics baseline
+```
+
+This writes an `.ast-metrics-baseline.yaml` file recording every current violation.
+Commit it: from now on, `ast-metrics lint` (and `ast-metrics ci`) ignores the
+recorded violations and only fails on new ones.
+
+Re-run `ast-metrics baseline` whenever you want to shrink the file as you pay off
+the debt. If you keep the file somewhere else, point the linter at it with
+`ast-metrics lint --baseline=<path>`.
+
+!!! note "Baseline or review?"
+    The two mechanisms are complementary. The **baseline** freezes today's violations
+    in a committed file, so `lint` stays green on legacy code. [`ast-metrics
+    review`](../getting-started/review-changes.md) compares your branch with its base
+    on the fly and needs no stored file: it is what gates your pull requests.

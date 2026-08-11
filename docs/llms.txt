@@ -34,11 +34,19 @@ declared with `--php-extensions`, `--go-extensions`, `--java-extensions` and so 
 ## Installation
 
 ```bash
+# Homebrew (Linux, MacOS)
+brew install ast-metrics/tap/ast-metrics
+
 # Linux, MacOS, Windows
 curl -fsSL https://install.ast-metrics.dev | sh
 
+# Docker
+docker run --rm -v $(pwd):/src ghcr.io/ast-metrics/ast-metrics:latest analyze /src
+
+# Debian/Ubuntu (.deb) and Fedora/RHEL (.rpm): download from the GitHub releases page
+
 # PHP projects
-composer require --dev halleck45/ast-metrics
+composer require --dev ast-metrics/ast-metrics
 
 # Go
 go install github.com/ast-metrics/ast-metrics@latest
@@ -53,6 +61,7 @@ The result is a standalone binary. `ast-metrics self-update` upgrades it in plac
 | `ast-metrics analyze <paths>` | Full analysis. Opens an interactive terminal UI, or writes reports. |
 | `ast-metrics review` | Compare with a base branch and report only new or worsened findings. |
 | `ast-metrics lint` | Check the requirements declared in `.ast-metrics.yaml` and exit non-zero on violations. |
+| `ast-metrics baseline` | Snapshot existing lint violations into `.ast-metrics-baseline.yaml` so lint only fails on new ones. |
 | `ast-metrics ci <paths>` | Run the linter, then generate every report. The command to call from a pipeline. |
 | `ast-metrics mcp <paths>` | Start an MCP server over stdio, for AI coding agents. |
 | `ast-metrics init` | Create a default `.ast-metrics.yaml`. |

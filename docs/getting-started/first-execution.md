@@ -2,22 +2,36 @@
 
 > If you haven't installed AST Metrics yet, please refer to the [installation guide](./install.md).
 
-Locate the directory where your source code is stored. For example, if you have a project in the `/var/www/my-project` 
-directory, you can run AST Metrics with the following command in your terminal:
+Point AST Metrics at the directory that holds your source code:
 
 ```bash
 ast-metrics analyze /var/www/my-project
 ```
 
-This will display the CLI application, which will analyze the source code in the specified directory.
+The analysis takes a few seconds, then a summary is printed in your terminal:
+maintainability, estimated bug probability, coupling, size, test isolation, and the
+hotspots worth refactoring first.
 
-![CLI application](https://raw.githubusercontent.com/ast-metrics/ast-metrics/main/docs/preview.gif)
+![The Hotspots section of the terminal summary](../images/capture-hotspots-cli.png)
 
-Navigate through the different sections using the arrow keys. You can press `Enter` to expand a section and see more details.
+Nothing is written to disk unless you ask for a report.
 
-To exit the application, press `Ctrl+C` or the `Esc` key.
+## The interactive dashboard
 
-> **Note**: You can search for a specific file or directory by pressing the `Ctrl+F` key and typing the name of the file or directory you want to find.
+Prefer to explore? Add `--tui` to open a full-screen dashboard in your terminal:
+
+```bash
+ast-metrics analyze --tui /var/www/my-project
+```
+
+Navigate with the arrow keys, press `Enter` to expand a section, `Ctrl+F` to search,
+and `Esc` or `Ctrl+C` to quit.
+
+You can also run `ast-metrics` with no argument at all: an interactive menu walks
+you through the available actions.
+
+> In CI, or when the output is piped or redirected, AST Metrics automatically falls
+> back to plain text: no flag needed.
 
 ## Generating an HTML Report
 
@@ -27,6 +41,11 @@ You can also generate a static HTML report to share with your team or keep as an
 ast-metrics analyze /path/to/project --report-html=./report
 ```
 
-This will create a `report` directory containing the full analysis.
+This creates a `report` directory containing the full analysis, opening with a
+plain-language verdict on your codebase.
 
-![HTML Report](https://raw.githubusercontent.com/ast-metrics/ast-metrics/main/docs/preview-html-report.png)
+![The HTML report overview, with a plain-language verdict](../images/report-overview.png)
+
+> Next step: [understand what the numbers mean](./understand.md), or
+> [generate reports in other formats](./generate-reports.md) (JSON, Markdown, SARIF,
+> OpenMetrics).

@@ -74,7 +74,7 @@ Choose your preferred method below.
     This is the recommended way for PHP developers as it manages the binary version for you.
 
     ```bash
-    composer require --dev halleck45/ast-metrics
+    composer require --dev ast-metrics/ast-metrics
     ```
 
     Then you can run it using:
