@@ -23,18 +23,20 @@ AST Metrics found regressions
 
 Summary:
 - ⚠️  Complexity: +12
-- ➖ Ease of maintenance: -
+- ✅ Ease of maintenance: +7
 - ➖ Outgoing dependencies: -
 - ⚠️  Probability of bugs: +0.14
 
 Regressions:
-- [MEDIUM] internal/engine/php/php_halstead_test.go (internal/engine/php/php_halstead_test.go:47)
-      LOC too high in method TestPhpAccessorsAreNotPerfectlyMaintainable(): got 33 (max: 30)
-- [MEDIUM] internal/engine/php/php_halstead_test.go (internal/engine/php/php_halstead_test.go:16)
-      Function/method name 'TestPhpOperatorsOfAPlainReturn()' contains package name 'php'
+- [MEDIUM] Parse (internal/engine/php/parser.go:112)
+      Cyclomatic complexity: 10 -> 22 (threshold: 10)
+      Suggested action: Extract smaller, well-named functions to reduce decision points
+- [LOW] internal/engine/php/parser.go (internal/engine/php/parser.go)
+      Estimated bugs (Halstead): 0.61 -> 0.75
+      Suggested action: This estimate grows with code volume and complexity; consider simplifying or splitting this file
 
 Improvements:
-- TreeSitterAdapter::ExtractOperatorsOperands (internal/engine/csharp/tree_sitter_csharp_adapter.go:398): Cyclomatic complexity: 14 -> 2
+- internal/report/markdown.go (internal/report/markdown.go): Maintainability index: 43 -> 50
 ```
 
 Four things are worth noting:
