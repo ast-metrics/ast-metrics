@@ -106,8 +106,19 @@ func (c *LintCommand) Execute() error {
 		return nil
 	}
 	reqEval := requirement.NewRequirementsEvaluator(*c.Configuration.Requirements)
+	baselinePath := requirement.ResolveBaselinePath(c.Configuration.Requirements.Baseline)
+	if baselinePath != "" {
+		baseline, err := requirement.LoadBaseline(baselinePath)
+		if err != nil {
+			return err
+		}
+		reqEval.Baseline = baseline
+	}
 	projectCtx := buildProjectContext(projectAggregated)
 	evaluation := reqEval.Evaluate(allResults, requirement.ProjectAggregated{ProjectCtx: projectCtx})
+	if evaluation.Baselined > 0 {
+		cli.PrintInfo(fmt.Sprintf("%d violation(s) ignored via baseline (%s)", evaluation.Baselined, baselinePath))
+	}
 
 	// If SARIF path provided, write SARIF report from violations
 	if c.Configuration.Reports.Sarif != "" {

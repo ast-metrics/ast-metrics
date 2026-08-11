@@ -65,6 +65,12 @@ func (c *ConfigurationReport) HasReports() bool {
 type ConfigurationRequirements struct {
 	Rules   *ConfigurationRequirementsRules `yaml:"rules"`
 	Exclude []string                        `yaml:"exclude,omitempty"`
+	// Baseline is the path to a baseline file listing violations to ignore,
+	// similar to PHPStan's baseline. It lets an existing project start
+	// enforcing requirements without having to fix every pre-existing
+	// violation first. When empty, DefaultBaselineFilename is used if that
+	// file exists in the working directory.
+	Baseline string `yaml:"baseline,omitempty"`
 }
 
 type ConfigurationCouplingRule struct {

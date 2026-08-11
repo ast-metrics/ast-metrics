@@ -35,6 +35,9 @@ type RuleOutcome struct {
 
 type RequirementsEvaluator struct {
 	Requirements configuration.ConfigurationRequirements
+	// Baseline, when set, filters out already-known violations from Errors.
+	// Use LoadBaseline (or ResolveBaselinePath) to build it from a file.
+	Baseline *Baseline
 }
 
 type EvaluationResult struct {
@@ -43,6 +46,8 @@ type EvaluationResult struct {
 	Errors            []RuleOutcome
 	Successes         []RuleOutcome
 	Succeeded         bool
+	// Baselined is the number of violations silenced by Baseline.
+	Baselined int
 }
 
 // method to get number of errors by severity
@@ -174,6 +179,10 @@ func (r *RequirementsEvaluator) Evaluate(files []*pb.File, projectAggregated Pro
 				)
 			}
 		}
+	}
+
+	if r.Baseline != nil {
+		evaluation.Errors, evaluation.Baselined = r.Baseline.Filter(evaluation.Errors)
 	}
 
 	if len(evaluation.Errors) > 0 {

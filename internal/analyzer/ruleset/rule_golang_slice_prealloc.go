@@ -37,7 +37,7 @@ func (r *ruleSlicePrealloc) CheckFile(file *pb.File, addError func(issue.Require
 	if count > 0 {
 		addError(issue.RequirementError{
 			Severity: issue.SeverityLow,
-			Message:  fmt.Sprintf("Found %d loop(s) appending to a slice with known bound; consider preallocating capacity with make(T, 0, n) in %s", count, file.Path),
+			Message:  fmt.Sprintf("Found %d loop(s) appending to a slice with known bound; consider preallocating capacity with make(T, 0, n)", count),
 			Code:     r.Name(),
 		})
 		return

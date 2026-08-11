@@ -140,6 +140,16 @@ This makes it **easy to enforce architecture and quality at scale**.
 
 Run `ast-metrics ruleset list` to see the list of available rulesets. Then `ast-metrics ruleset add <ruleset-name>` to apply a ruleset to your project.
 
+### "I have hundreds of violations on my existing codebase, now what?"
+
+Generate a baseline: it snapshots today's violations so only new ones get reported.
+
+```bash
+ast-metrics baseline
+```
+
+Commit the resulting `.ast-metrics-baseline.yaml`, then `ast-metrics lint` only fails on violations introduced afterwards. Re-run `ast-metrics baseline` anytime to shrink it as you clean things up.
+
 ## CI usage
 
 Use the dedicated CI command to run lint and generate all reports in one go:
