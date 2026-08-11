@@ -303,7 +303,6 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	return items
 }
 
-
 // IsLogicalNode reports whether a node begins a logical line. In TypeScript,
 // "const"/"let"/"var" declarations are statements but their node types do not
 // carry the "_statement" suffix.

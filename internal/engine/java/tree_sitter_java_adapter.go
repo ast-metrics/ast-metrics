@@ -193,7 +193,6 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	}
 }
 
-
 // javaDecisions maps the Java grammar onto the shared complexity model.
 //
 // Java has no else_clause node: the else branch is the `alternative` field of
@@ -256,7 +255,6 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	}
 	return []Treesitter.ImportItem{{Module: path, Name: ""}}
 }
-
 
 // IsLogicalNode reports whether a node begins a logical line. In Java, local
 // variable declarations are statements but their node type does not carry the

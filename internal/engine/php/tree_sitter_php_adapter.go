@@ -957,7 +957,6 @@ func dedup(in []Treesitter.ImportItem) []Treesitter.ImportItem {
 	return out
 }
 
-
 func (a *TreeSitterAdapter) findNamespace() string {
 	// If computeExternalDependencies already ran, reuse its result
 	if a.computed {

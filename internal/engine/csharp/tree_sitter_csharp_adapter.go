@@ -206,7 +206,6 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	}
 }
 
-
 // csDecisions maps the C# grammar onto the shared complexity model.
 //
 // Like Java, C# has no else_clause node: the else branch is the `alternative`
@@ -288,7 +287,6 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	}
 	return []Treesitter.ImportItem{{Module: module, Name: alias}}
 }
-
 
 // CountComments counts C# comment lines (//, /// and /* */) in the given range.
 // CommentMarkers declares C# comment tokens: "//" and "/* */" only.

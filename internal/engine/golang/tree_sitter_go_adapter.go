@@ -409,7 +409,6 @@ func goMethodAtLine(n *sitter.Node, line int) *sitter.Node {
 	return nil
 }
 
-
 // IsLogicalNode reports whether a node begins a logical line. On top of the
 // default statement types, Go declares local variables with dedicated node
 // types that do not carry the "_statement" suffix.
