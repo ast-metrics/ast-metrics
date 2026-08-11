@@ -113,21 +113,18 @@ func recomputeFileCyclomatic(file *pb.File) {
 		file.Stmts.Analyze.Complexity = &pb.Complexity{}
 	}
 
-	var fileCyclomatic int32
-
-	for _, class := range engine.GetClassesInFile(file) {
-		if class == nil || class.Stmts == nil || class.Stmts.Analyze == nil || class.Stmts.Analyze.Complexity == nil || class.Stmts.Analyze.Complexity.Cyclomatic == nil {
-			continue
-		}
-		fileCyclomatic += *class.Stmts.Analyze.Complexity.Cyclomatic
-	}
-
-	for _, function := range engine.GetFunctionsOutsideClassesInFile(file) {
-		if function == nil || function.Stmts == nil || function.Stmts.Analyze == nil || function.Stmts.Analyze.Complexity == nil || function.Stmts.Analyze.Complexity.Cyclomatic == nil {
-			continue
-		}
-		fileCyclomatic += *function.Stmts.Analyze.Complexity.Cyclomatic
-	}
+	// The complexity of a file is what its outermost scopes add up to, plus the
+	// branches written outside of any of them, as a script does. Calculate
+	// walks that structure: a class already carries the complexity of its
+	// methods and of the classes nested in it, so it is summed once and only
+	// once, whereas summing the flattened list of everything the file declares
+	// would count an inner class both for itself and inside its parent.
+	//
+	// Going through Calculate also keeps the file total from ever drifting from
+	// the per-function numbers reported next to it: both come from the same
+	// definition of the model.
+	visitor := &Complexity.CyclomaticComplexityVisitor{}
+	fileCyclomatic := visitor.Calculate(file.Stmts)
 
 	file.Stmts.Analyze.Complexity.Cyclomatic = &fileCyclomatic
 }

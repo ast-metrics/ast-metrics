@@ -111,8 +111,9 @@ func TestPythonParser_TreeSitter_Decisions(t *testing.T) {
 	if got := len(fnA.Stmts.StmtDecisionSwitch); got != 1 {
 		t.Fatalf("expected 1 switch (match) in a, got %d", got)
 	}
-	if got := len(fnA.Stmts.StmtDecisionCase); got != 2 {
-		t.Fatalf("expected 2 case in a, got %d", got)
+	// `case _:` matches anything: it is the fallback path, not a decision
+	if got := len(fnA.Stmts.StmtDecisionCase); got != 1 {
+		t.Fatalf("expected 1 case in a (case _ excluded), got %d", got)
 	}
 	if fnA.LinesOfCode == nil || fnA.LinesOfCode.LinesOfCode == 0 {
 		t.Fatalf("expected LOC on a")
