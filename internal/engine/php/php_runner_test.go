@@ -351,13 +351,18 @@ function bar() {
 	// Ensure functions
 	assert.Equal(t, 2, len(result.Stmts.StmtFunction), "Incorrect number of functions")
 
-	// Function 1
-	func1 := result.Stmts.StmtFunction[0]
-	assert.Equal(t, 4, len(func1.Stmts.StmtDecisionIf), "Incorrect number of if statements")
+	// PHP has a dedicated `elseif` keyword, recorded as such: it weighs the
+	// same as an if in the complexity, but it is not the same construct.
 
-	// Function 2
+	// Function 1: 3 if + 1 elseif
+	func1 := result.Stmts.StmtFunction[0]
+	assert.Equal(t, 3, len(func1.Stmts.StmtDecisionIf), "Incorrect number of if statements")
+	assert.Equal(t, 1, len(func1.Stmts.StmtDecisionElseIf), "Incorrect number of elseif statements")
+
+	// Function 2: 2 if + 2 elseif
 	func2 := result.Stmts.StmtFunction[1]
-	assert.Equal(t, 4, len(func2.Stmts.StmtDecisionIf), "Incorrect number of if statements")
+	assert.Equal(t, 2, len(func2.Stmts.StmtDecisionIf), "Incorrect number of if statements")
+	assert.Equal(t, 2, len(func2.Stmts.StmtDecisionElseIf), "Incorrect number of elseif statements")
 }
 
 func TestNamesapceWithoutName(t *testing.T) {

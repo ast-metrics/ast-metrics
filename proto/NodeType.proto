@@ -31,6 +31,9 @@ message Stmts {
   repeated StmtLoop stmtLoop = 12;
   repeated StmtDecisionSwitch stmtDecisionSwitch = 13;
   repeated StmtExternalDependency stmtExternalDependencies = 14;
+  repeated StmtDecisionCatch stmtDecisionCatch = 15;
+  repeated StmtDecisionTernary stmtDecisionTernary = 16;
+  repeated StmtDecisionLogical stmtDecisionLogical = 17;
 }
 
 // Represents a file
@@ -163,6 +166,27 @@ message StmtDecisionSwitch {
 message StmtLoop {
     Stmts stmts = 1;
     StmtLocationInFile location = 2;
+}
+
+// Represents an exception handler (CATCH, EXCEPT, RESCUE). Each handler is a
+// branch of the control flow, so each one is a decision point.
+message StmtDecisionCatch {
+    Stmts stmts = 1;
+    StmtLocationInFile location = 2;
+}
+
+// Represents a ternary / conditional expression (a ? b : c, a if c else b).
+message StmtDecisionTernary {
+    Stmts stmts = 1;
+    StmtLocationInFile location = 2;
+}
+
+// Represents a short-circuit boolean operator (&&, ||, and, or). It guards the
+// evaluation of its right operand, which is an extra path in the control flow.
+message StmtDecisionLogical {
+    Stmts stmts = 1;
+    StmtLocationInFile location = 2;
+    string operator = 3;
 }
 
 // Represents a comment (multiline or singline)

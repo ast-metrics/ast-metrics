@@ -156,56 +156,44 @@ func findDescendantOfType(n *sitter.Node, t string) *sitter.Node {
 	return nil
 }
 
-func (a *TreeSitterAdapter) Decision(n *sitter.Node) (Treesitter.DecisionKind, *sitter.Node) {
-	switch n.Type() {
-	case "if_statement":
-		if b := n.ChildByFieldName("consequence"); b != nil {
-			return Treesitter.DecIf, b
-		}
-		return Treesitter.DecIf, firstChildOfType(n, "block")
+// pythonDecisions maps the Python grammar onto the shared complexity model.
+//
+// A comprehension is a loop with an optional filter, so `for_in_clause` and
+// `if_clause` count exactly like the statements they abbreviate. `case _:` is
+// a case_clause like any other and is demoted to a Default by Decision below.
+var pythonDecisions = &Treesitter.DecisionSpec{
+	If:      []string{"if_statement", "if_clause"},
+	Elif:    []string{"elif_clause"},
+	Else:    []string{"else_clause"},
+	Loop:    []string{"for_statement", "while_statement", "for_in_clause"},
+	Switch:  []string{"match_statement"},
+	Case:    []string{"case_clause", "case_block"},
+	Catch:   []string{"except_clause", "except_group_clause"},
+	Ternary: []string{"conditional_expression"},
+	Logical: []string{"boolean_operator"},
+	Ops:     []string{"and", "or"},
+}
 
-	case "elif_clause":
-		if b := n.ChildByFieldName("consequence"); b != nil {
-			return Treesitter.DecElif, b
-		}
-		return Treesitter.DecElif, firstChildOfType(n, "block")
-
-	case "else_clause":
-		if b := n.ChildByFieldName("body"); b != nil {
-			return Treesitter.DecElse, b
-		}
-		return Treesitter.DecElse, firstChildOfType(n, "block")
-
-	case "for_statement", "while_statement":
-		if b := n.ChildByFieldName("body"); b != nil {
-			return Treesitter.DecLoop, b
-		}
-		return Treesitter.DecLoop, firstChildOfType(n, "block")
-
-	// Python 3.10+ structural pattern matching
-	case "match_statement":
-		// Return the node itself. EachChildBody will yield case nodes.
-		return Treesitter.DecSwitch, n
-
-	// Case nodes can be named "case_clause" (current grammar) or "case_block" (older).
-	case "case_clause":
-		if b := n.ChildByFieldName("body"); b != nil {
-			return Treesitter.DecCase, b
-		}
-		// fallback: any descendant block
-		if b := findDescendantOfType(n, "block"); b != nil {
-			return Treesitter.DecCase, b
-		}
-		return Treesitter.DecCase, nil
-
-	case "case_block":
-		// older grammar fallback
-		if b := findDescendantOfType(n, "block"); b != nil {
-			return Treesitter.DecCase, b
-		}
-		return Treesitter.DecCase, nil
+func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
+	kind := pythonDecisions.Classify(n, a.src)
+	if kind == Treesitter.DecCase && isWildcardCase(n, a.src) {
+		return Treesitter.DecDefault
 	}
-	return Treesitter.DecNone, nil
+	return kind
+}
+
+func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
+	return pythonDecisions.LogicalOperator(n, a.src)
+}
+
+// isWildcardCase reports whether a match arm is the catch-all one (`case _:`).
+// It matches anything, so it is the fallback path rather than a decision.
+func isWildcardCase(n *sitter.Node, src []byte) bool {
+	pattern := firstChildOfType(n, "case_pattern")
+	if pattern == nil || int(pattern.EndByte()) > len(src) {
+		return false
+	}
+	return strings.TrimSpace(string(src[pattern.StartByte():pattern.EndByte()])) == "_"
 }
 
 func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {

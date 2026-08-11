@@ -206,51 +206,51 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	}
 }
 
-// isAlternativeOfIf reports whether n is the "alternative" field of a parent
-// if_statement (i.e. the else branch). Like tree-sitter-java, the C# grammar
-// has no else_clause wrapper node: `else if` is an if_statement directly in
-// the alternative field, and a bare `else` body is a block/statement there.
-func isAlternativeOfIf(n *sitter.Node) bool {
-	p := n.Parent()
-	if p == nil || p.Type() != "if_statement" {
-		return false
-	}
-	alt := p.ChildByFieldName("alternative")
-	return alt != nil && alt.StartByte() == n.StartByte() && alt.EndByte() == n.EndByte() && alt.Type() == n.Type()
+// csDecisions maps the C# grammar onto the shared complexity model.
+//
+// Like Java, C# has no else_clause node: the else branch is the `alternative`
+// field of if_statement and needs no rule of its own. The grammar inlines the
+// labels of a switch_section as bare `case` / `default` tokens, so branches are
+// counted on those tokens (guarded by their parent below) rather than on the
+// section, which lets a section carrying several labels count each of them.
+// `??` is deliberately not a logical operator here, as in PHP and TypeScript.
+var csDecisions = &Treesitter.DecisionSpec{
+	If:      []string{"if_statement"},
+	Loop:    []string{"for_statement", "foreach_statement", "while_statement", "do_statement"},
+	Switch:  []string{"switch_statement", "switch_expression"},
+	Case:    []string{"case", "switch_expression_arm"},
+	Default: []string{"default"},
+	Catch:   []string{"catch_clause"},
+	Ternary: []string{"conditional_expression"},
+	Logical: []string{"binary_expression"},
+	Ops:     []string{"&&", "||"},
 }
 
-func (a *TreeSitterAdapter) Decision(n *sitter.Node) (Treesitter.DecisionKind, *sitter.Node) {
-	if isAlternativeOfIf(n) {
-		if n.Type() == "if_statement" {
-			// else-if: return the node itself as body so the whole chain
-			// (condition, consequence, nested alternative) is re-visited and
-			// deeper else-if/else branches keep being counted.
-			return Treesitter.DecElif, n
+func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
+	kind := csDecisions.Classify(n, a.src)
+	switch kind {
+	case Treesitter.DecCase, Treesitter.DecDefault:
+		// `case` and `default` are also keywords outside of a switch (goto
+		// case, the default(T) expression): only a switch label is a branch
+		if n.Type() == "case" || n.Type() == "default" {
+			if p := n.Parent(); p == nil || p.Type() != "switch_section" {
+				return Treesitter.DecNone
+			}
 		}
-		// bare else branch (block or single statement)
-		return Treesitter.DecElse, n
+		// `_ => ...` is the catch-all arm of a switch expression
+		if kind == Treesitter.DecCase && Treesitter.HasChildOfType(n, "discard") {
+			return Treesitter.DecDefault
+		}
+	case Treesitter.DecNone:
+		if Treesitter.IsElseBranch(n, "if_statement") {
+			return Treesitter.DecElse
+		}
 	}
+	return kind
+}
 
-	switch n.Type() {
-	case "if_statement":
-		return Treesitter.DecIf, n.ChildByFieldName("consequence")
-
-	case "switch_statement":
-		return Treesitter.DecSwitch, n.ChildByFieldName("body")
-
-	case "switch_expression":
-		// arms are direct children; EachChildBody filters them
-		return Treesitter.DecSwitch, n
-
-	case "switch_section", "switch_expression_arm":
-		return Treesitter.DecCase, n
-
-	case "for_statement", "foreach_statement", "while_statement", "do_statement":
-		return Treesitter.DecLoop, n.ChildByFieldName("body")
-	}
-	// conditional_expression (ternary) and catch_clause intentionally left
-	// out, consistent with the other engines.
-	return Treesitter.DecNone, nil
+func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
+	return csDecisions.LogicalOperator(n, a.src)
 }
 
 func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
@@ -287,9 +287,6 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	}
 	return []Treesitter.ImportItem{{Module: module, Name: alias}}
 }
-
-// CountElseIfAsIf: treat else-if as if for complexity aggregation (consistent with Go/PHP/TS)
-func (a *TreeSitterAdapter) CountElseIfAsIf() bool { return true }
 
 // CountComments counts C# comment lines (//, /// and /* */) in the given range.
 // CommentMarkers declares C# comment tokens: "//" and "/* */" only.

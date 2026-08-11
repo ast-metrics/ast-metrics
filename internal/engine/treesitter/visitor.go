@@ -279,11 +279,13 @@ func (v *Visitor) namespaceSeparator() string {
 }
 
 func (v *Visitor) Visit(node *sitter.Node) {
-	// The first call receives the root node: collect logical lines for the
-	// whole file before descending.
+	// The first call receives the root node: collect logical lines and the
+	// file-level decisions (a script can branch outside of any function) for
+	// the whole file before descending.
 	if v.logicalLines == nil {
 		v.logicalLines = map[int]bool{}
 		v.collectLogicalLines(node)
+		v.collectDecisions(node, v.file.Stmts)
 	}
 
 	switch {
@@ -397,6 +399,10 @@ func (v *Visitor) Visit(node *sitter.Node) {
 			}
 		}
 
+		// decisions written directly in the class body (field initializers,
+		// static blocks) belong to the class, not to any of its methods
+		v.collectDecisions(node, c.Stmts)
+
 		v.pushClass(c)
 		v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
 		v.popClass()
@@ -446,6 +452,10 @@ func (v *Visitor) Visit(node *sitter.Node) {
 				v.receiverMethods = append(v.receiverMethods, receiverMethod{fn: fn, receiver: receiver})
 			}
 		}
+		// the whole declaration is scanned, not only the body: a default
+		// argument value can hold a ternary or a boolean operator
+		v.collectDecisions(node, fn.Stmts)
+
 		v.pushFunc(fn)
 		v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
 		// optional: extract operators/operands from source per adapter
@@ -510,76 +520,128 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		}
 	}
 
-	// Decisions
-	if kind, body := v.ad.Decision(node); kind != DecNone {
-		st := v.curStmts()
-		switch kind {
-		case DecIf:
-			ifn := &pb.StmtDecisionIf{Stmts: engine.FactoryStmts()}
-			st.StmtDecisionIf = append(st.StmtDecisionIf, ifn)
-			// Visit the if body
-			v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
-
-			// Iterate over siblings elif/else of if_statement
-			for i := 0; i < int(node.ChildCount()); i++ {
-				ch := node.Child(i)
-				k2, b2 := v.ad.Decision(ch)
-				switch k2 {
-				case DecElif:
-					// If adapter wants elseif to be treated as an if (PHP), record only as if; otherwise record as elseif
-					if x, ok := v.ad.(interface{ CountElseIfAsIf() bool }); ok && x.CountElseIfAsIf() {
-						st.StmtDecisionIf = append(st.StmtDecisionIf, &pb.StmtDecisionIf{Stmts: engine.FactoryStmts()})
-					} else {
-						st.StmtDecisionElseIf = append(st.StmtDecisionElseIf, &pb.StmtDecisionElseIf{Stmts: engine.FactoryStmts()})
-					}
-					v.ad.EachChildBody(b2, func(cci *sitter.Node) { v.Visit(cci) })
-				case DecElse:
-					el := &pb.StmtDecisionElse{Stmts: engine.FactoryStmts()}
-					st.StmtDecisionElse = append(st.StmtDecisionElse, el)
-					v.ad.EachChildBody(b2, func(cci *sitter.Node) { v.Visit(cci) })
-				}
-			}
-			return
-
-		case DecElif:
-			// If adapter wants elseif as if (PHP), record only as if; else record as elseif
-			if x, ok := v.ad.(interface{ CountElseIfAsIf() bool }); ok && x.CountElseIfAsIf() {
-				st.StmtDecisionIf = append(st.StmtDecisionIf, &pb.StmtDecisionIf{Stmts: engine.FactoryStmts()})
-			} else {
-				st.StmtDecisionElseIf = append(st.StmtDecisionElseIf, &pb.StmtDecisionElseIf{Stmts: engine.FactoryStmts()})
-			}
-			v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
-			return
-
-		case DecElse:
-			el := &pb.StmtDecisionElse{Stmts: engine.FactoryStmts()}
-			st.StmtDecisionElse = append(st.StmtDecisionElse, el)
-			v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
-			return
-
-		case DecLoop:
-			lp := &pb.StmtLoop{Stmts: engine.FactoryStmts()}
-			st.StmtLoop = append(st.StmtLoop, lp)
-			v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
-			return
-
-		case DecSwitch:
-			sw := &pb.StmtDecisionSwitch{Stmts: engine.FactoryStmts()}
-			st.StmtDecisionSwitch = append(st.StmtDecisionSwitch, sw)
-			v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
-			return
-
-		case DecCase:
-			cs := &pb.StmtDecisionCase{Stmts: engine.FactoryStmts()}
-			st.StmtDecisionCase = append(st.StmtDecisionCase, cs)
-			v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
-			return
-		}
-	}
-
 	// Fallback
 	for i := 0; i < int(node.ChildCount()); i++ {
 		v.Visit(node.Child(i))
+	}
+}
+
+// isScopeBoundary reports whether a node opens a scope that owns its own
+// decisions. collectDecisions stops there, so a method never inflates the
+// class that declares it and a closure never inflates its enclosing function.
+func (v *Visitor) isScopeBoundary(n *sitter.Node) bool {
+	if n == nil {
+		return false
+	}
+	if v.ad.IsClass(n) || v.ad.IsFunction(n) {
+		return true
+	}
+	if ia, ok := v.ad.(InterfaceAware); ok && ia.IsInterface(n) {
+		return true
+	}
+	return false
+}
+
+// collectDecisions records, on target, every decision point of the subtree
+// rooted at scope, excluding the scopes nested inside it.
+//
+// It walks the whole subtree rather than following the structural traversal:
+// a decision can hide anywhere, including in the condition of another decision
+// (`if a && b`), in a case branch or in a default argument. Nodes are recorded
+// flat, each with its location, because what a metric needs is how many
+// branches a scope has and where they are, not how they nest.
+func (v *Visitor) collectDecisions(scope *sitter.Node, target *pb.Stmts) {
+	if scope == nil || target == nil {
+		return
+	}
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n == nil {
+			return
+		}
+		v.recordDecision(n, target)
+		for i := 0; i < int(n.ChildCount()); i++ {
+			if ch := n.Child(i); !v.isScopeBoundary(ch) {
+				walk(ch)
+			}
+		}
+	}
+	// the scope node itself is not a decision: start at its children
+	for i := 0; i < int(scope.ChildCount()); i++ {
+		if ch := scope.Child(i); !v.isScopeBoundary(ch) {
+			walk(ch)
+		}
+	}
+}
+
+// decisionLocation returns the source range a decision covers.
+//
+// For an if, the else branch is cut out: `if a {} else if b {}` is a chain of
+// sibling branches, not two nested ones, and a metric reading these ranges as
+// nesting must not see a depth of two there.
+func (v *Visitor) decisionLocation(n *sitter.Node, kind DecisionKind) *pb.StmtLocationInFile {
+	loc := locationOf(n)
+	if loc == nil || kind != DecIf {
+		return loc
+	}
+	// grammars without an else node (Go, Java, C#) expose it as a field
+	alt := n.ChildByFieldName("alternative")
+	if alt == nil {
+		// the others (PHP, TypeScript, Python, Rust) make it a child clause
+		for i := 0; i < int(n.ChildCount()) && alt == nil; i++ {
+			switch v.ad.Decision(n.Child(i)) {
+			case DecElse, DecElif:
+				alt = n.Child(i)
+			}
+		}
+	}
+	if alt == nil {
+		return loc
+	}
+	loc.EndLine = int32(alt.StartPoint().Row) + 1
+	loc.EndFilePos = int32(alt.StartByte())
+	return loc
+}
+
+func (v *Visitor) recordDecision(n *sitter.Node, target *pb.Stmts) {
+	kind := v.ad.Decision(n)
+	loc := v.decisionLocation(n, kind)
+	switch kind {
+	case DecIf:
+		target.StmtDecisionIf = append(target.StmtDecisionIf,
+			&pb.StmtDecisionIf{Stmts: engine.FactoryStmts(), Location: loc})
+	case DecElif:
+		target.StmtDecisionElseIf = append(target.StmtDecisionElseIf,
+			&pb.StmtDecisionElseIf{Stmts: engine.FactoryStmts(), Location: loc})
+	case DecElse:
+		target.StmtDecisionElse = append(target.StmtDecisionElse,
+			&pb.StmtDecisionElse{Stmts: engine.FactoryStmts(), Location: loc})
+	case DecLoop:
+		target.StmtLoop = append(target.StmtLoop,
+			&pb.StmtLoop{Stmts: engine.FactoryStmts(), Location: loc})
+	case DecSwitch:
+		target.StmtDecisionSwitch = append(target.StmtDecisionSwitch,
+			&pb.StmtDecisionSwitch{Stmts: engine.FactoryStmts(), Location: loc})
+	case DecCase:
+		target.StmtDecisionCase = append(target.StmtDecisionCase,
+			&pb.StmtDecisionCase{Stmts: engine.FactoryStmts(), Location: loc})
+	case DecCatch:
+		target.StmtDecisionCatch = append(target.StmtDecisionCatch,
+			&pb.StmtDecisionCatch{Stmts: engine.FactoryStmts(), Location: loc})
+	case DecTernary:
+		target.StmtDecisionTernary = append(target.StmtDecisionTernary,
+			&pb.StmtDecisionTernary{Stmts: engine.FactoryStmts(), Location: loc})
+	case DecLogical:
+		op := ""
+		if lo, ok := v.ad.(interface {
+			LogicalOperator(*sitter.Node) string
+		}); ok {
+			op = lo.LogicalOperator(n)
+		}
+		target.StmtDecisionLogical = append(target.StmtDecisionLogical,
+			&pb.StmtDecisionLogical{Stmts: engine.FactoryStmts(), Location: loc, Operator: op})
+	case DecDefault:
+		// the fallback branch of a switch opens no new path
 	}
 }
 

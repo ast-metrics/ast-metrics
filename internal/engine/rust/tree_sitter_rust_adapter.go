@@ -174,43 +174,49 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	}
 }
 
-func (a *TreeSitterAdapter) Decision(n *sitter.Node) (Treesitter.DecisionKind, *sitter.Node) {
-	switch n.Type() {
-	case "if_expression":
-		if b := firstChildOfType(n, "block"); b != nil {
-			return Treesitter.DecIf, b
-		}
-		return Treesitter.DecIf, nil
-	case "else_clause":
-		if b := firstChildOfType(n, "block"); b != nil {
-			return Treesitter.DecElse, b
-		}
-		return Treesitter.DecElse, nil
-	case "if_let_expression": // treat as if
-		if b := firstChildOfType(n, "block"); b != nil {
-			return Treesitter.DecIf, b
-		}
-		return Treesitter.DecIf, nil
-	case "match_expression":
-		// let EachChildBody enumerate arms
-		return Treesitter.DecSwitch, n
-	case "match_arm":
-		// body may be an expression or block; prefer block
-		if b := firstChildOfType(n, "block"); b != nil {
-			return Treesitter.DecCase, b
-		}
-		// fallback: last child
-		if n.ChildCount() > 0 {
-			return Treesitter.DecCase, n.Child(int(n.ChildCount() - 1))
-		}
-		return Treesitter.DecCase, nil
-	case "for_expression", "while_expression", "loop_expression":
-		if b := firstChildOfType(n, "block"); b != nil {
-			return Treesitter.DecLoop, b
-		}
-		return Treesitter.DecLoop, nil
+// rustDecisions maps the Rust grammar onto the shared complexity model.
+//
+// Rust has no ternary and no exception handler. `if let` and `while let` are
+// the conditional forms of `if` and `while` and count as such. An `else if` is
+// an else_clause holding an if_expression: the else costs nothing and the
+// nested if is counted on its own. The `_ => ...` arm is demoted to a Default
+// by Decision below.
+//
+// The `?` operator is counted as an if, because that is what it is: `foo()?`
+// returns from the function when foo fails, so it opens the same branch as the
+// `if err != nil { return err }` it replaces in Go. Leaving it out would make
+// idiomatic Rust look simpler than the very same code written elsewhere. It is
+// a try_expression, a node distinct from the `?Sized` of a trait bound, so a
+// relaxed bound is never mistaken for a branch.
+var rustDecisions = &Treesitter.DecisionSpec{
+	If:      []string{"if_expression", "if_let_expression", "try_expression"},
+	Else:    []string{"else_clause"},
+	Loop:    []string{"for_expression", "while_expression", "while_let_expression", "loop_expression"},
+	Switch:  []string{"match_expression"},
+	Case:    []string{"match_arm"},
+	Logical: []string{"binary_expression"},
+	Ops:     []string{"&&", "||"},
+}
+
+func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
+	kind := rustDecisions.Classify(n, a.src)
+	if kind == Treesitter.DecCase && isWildcardArm(n, a.src) {
+		return Treesitter.DecDefault
 	}
-	return Treesitter.DecNone, nil
+	return kind
+}
+
+func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
+	return rustDecisions.LogicalOperator(n, a.src)
+}
+
+// isWildcardArm reports whether a match arm is the catch-all one (`_ => ...`).
+func isWildcardArm(n *sitter.Node, src []byte) bool {
+	pattern := firstChildOfType(n, "match_pattern")
+	if pattern == nil || int(pattern.EndByte()) > len(src) {
+		return false
+	}
+	return strings.TrimSpace(string(src[pattern.StartByte():pattern.EndByte()])) == "_"
 }
 
 func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {

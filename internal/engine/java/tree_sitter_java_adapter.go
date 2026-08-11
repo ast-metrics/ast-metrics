@@ -193,49 +193,38 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	}
 }
 
-// isAlternativeOfIf reports whether n is the "alternative" field of a parent
-// if_statement (i.e. the else branch). tree-sitter-java has no else_clause
-// wrapper node: `else if` is an if_statement directly in the alternative
-// field, and a bare `else` body is a block/statement in that field.
-func isAlternativeOfIf(n *sitter.Node) bool {
-	p := n.Parent()
-	if p == nil || p.Type() != "if_statement" {
-		return false
-	}
-	alt := p.ChildByFieldName("alternative")
-	return alt != nil && alt.StartByte() == n.StartByte() && alt.EndByte() == n.EndByte() && alt.Type() == n.Type()
+// javaDecisions maps the Java grammar onto the shared complexity model.
+//
+// Java has no else_clause node: the else branch is the `alternative` field of
+// if_statement, holding either a block (a plain else, free) or another
+// if_statement (an else-if, counted as the if it is). Branches are counted on
+// switch_label, which exists in both the classic and the arrow form, so that
+// two labels sharing one body (`case 1: case 2:`) count as the two entry
+// points they are. switch_expression covers statements and expressions alike.
+var javaDecisions = &Treesitter.DecisionSpec{
+	If:      []string{"if_statement"},
+	Loop:    []string{"for_statement", "enhanced_for_statement", "while_statement", "do_statement"},
+	Switch:  []string{"switch_expression"},
+	Case:    []string{"switch_label"},
+	Catch:   []string{"catch_clause"},
+	Ternary: []string{"ternary_expression"},
+	Logical: []string{"binary_expression"},
+	Ops:     []string{"&&", "||"},
 }
 
-func (a *TreeSitterAdapter) Decision(n *sitter.Node) (Treesitter.DecisionKind, *sitter.Node) {
-	if isAlternativeOfIf(n) {
-		if n.Type() == "if_statement" {
-			// else-if: return the node itself as body so the whole chain
-			// (condition, consequence, nested alternative) is re-visited and
-			// deeper else-if/else branches keep being counted.
-			return Treesitter.DecElif, n
-		}
-		// bare else branch (block or single statement)
-		return Treesitter.DecElse, n
+func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
+	kind := javaDecisions.Classify(n, a.src)
+	if kind == Treesitter.DecCase && Treesitter.HasChildOfType(n, "default") {
+		return Treesitter.DecDefault
 	}
-
-	switch n.Type() {
-	case "if_statement":
-		return Treesitter.DecIf, n.ChildByFieldName("consequence")
-
-	case "switch_expression":
-		// the Java grammar uses switch_expression for both switch statements
-		// and switch expressions
-		return Treesitter.DecSwitch, n.ChildByFieldName("body")
-
-	case "switch_block_statement_group", "switch_rule":
-		return Treesitter.DecCase, n
-
-	case "for_statement", "enhanced_for_statement", "while_statement", "do_statement":
-		return Treesitter.DecLoop, n.ChildByFieldName("body")
+	if kind == Treesitter.DecNone && Treesitter.IsElseBranch(n, "if_statement") {
+		return Treesitter.DecElse
 	}
-	// ternary_expression and catch_clause intentionally left out, consistent
-	// with the other engines.
-	return Treesitter.DecNone, nil
+	return kind
+}
+
+func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
+	return javaDecisions.LogicalOperator(n, a.src)
 }
 
 func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
@@ -266,9 +255,6 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	}
 	return []Treesitter.ImportItem{{Module: path, Name: ""}}
 }
-
-// CountElseIfAsIf: treat else-if as if for complexity aggregation (consistent with Go/PHP/TS)
-func (a *TreeSitterAdapter) CountElseIfAsIf() bool { return true }
 
 // IsLogicalNode reports whether a node begins a logical line. In Java, local
 // variable declarations are statements but their node type does not carry the

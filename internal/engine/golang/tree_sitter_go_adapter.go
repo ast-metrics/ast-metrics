@@ -163,73 +163,39 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	if body == nil {
 		return
 	}
-	switch body.Type() {
-	case "switch_statement", "expression_switch_statement", "type_switch_statement":
-		// Yield case_clause nodes wherever they are in the subtree
-		var walk func(*sitter.Node)
-		walk = func(n *sitter.Node) {
-			if n == nil {
-				return
-			}
-			if n.Type() == "case_clause" {
-				yield(n)
-				// do not return; keep walking
-			}
-			for i := 0; i < int(n.ChildCount()); i++ {
-				walk(n.Child(i))
-			}
-		}
-		walk(body)
-	default:
-		for i := 0; i < int(body.ChildCount()); i++ {
-			yield(body.Child(i))
-		}
+	for i := 0; i < int(body.ChildCount()); i++ {
+		yield(body.Child(i))
 	}
 }
 
-func (a *TreeSitterAdapter) Decision(n *sitter.Node) (Treesitter.DecisionKind, *sitter.Node) {
-	switch n.Type() {
-	case "if_statement":
-		return Treesitter.DecIf, firstChildOfType(n, "block")
-	case "else_clause", "else":
-		// could be else if or else
-		// detect else if by presence of an if-node inside the else structure
-		var foundIf bool
-		var walk func(*sitter.Node)
-		walk = func(x *sitter.Node) {
-			if x == nil || foundIf {
-				return
-			}
-			if strings.Contains(x.Type(), "if") {
-				foundIf = true
-				return
-			}
-			for i := 0; i < int(x.ChildCount()); i++ {
-				walk(x.Child(i))
-			}
-		}
-		walk(n)
-		if foundIf {
-			return Treesitter.DecElif, firstDescendantOfType(n, "block")
-		}
-		return Treesitter.DecElse, firstDescendantOfType(n, "block")
-	case "switch_statement", "expression_switch_statement", "type_switch_statement":
-		// return the node itself; EachChildBody will yield case_clause nodes
-		return Treesitter.DecSwitch, n
-	case "case_clause":
-		if b := firstDescendantOfType(n, "statement_block"); b != nil {
-			return Treesitter.DecCase, b
-		}
-		return Treesitter.DecCase, firstDescendantOfType(n, "block")
-	default:
-		// Some grammars may name case nodes differently (e.g., "case_statement", "case")
-		if strings.Contains(n.Type(), "case") && n.Type() != "case_identifier" {
-			return Treesitter.DecCase, firstDescendantOfType(n, "block")
-		}
-	case "for_statement", "range_clause":
-		return Treesitter.DecLoop, firstDescendantOfType(n, "block")
+// goDecisions maps the Go grammar onto the shared complexity model.
+//
+// Go has no ternary and no exception handler, so those kinds never occur. The
+// `else` branch is not a node of its own: it is the `alternative` field of
+// if_statement, holding either a block (a plain else, which costs nothing) or
+// another if_statement (an else-if, counted as the if it is). `range_clause`
+// and `for_clause` are children of `for_statement`, which is the single loop
+// node of the grammar, so only the latter is listed.
+var goDecisions = &Treesitter.DecisionSpec{
+	If:      []string{"if_statement"},
+	Loop:    []string{"for_statement"},
+	Switch:  []string{"expression_switch_statement", "type_switch_statement", "select_statement"},
+	Case:    []string{"expression_case", "type_case", "communication_case"},
+	Default: []string{"default_case"},
+	Logical: []string{"binary_expression"},
+	Ops:     []string{"&&", "||"},
+}
+
+func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
+	kind := goDecisions.Classify(n, a.src)
+	if kind == Treesitter.DecNone && Treesitter.IsElseBranch(n, "if_statement") {
+		return Treesitter.DecElse
 	}
-	return Treesitter.DecNone, nil
+	return kind
+}
+
+func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
+	return goDecisions.LogicalOperator(n, a.src)
 }
 
 func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
@@ -441,11 +407,6 @@ func goMethodAtLine(n *sitter.Node, line int) *sitter.Node {
 		}
 	}
 	return nil
-}
-
-// Align with PHP counting: treat else-if as if for complexity aggregation
-func (a *TreeSitterAdapter) CountElseIfAsIf() bool {
-	return true
 }
 
 // IsLogicalNode reports whether a node begins a logical line. On top of the

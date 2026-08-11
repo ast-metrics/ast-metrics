@@ -186,52 +186,38 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 }
 
 // ---- Decisions & Loops ----
-func (a *TreeSitterAdapter) Decision(n *sitter.Node) (Treesitter.DecisionKind, *sitter.Node) {
-	switch n.Type() {
-	case "if_statement":
-		if b := firstChildOfType(n, "compound_statement"); b != nil {
-			return Treesitter.DecIf, b
-		}
-		return Treesitter.DecIf, nil
-	case "else_clause":
-		// Some grammars may represent "else if" as an else_clause containing an if_statement
-		if ifn := firstChildOfType(n, "if_statement"); ifn != nil {
-			if b := firstChildOfType(ifn, "compound_statement"); b != nil {
-				return Treesitter.DecElif, b
-			}
-			return Treesitter.DecElif, nil
-		}
-		if b := firstChildOfType(n, "compound_statement"); b != nil {
-			return Treesitter.DecElse, b
-		}
-		return Treesitter.DecElse, nil
-	case "else_if_clause":
-		if b := firstChildOfType(n, "compound_statement"); b != nil {
-			return Treesitter.DecElif, b
-		}
-		return Treesitter.DecElif, nil
-	case "switch_statement":
-		return Treesitter.DecSwitch, n
-	case "switch_block":
-		// Do not count an extra switch; cases will be visited from switch_statement
-		return Treesitter.DecNone, nil
-	case "case_statement":
-		if b := firstChildOfType(n, "compound_statement"); b != nil {
-			return Treesitter.DecCase, b
-		}
-		return Treesitter.DecCase, nil
-	case "default_statement":
-		if b := firstChildOfType(n, "compound_statement"); b != nil {
-			return Treesitter.DecCase, b
-		}
-		return Treesitter.DecCase, nil
-	case "while_statement", "for_statement", "foreach_statement", "do_statement":
-		if b := firstChildOfType(n, "compound_statement"); b != nil {
-			return Treesitter.DecLoop, b
-		}
-		return Treesitter.DecLoop, nil
-	}
-	return Treesitter.DecNone, nil
+
+// phpDecisions maps the PHP grammar onto the shared complexity model.
+//
+// PHP writes `else if` as an else_clause holding an if_statement, and `elseif`
+// as a dedicated else_if_clause. Only the second is an Elif here: in the first
+// form the nested if_statement is itself counted, so counting the else_clause
+// too would count the same branch twice.
+//
+// `?:` and `??` are both conditional_expression / binary_expression, but only
+// the ternary is a branch of the control flow; `??` is left out to stay aligned
+// with lizard, phploc and PMD, and with the languages that have no such
+// operator.
+var phpDecisions = &Treesitter.DecisionSpec{
+	If:      []string{"if_statement"},
+	Elif:    []string{"else_if_clause"},
+	Else:    []string{"else_clause"},
+	Loop:    []string{"while_statement", "for_statement", "foreach_statement", "do_statement"},
+	Switch:  []string{"switch_statement", "match_expression"},
+	Case:    []string{"case_statement", "match_conditional_expression"},
+	Default: []string{"default_statement", "match_default_expression"},
+	Catch:   []string{"catch_clause"},
+	Ternary: []string{"conditional_expression"},
+	Logical: []string{"binary_expression"},
+	Ops:     []string{"&&", "||", "and", "or"},
+}
+
+func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
+	return phpDecisions.Classify(n, a.src)
+}
+
+func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
+	return phpDecisions.LogicalOperator(n, a.src)
 }
 
 // ---- Imports (use statements) ----
@@ -969,10 +955,6 @@ func dedup(in []Treesitter.ImportItem) []Treesitter.ImportItem {
 		out = append(out, it)
 	}
 	return out
-}
-
-func (a *TreeSitterAdapter) CountElseIfAsIf() bool {
-	return true
 }
 
 func (a *TreeSitterAdapter) findNamespace() string {

@@ -41,11 +41,17 @@ func maxDepthStmts(s *pb.Stmts, cur int) int {
 	// Collect intervals (start,end) for all control structures within this subtree
 	type interval struct{ start, end int32 }
 	var intervals []interval
+	// A function is reachable both from its file and from its namespace, and a
+	// method both from its class and from the namespace. Without this set the
+	// same control structure would be measured several times and the depth
+	// would be a multiple of the real one.
+	seen := map[*pb.Stmts]bool{}
 	var collect func(st *pb.Stmts)
 	collect = func(st *pb.Stmts) {
-		if st == nil {
+		if st == nil || seen[st] {
 			return
 		}
+		seen[st] = true
 		add := func(loc *pb.StmtLocationInFile) {
 			if loc == nil {
 				return

@@ -4,18 +4,6 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
-type DecisionKind int
-
-const (
-	DecNone DecisionKind = iota
-	DecIf
-	DecElif
-	DecElse
-	DecLoop
-	DecSwitch
-	DecCase
-)
-
 type ImportItem struct {
 	Module string // e.g., "pkg.sub" (for `from pkg.sub import X`) or full module for `import pkg.sub`
 	Name   string // imported symbol (empty for plain `import pkg.sub`)
@@ -38,8 +26,11 @@ type LangAdapter interface {
 	EachChildBody(n *sitter.Node, yield func(*sitter.Node))
 	EachParamIdent(params *sitter.Node, yield func(string))
 
-	// decisions
-	Decision(n *sitter.Node) (DecisionKind, *sitter.Node)
+	// Decision classifies a grammar node against the shared cyclomatic
+	// complexity model documented in decision.go. It is called on every node of
+	// a scope, so it must answer on the node alone, without assuming anything
+	// about the order in which nodes are seen.
+	Decision(n *sitter.Node) DecisionKind
 
 	// imports
 	Imports(n *sitter.Node) []ImportItem

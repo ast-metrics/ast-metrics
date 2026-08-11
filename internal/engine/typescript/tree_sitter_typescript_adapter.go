@@ -203,37 +203,32 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	}
 }
 
-func (a *TreeSitterAdapter) Decision(n *sitter.Node) (Treesitter.DecisionKind, *sitter.Node) {
-	switch n.Type() {
-	case "if_statement":
-		if b := n.ChildByFieldName("consequence"); b != nil {
-			return Treesitter.DecIf, b
-		}
-		return Treesitter.DecIf, firstChildOfType(n, "statement_block")
+// tsDecisions maps the TypeScript / JavaScript grammar onto the shared
+// complexity model.
+//
+// `for_in_statement` covers both `for..in` and `for..of`. An `else if` is an
+// else_clause holding an if_statement: the else costs nothing and the nested
+// if is counted on its own. `??` is deliberately not a logical operator here,
+// for the same reason as in PHP.
+var tsDecisions = &Treesitter.DecisionSpec{
+	If:      []string{"if_statement"},
+	Else:    []string{"else_clause"},
+	Loop:    []string{"for_statement", "for_in_statement", "while_statement", "do_statement"},
+	Switch:  []string{"switch_statement"},
+	Case:    []string{"switch_case"},
+	Default: []string{"switch_default"},
+	Catch:   []string{"catch_clause"},
+	Ternary: []string{"ternary_expression"},
+	Logical: []string{"binary_expression"},
+	Ops:     []string{"&&", "||"},
+}
 
-	case "else_clause":
-		// else if: the else clause contains an if_statement
-		if ifNode := firstChildOfType(n, "if_statement"); ifNode != nil {
-			return Treesitter.DecElif, nil
-		}
-		return Treesitter.DecElse, firstChildOfType(n, "statement_block")
+func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
+	return tsDecisions.Classify(n, a.src)
+}
 
-	case "switch_statement":
-		return Treesitter.DecSwitch, firstChildOfType(n, "switch_body")
-
-	case "switch_case":
-		return Treesitter.DecCase, n
-
-	case "switch_default":
-		return Treesitter.DecCase, n
-
-	case "for_statement", "for_in_statement", "while_statement", "do_statement":
-		if b := n.ChildByFieldName("body"); b != nil {
-			return Treesitter.DecLoop, b
-		}
-		return Treesitter.DecLoop, firstChildOfType(n, "statement_block")
-	}
-	return Treesitter.DecNone, nil
+func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
+	return tsDecisions.LogicalOperator(n, a.src)
 }
 
 func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
@@ -307,9 +302,6 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	}
 	return items
 }
-
-// CountElseIfAsIf: treat else-if as if for complexity aggregation (consistent with Go/PHP)
-func (a *TreeSitterAdapter) CountElseIfAsIf() bool { return true }
 
 // IsLogicalNode reports whether a node begins a logical line. In TypeScript,
 // "const"/"let"/"var" declarations are statements but their node types do not

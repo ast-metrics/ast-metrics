@@ -347,7 +347,7 @@ public class Foo {
 	result := parseJava(t, src)
 	fn := result.Stmts.StmtClass[0].Stmts.StmtFunction[0]
 	assert.Equal(t, 1, len(fn.Stmts.StmtDecisionSwitch))
-	assert.Equal(t, 3, len(fn.Stmts.StmtDecisionCase), "2 cases + default")
+	assert.Equal(t, 2, len(fn.Stmts.StmtDecisionCase), "2 cases; default is the fallback path")
 }
 
 func TestJavaSwitchExpressionArrowStyle(t *testing.T) {
@@ -365,7 +365,7 @@ public class Foo {
 	result := parseJava(t, src)
 	fn := result.Stmts.StmtClass[0].Stmts.StmtFunction[0]
 	assert.Equal(t, 1, len(fn.Stmts.StmtDecisionSwitch))
-	assert.Equal(t, 3, len(fn.Stmts.StmtDecisionCase), "2 case rules + default rule")
+	assert.Equal(t, 2, len(fn.Stmts.StmtDecisionCase), "2 case rules; the default rule is the fallback path")
 }
 
 func TestJavaForLoop(t *testing.T) {
@@ -730,8 +730,8 @@ public class Foo {
 	result := parseJava(t, src)
 	analyzer.AnalyzeFile(result)
 	fn := result.Stmts.StmtClass[0].Stmts.StmtFunction[0]
-	// 1 (function) + loop + switch + 2 cases = 5
-	assert.Equal(t, int32(5), *fn.Stmts.Analyze.Complexity.Cyclomatic)
+	// 1 (function) + loop + case 1 = 3; the switch and its default are free
+	assert.Equal(t, int32(3), *fn.Stmts.Analyze.Complexity.Cyclomatic)
 }
 
 func TestJavaIntegrationHalsteadAndMaintainability(t *testing.T) {
