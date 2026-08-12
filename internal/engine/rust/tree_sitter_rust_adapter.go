@@ -118,12 +118,50 @@ func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool {
 }
 
 func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
-	// Rust has no classes; treat struct, enum, trait, impl as class-like containers
+	// Rust has no classes; treat struct, enum, union and trait as class-like
+	// containers. An `impl` block is not one of them: it declares no type, it
+	// holds the methods of a type declared elsewhere, so its methods are bound
+	// to that type by ReceiverTypeName below.
 	switch n.Type() {
-	case "struct_item", "enum_item", "union_item", "trait_item", "impl_item":
+	case "struct_item", "enum_item", "union_item", "trait_item":
 		return true
 	}
 	return false
+}
+
+// ReceiverTypeName returns the type a method belongs to when it is declared in
+// an `impl` block rather than inside the type itself.
+//
+// Rust always declares methods this way, so without it a struct would hold no
+// method at all: every class-level metric would describe its field list and
+// nothing else.
+func (a *TreeSitterAdapter) ReceiverTypeName(n *sitter.Node) string {
+	if n == nil || !a.IsFunction(n) {
+		return ""
+	}
+	for p := n.Parent(); p != nil; p = p.Parent() {
+		if p.Type() != "impl_item" {
+			continue
+		}
+		// `impl Trait for Type` carries both; the methods belong to Type
+		if t := p.ChildByFieldName("type"); t != nil {
+			return lastPathSegment(a.text(t))
+		}
+		return ""
+	}
+	return ""
+}
+
+// lastPathSegment keeps the type name out of a qualified path (`a::b::T` -> `T`)
+// and drops any generic arguments, so that `impl Vec<T>` binds to `Vec`.
+func lastPathSegment(name string) string {
+	if i := strings.Index(name, "<"); i > 0 {
+		name = name[:i]
+	}
+	if i := strings.LastIndex(name, "::"); i >= 0 {
+		name = name[i+2:]
+	}
+	return strings.TrimSpace(name)
 }
 
 func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
@@ -336,93 +374,89 @@ func dedup(in []Treesitter.ImportItem) []Treesitter.ImportItem {
 	return out
 }
 
-// CountComments counts Rust comment lines (//, ///, //! and /* ... */ blocks)
-// in the given 1-based inclusive line range. Block delimiter lines are
-// comment lines.
-func (a *TreeSitterAdapter) CountComments(lines []string, start, end int) int {
-	cnt := 0
-	inBlock := false
-	for i := start - 1; i < end && i < len(lines); i++ {
-		ln := strings.TrimSpace(lines[i])
-		if ln == "" {
-			continue
-		}
-		clean := stripRustStrings(ln)
-		if inBlock {
-			cnt++
-			if strings.Contains(clean, "*/") {
-				inBlock = false
-			}
-			continue
-		}
-		if strings.HasPrefix(clean, "//") {
-			cnt++
-			continue
-		}
-		if strings.HasPrefix(clean, "/*") {
-			cnt++
-			if !strings.Contains(clean, "*/") {
-				inBlock = true
-			}
-			continue
-		}
-	}
-	return cnt
+// rustStatements maps the Rust grammar onto the shared logical-lines model.
+//
+// Rust is expression-oriented: `if`, `for`, `match` and the rest are
+// expressions, and only some of them end up wrapped in an `expression_statement`.
+// They are therefore listed directly. Listing them also covers the `let x = if
+// ... ` form for free, since both nodes start on the same line and a line is
+// counted once.
+//
+// `match_arm` is absent: an arm is the label of a branch, like a `case` in the
+// six other languages, and what it holds counts on its own lines.
+//
+// `const_item` and `static_item` are local declarations: at file scope they
+// declare a member of the module, inside a function they are instructions.
+var rustStatements = &Treesitter.StatementSpec{
+	Statement: []string{
+		"expression_statement", "let_declaration",
+		"if_expression",
+		"for_expression", "while_expression", "loop_expression",
+		"match_expression",
+		"return_expression", "break_expression", "continue_expression",
+		"yield_expression", "try_expression", "unsafe_block",
+	},
+	LocalDeclaration: []string{"const_item", "static_item", "type_item"},
 }
 
-// IsLogicalNode reports whether a node begins a logical line. Rust is
-// expression-oriented: on top of the default statement types, "let" bindings
-// and match arms count, as does the tail expression of a block (a direct
-// block child with no wrapping statement node).
-func (a *TreeSitterAdapter) IsLogicalNode(n *sitter.Node) bool {
-	t := n.Type()
-	switch t {
-	case "let_declaration", "match_arm":
-		return true
+// Statement classifies a node against the shared logical-lines model, adding
+// the one construct no node type can express: the tail expression of a block.
+//
+// The last expression of a block is the value that block yields, which is how
+// Rust spells a `return`, and it can be any expression node at all. Without it,
+// `fn f() -> i32 { self.x }` would hold no logical line while the same function
+// written anywhere else holds one.
+func (a *TreeSitterAdapter) Statement(n *sitter.Node) Treesitter.StatementKind {
+	if kind := rustStatements.Classify(n); kind != Treesitter.NotAStatement {
+		return kind
+	}
+	if a.isTailExpression(n) {
+		return Treesitter.IsStatement
+	}
+	return Treesitter.NotAStatement
+}
+
+// isTailExpression reports whether n is the value a block yields.
+func (a *TreeSitterAdapter) isTailExpression(n *sitter.Node) bool {
+	if n == nil || !n.IsNamed() {
+		return false
+	}
+	switch n.Type() {
 	case "attribute_item", "inner_attribute_item", "line_comment", "block_comment", "block":
 		return false
 	}
-	if Treesitter.IsDefaultLogicalNode(t) {
-		return true
+	parent := n.Parent()
+	if parent == nil || parent.Type() != "block" {
+		return false
 	}
-	// tail expression of a block
-	if parent := n.Parent(); parent != nil && parent.Type() == "block" && n.IsNamed() {
-		return true
-	}
-	return false
+	return lastNamedChild(parent) == n.StartByte()
 }
 
-// CommentMarkers declares Rust comment tokens: "//" and "/* */" only.
-// "#" introduces attributes (#[derive(...)]), which are code, not comments.
-func (a *TreeSitterAdapter) CommentMarkers() engine.CommentMarkers {
-	return engine.CommentMarkers{SlashSlash: true, SlashStar: true}
+// lastNamedChild returns the start byte of the last named child of n, or a
+// value no node can have when it has none.
+func lastNamedChild(n *sitter.Node) uint32 {
+	last := ^uint32(0)
+	for i := 0; i < int(n.ChildCount()); i++ {
+		if ch := n.Child(i); ch.IsNamed() {
+			last = ch.StartByte()
+		}
+	}
+	return last
 }
 
-// stripRustStrings removes content inside double-quoted strings so comment
-// markers embedded in literals (e.g. URLs) are not miscounted. Single quotes
-// are left untouched: in Rust they also introduce lifetimes ('a), which have
-// no closing quote and would corrupt the scan.
-func stripRustStrings(s string) string {
-	out := make([]rune, 0, len(s))
-	inDq := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '\\' { // escape
-			if i+1 < len(s) {
-				i++
-			}
-			continue
-		}
-		if c == '"' {
-			inDq = !inDq
-			continue
-		}
-		if inDq {
-			continue
-		}
-		out = append(out, rune(c))
+// CommentSyntax declares Rust comment tokens: "//" (which also opens the "///"
+// and "//!" doc forms) and "/* */". "#" introduces an attribute
+// (#[derive(...)]), which is code, not a comment. A single quote also opens a
+// lifetime ('a), which has no closing quote to pair it with, so it must not be
+// read as a string delimiter.
+func (a *TreeSitterAdapter) CommentSyntax() engine.CommentSyntax {
+	return engine.CommentSyntax{
+		Line:          []string{"//"},
+		BlockOpen:     "/*",
+		BlockClose:    "*/",
+		Quote:         []rune{'"'},
+		LifetimeQuote: true,
 	}
-	return string(out)
 }
 
 // rustOperatorTokens lists the anonymous token types counted as Halstead

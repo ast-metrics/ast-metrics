@@ -365,26 +365,55 @@ func dedup(in []Treesitter.ImportItem) []Treesitter.ImportItem {
 	return out
 }
 
-// CountComments counts full-line "#" comments in the given 1-based inclusive
-// line range.
-func (a *TreeSitterAdapter) CountComments(lines []string, start, end int) int {
-	cnt := 0
-	for i := start - 1; i < end && i < len(lines); i++ {
-		ln := strings.TrimSpace(lines[i])
-		if ln == "" {
-			continue
-		}
-		if strings.HasPrefix(ln, "#") {
-			cnt++
-		}
-	}
-	return cnt
+// pythonStatements maps the Python grammar onto the shared logical-lines model.
+//
+// `elif_clause` is listed: it carries a condition, so it is the nested `if` that
+// it is. The other clauses (`else_clause`, `except_clause`, `finally_clause`,
+// `case_clause`) are branch headers and count nothing of their own.
+//
+// `pass_statement` is absent. `pass` is not work the program does, it is how
+// Python spells an empty block; counting it would make a Python stub bigger
+// than the same stub written with braces.
+//
+// A class attribute (`x = 0` in a class body) is an `expression_statement` like
+// any other, and is left out by the enclosing-scope rule of the shared model,
+// not by its type.
+var pythonStatements = &Treesitter.StatementSpec{
+	Statement: []string{
+		"expression_statement", "delete_statement", "assert_statement",
+		"if_statement", "elif_clause",
+		"for_statement", "while_statement", "with_statement",
+		"match_statement", "try_statement",
+		"return_statement", "break_statement", "continue_statement", "raise_statement",
+		"global_statement", "nonlocal_statement", "exec_statement", "print_statement",
+	},
 }
 
-// CommentMarkers declares Python comment tokens: only "#" starts a comment.
-// "//" is the floor division operator and "/* */" does not exist.
-func (a *TreeSitterAdapter) CommentMarkers() engine.CommentMarkers {
-	return engine.CommentMarkers{Hash: true}
+func (a *TreeSitterAdapter) Statement(n *sitter.Node) Treesitter.StatementKind {
+	kind := pythonStatements.Classify(n)
+	// a bare string expression is a docstring: documentation, not an
+	// instruction. Python spells with a string what the other languages spell
+	// with a comment block, and a documented function must not come out bigger
+	// for it.
+	if kind == Treesitter.IsStatement && n.Type() == "expression_statement" &&
+		Treesitter.IsStringExpression(n, "string", "concatenated_string") {
+		return Treesitter.NotAStatement
+	}
+	return kind
+}
+
+// CommentSyntax declares Python comment tokens: "#" starts a comment, "//" is
+// the floor division operator and "/* */" does not exist. A triple-quoted
+// string is the docstring of what follows it, so it is documentation, exactly
+// like a docblock in the other languages.
+func (a *TreeSitterAdapter) CommentSyntax() engine.CommentSyntax {
+	return engine.CommentSyntax{
+		Line:      []string{"#"},
+		DocString: []string{`"""`, `'''`},
+		Quote:     []rune{'"', '\''},
+		// a docstring may be raw or formatted: r"""...""", f"""..."""
+		LetterPrefixedStrings: true,
+	}
 }
 
 // pythonOperatorTokens lists the anonymous token types counted as Halstead

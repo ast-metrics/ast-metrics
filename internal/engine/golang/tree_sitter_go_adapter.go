@@ -409,85 +409,42 @@ func goMethodAtLine(n *sitter.Node, line int) *sitter.Node {
 	return nil
 }
 
-// IsLogicalNode reports whether a node begins a logical line. On top of the
-// default statement types, Go declares local variables with dedicated node
-// types that do not carry the "_statement" suffix.
-func (a *TreeSitterAdapter) IsLogicalNode(n *sitter.Node) bool {
-	switch n.Type() {
-	case "short_var_declaration", "var_declaration", "const_declaration":
-		return true
-	}
-	return Treesitter.IsDefaultLogicalNode(n.Type())
+// goStatements maps the Go grammar onto the shared logical-lines model.
+//
+// Go spells a package-level constant and a local one with the same node, so
+// `const_declaration`, `var_declaration` and `type_declaration` are listed as
+// local declarations: at file scope they declare a member of the package, and
+// only inside a function are they instructions. `short_var_declaration` has no
+// such ambiguity, it exists only in a function body.
+//
+// The case clauses of a switch and of a select are labels, not instructions:
+// what they hold counts on its own lines.
+var goStatements = &Treesitter.StatementSpec{
+	Statement: []string{
+		"assignment_statement", "expression_statement", "inc_statement", "dec_statement",
+		"short_var_declaration", "send_statement",
+		"if_statement", "for_statement",
+		"expression_switch_statement", "type_switch_statement", "select_statement",
+		"return_statement", "break_statement", "continue_statement",
+		"goto_statement", "fallthrough_statement", "labeled_statement",
+		"go_statement", "defer_statement",
+	},
+	LocalDeclaration: []string{"var_declaration", "const_declaration", "type_declaration"},
 }
 
-// CountComments counts Go comment lines (// and /* */) in the given range, ignoring markers inside strings
-// CommentMarkers declares Go comment tokens: "//" and "/* */" only.
-// "#" has no meaning in Go source.
-func (a *TreeSitterAdapter) CommentMarkers() engine.CommentMarkers {
-	return engine.CommentMarkers{SlashSlash: true, SlashStar: true}
+func (a *TreeSitterAdapter) Statement(n *sitter.Node) Treesitter.StatementKind {
+	return goStatements.Classify(n)
 }
 
-func (a *TreeSitterAdapter) CountComments(lines []string, start, end int) int {
-	cnt := 0
-	inBlock := false
-	for i := start - 1; i < end && i < len(lines); i++ {
-		ln := strings.TrimSpace(lines[i])
-		if ln == "" {
-			continue
-		}
-		clean := stripGoStrings(ln)
-		if inBlock {
-			cnt++
-			if strings.Contains(clean, "*/") {
-				inBlock = false
-			}
-			continue
-		}
-		if strings.HasPrefix(clean, "//") {
-			cnt++
-			continue
-		}
-		if strings.HasPrefix(clean, "/*") {
-			cnt++
-			if !strings.Contains(clean, "*/") {
-				inBlock = true
-			}
-			continue
-		}
+// CommentSyntax declares Go comment tokens: "//" and "/* */" only. "#" has no
+// meaning in Go source. Backticks open a raw string literal, whose content must
+// be ignored like any other string.
+func (a *TreeSitterAdapter) CommentSyntax() engine.CommentSyntax {
+	return engine.CommentSyntax{
+		Line:       []string{"//"},
+		BlockOpen:  "/*",
+		BlockClose: "*/",
+		Quote:      []rune{'"', '\''},
+		RawString:  []string{"`"},
 	}
-	return cnt
-}
-
-// stripGoStrings removes content inside backticks, double and single quotes
-func stripGoStrings(s string) string {
-	out := make([]rune, 0, len(s))
-	inBack := false
-	inDq := false
-	inSq := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '\\' { // escape
-			if i+1 < len(s) {
-				i++
-			}
-			continue
-		}
-		if !inDq && !inSq && c == '`' {
-			inBack = !inBack
-			continue
-		}
-		if !inBack && !inSq && c == '"' {
-			inDq = !inDq
-			continue
-		}
-		if !inBack && !inDq && c == '\'' {
-			inSq = !inSq
-			continue
-		}
-		if inBack || inDq || inSq {
-			continue
-		}
-		out = append(out, rune(c))
-	}
-	return string(out)
 }

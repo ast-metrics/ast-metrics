@@ -32,6 +32,11 @@ type LangAdapter interface {
 	// about the order in which nodes are seen.
 	Decision(n *sitter.Node) DecisionKind
 
+	// Statement classifies a grammar node against the shared logical-lines
+	// model documented in statement.go. Like Decision, it is called on every
+	// node of the tree and must answer on the node alone.
+	Statement(n *sitter.Node) StatementKind
+
 	// imports
 	Imports(n *sitter.Node) []ImportItem
 }

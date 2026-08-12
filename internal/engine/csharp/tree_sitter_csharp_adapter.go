@@ -291,39 +291,44 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 // CountComments counts C# comment lines (//, /// and /* */) in the given range.
 // CommentMarkers declares C# comment tokens: "//" and "/* */" only.
 // "#" introduces preprocessor directives (#region, #if), which are code, not comments.
-func (a *TreeSitterAdapter) CommentMarkers() engine.CommentMarkers {
-	return engine.CommentMarkers{SlashSlash: true, SlashStar: true}
+// csharpStatements maps the C# grammar onto the shared logical-lines model.
+//
+// `switch_section` holds the branches of a switch and is a label, not an
+// instruction. `field_declaration`, `property_declaration`,
+// `method_declaration`, `using_directive` and `namespace_declaration` declare
+// members: a `using` directive at the top of a file declares nothing that runs,
+// while a `using` block inside a method does, which is why only
+// `using_statement` is listed.
+var csharpStatements = &Treesitter.StatementSpec{
+	Statement: []string{
+		"expression_statement", "local_declaration_statement",
+		"if_statement",
+		"for_statement", "foreach_statement", "while_statement", "do_statement",
+		"switch_statement", "try_statement",
+		"return_statement", "break_statement", "continue_statement",
+		"throw_statement", "yield_statement", "goto_statement",
+		"labeled_statement", "lock_statement", "using_statement",
+		"checked_statement", "unsafe_statement", "fixed_statement",
+		"local_function_statement",
+	},
 }
 
-func (a *TreeSitterAdapter) CountComments(lines []string, start, end int) int {
-	cnt := 0
-	inBlock := false
-	for i := start - 1; i < end && i < len(lines); i++ {
-		ln := strings.TrimSpace(lines[i])
-		if ln == "" {
-			continue
-		}
-		clean := stripCSharpStrings(ln)
-		if inBlock {
-			cnt++
-			if strings.Contains(clean, "*/") {
-				inBlock = false
-			}
-			continue
-		}
-		if strings.HasPrefix(clean, "//") {
-			cnt++
-			continue
-		}
-		if strings.HasPrefix(clean, "/*") {
-			cnt++
-			if !strings.Contains(clean, "*/") {
-				inBlock = true
-			}
-			continue
-		}
+func (a *TreeSitterAdapter) Statement(n *sitter.Node) Treesitter.StatementKind {
+	return csharpStatements.Classify(n)
+}
+
+// CommentSyntax declares C# comment tokens: "//" (and the "///" doc form, which
+// starts with it) and "/* */". "#" introduces a preprocessor directive, which is
+// code, not a comment.
+func (a *TreeSitterAdapter) CommentSyntax() engine.CommentSyntax {
+	return engine.CommentSyntax{
+		Line:       []string{"//"},
+		BlockOpen:  "/*",
+		BlockClose: "*/",
+		Quote:      []rune{'"', '\''},
+		// a raw string literal holds a value over several lines
+		RawString: []string{`"""`},
 	}
-	return cnt
 }
 
 // csharpOperatorTokens lists the anonymous token types counted as Halstead

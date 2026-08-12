@@ -36,38 +36,47 @@ type receiverMethod struct {
 	receiver string
 }
 
-// IsDefaultLogicalNode reports whether a tree-sitter node type is a statement
-// for LLOC purposes. Statements and local declarations count; pure structure
-// (blocks), member declarations (classes, functions, fields) and imports do
-// not. Adapters can refine this per grammar by implementing
-// IsLogicalNode(*sitter.Node) bool.
-func IsDefaultLogicalNode(nodeType string) bool {
-	switch nodeType {
-	case "compound_statement", "statement_block", "empty_statement",
-		"import_statement", "import_from_statement", "future_import_statement",
-		"export_statement":
-		return false
-	}
-	return strings.HasSuffix(nodeType, "_statement")
-}
-
-// collectLogicalLines walks the whole tree once and records the lines on
-// which a statement starts.
+// collectLogicalLines walks the whole tree once and records the lines on which
+// a statement starts, following the model documented in statement.go.
+//
+// inClass and inFunction track the nearest enclosing scope, which is what
+// tells a local declaration from a member one and a real statement from a
+// field initializer.
 func (v *Visitor) collectLogicalLines(node *sitter.Node) {
-	isLogical := func(n *sitter.Node) bool { return IsDefaultLogicalNode(n.Type()) }
-	if la, ok := v.ad.(interface{ IsLogicalNode(*sitter.Node) bool }); ok {
-		isLogical = la.IsLogicalNode
-	}
-	var walk func(n *sitter.Node)
-	walk = func(n *sitter.Node) {
-		if isLogical(n) {
+	var walk func(n *sitter.Node, inClass, inFunction bool)
+	walk = func(n *sitter.Node, inClass, inFunction bool) {
+		if n == nil {
+			return
+		}
+		counts := false
+		switch v.ad.Statement(n) {
+		case IsStatement:
+			// a statement written directly in a class body initializes a
+			// member; it is not an instruction of the program
+			counts = !inClass
+		case IsLocalDeclaration:
+			counts = inFunction
+		}
+		if counts {
 			v.logicalLines[int(n.StartPoint().Row)+1] = true
 		}
+
+		childInClass, childInFunction := inClass, inFunction
+		switch {
+		case v.ad.IsFunction(n):
+			childInClass, childInFunction = false, true
+		case v.ad.IsClass(n):
+			childInClass, childInFunction = true, false
+		default:
+			if ia, ok := v.ad.(InterfaceAware); ok && ia.IsInterface(n) {
+				childInClass, childInFunction = true, false
+			}
+		}
 		for i := 0; i < int(n.ChildCount()); i++ {
-			walk(n.Child(i))
+			walk(n.Child(i), childInClass, childInFunction)
 		}
 	}
-	walk(node)
+	walk(node, false, false)
 }
 
 // countLogicalLines returns the number of logical lines within the 1-based
@@ -108,7 +117,7 @@ func (v *Visitor) curStmts() *pb.Stmts {
 }
 
 func NewVisitor(ad LangAdapter, path string, src []byte) *Visitor {
-	lines := strings.Split(string(src), "\n")
+	lines := engine.SplitSourceLines(src)
 	mod := ad.ModuleNameFromPath(filepath.Base(path))
 
 	return &Visitor{
@@ -119,13 +128,22 @@ func NewVisitor(ad LangAdapter, path string, src []byte) *Visitor {
 	}
 }
 
-// commentMarkers returns the comment tokens declared by the adapter, or every
-// marker when the adapter does not declare any.
-func (v *Visitor) commentMarkers() engine.CommentMarkers {
-	if cm, ok := v.ad.(interface{ CommentMarkers() engine.CommentMarkers }); ok {
-		return cm.CommentMarkers()
+// commentSyntax returns the comment syntax declared by the adapter, or a
+// permissive default when it declares none.
+func (v *Visitor) commentSyntax() engine.CommentSyntax {
+	if cs, ok := v.ad.(interface{ CommentSyntax() engine.CommentSyntax }); ok {
+		return cs.CommentSyntax()
 	}
-	return engine.AllCommentMarkers()
+	return engine.DefaultCommentSyntax()
+}
+
+// linesOfCodeIn measures the 1-based inclusive line range of a scope: its
+// physical size, how many of those lines are comments, how many hold code, and
+// how many carry a statement.
+func (v *Visitor) linesOfCodeIn(start, end int) *pb.LinesOfCode {
+	loc := engine.CountLinesOfCode(v.lines, start, end, v.commentSyntax())
+	loc.LogicalLinesOfCode = int32(v.countLogicalLines(start, end))
+	return loc
 }
 
 func (v *Visitor) Result() *pb.File {
@@ -137,15 +155,7 @@ func (v *Visitor) Result() *pb.File {
 		v.file.Stmts.StmtNamespace = append(v.file.Stmts.StmtNamespace, v.ns)
 	}
 
-	// allow adapter to provide a better comment count
-	if cc, ok := v.ad.(interface{ CountComments([]string, int, int) int }); ok {
-		newC := int32(cc.CountComments(v.lines, 1, len(v.lines)))
-		v.file.LinesOfCode.CommentLinesOfCode = newC
-		v.file.LinesOfCode.NonCommentLinesOfCode = v.file.LinesOfCode.LinesOfCode - newC
-	}
-
-	// LLOC counts the lines on which a statement starts
-	v.file.LinesOfCode.LogicalLinesOfCode = int32(len(v.logicalLines))
+	v.file.LinesOfCode = v.linesOfCodeIn(1, len(v.lines))
 
 	return v.file
 }
@@ -255,8 +265,27 @@ func (v *Visitor) bindReceiverMethods() {
 			// declare a method with the same name
 			rm.fn.Name.Qualified = v.ad.AttachQualified(class.Name.Qualified, rm.fn.Name.Short)
 		}
+		addLinesOfCode(class.LinesOfCode, rm.fn.LinesOfCode)
 	}
 	v.receiverMethods = nil
+}
+
+// addLinesOfCode adds the size of a method declared outside of the body of its
+// type to the size of that type.
+//
+// Go and Rust declare methods next to the type rather than inside it, so the
+// declaration span of the type covers its fields only. Without this, a struct
+// with two hundred lines of methods would report the three lines of its field
+// list, and would look like the smallest type of the file while being the
+// largest.
+func addLinesOfCode(dst, src *pb.LinesOfCode) {
+	if dst == nil || src == nil {
+		return
+	}
+	dst.LinesOfCode += src.LinesOfCode
+	dst.LogicalLinesOfCode += src.LogicalLinesOfCode
+	dst.CommentLinesOfCode += src.CommentLinesOfCode
+	dst.NonCommentLinesOfCode += src.NonCommentLinesOfCode
 }
 
 func removeFunction(list []*pb.StmtFunction, fn *pb.StmtFunction) []*pb.StmtFunction {
@@ -338,20 +367,13 @@ func (v *Visitor) Visit(node *sitter.Node) {
 			Location:    locationOf(node),
 		}
 		body := v.ad.NodeBody(node)
-		start := int(node.StartPoint().Row) + 1
-		end := start
-		if body != nil {
-			// For class LOC, count from the class declaration line up to the closing brace line inclusively.
-			// body.EndPoint().Row points at the '}' line; do not add +1 here to avoid counting the next line.
-			end = max(start, int(body.EndPoint().Row))
-		}
-		c.LinesOfCode = engine.GetLocPositionFromSourceWithMarkers(v.lines, start, end, v.commentMarkers())
-		// If adapter can count comments precisely (e.g., PHP docblocks), override class CLOC using adapter for class span
-		if cc, ok := v.ad.(interface{ CountComments([]string, int, int) int }); ok {
-			newC := int32(cc.CountComments(v.lines, start, end))
-			c.LinesOfCode.CommentLinesOfCode = newC
-		}
-		c.LinesOfCode.LogicalLinesOfCode = int32(v.countLogicalLines(start, end))
+		// A scope is as long as its declaration: from the line the class opens
+		// on to the line it closes on, inclusive. Measuring the body instead
+		// would drop the signature line whenever the opening brace sits on a
+		// line of its own, so the very same class would shrink by one line when
+		// reformatted.
+		start, end := int(node.StartPoint().Row)+1, int(node.EndPoint().Row)+1
+		c.LinesOfCode = v.linesOfCodeIn(start, end)
 
 		// Pre-initialize class-level CLOC from class body to preserve expected semantics in tests
 		if c.Stmts == nil {
@@ -427,24 +449,11 @@ func (v *Visitor) Visit(node *sitter.Node) {
 			})
 		}
 		body := v.ad.NodeBody(node)
+		// as for a class: the declaration span, so that the signature line
+		// counts in every language and under every brace style
 		nodeStart := int(node.StartPoint().Row) + 1
 		nodeEnd := int(node.EndPoint().Row) + 1
-		locStart := nodeStart
-		locEnd := nodeEnd
-		if body != nil {
-			locStart = int(body.StartPoint().Row) + 1
-			locEnd = int(body.EndPoint().Row) + 1
-		}
-		fn.LinesOfCode = engine.GetLocPositionFromSourceWithMarkers(v.lines, locStart, locEnd, v.commentMarkers())
-
-		// allow adapter to provide a better comment count
-		if cc, ok := v.ad.(interface{ CountComments([]string, int, int) int }); ok {
-			cs := int(node.StartPoint().Row) + 1
-			ce := int(node.EndPoint().Row) + 1
-			newC := int32(cc.CountComments(v.lines, cs, ce))
-			fn.LinesOfCode.CommentLinesOfCode = newC
-		}
-		fn.LinesOfCode.LogicalLinesOfCode = int32(v.countLogicalLines(nodeStart, nodeEnd))
+		fn.LinesOfCode = v.linesOfCodeIn(nodeStart, nodeEnd)
 
 		v.attachFunction(fn)
 		if ra, ok := v.ad.(ReceiverAware); ok && v.curClass() == nil {
@@ -643,11 +652,4 @@ func (v *Visitor) recordDecision(n *sitter.Node, target *pb.Stmts) {
 	case DecDefault:
 		// the fallback branch of a switch opens no new path
 	}
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
