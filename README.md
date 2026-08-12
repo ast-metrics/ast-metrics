@@ -7,7 +7,7 @@
 <br />
 AST Metrics analyzes your codebase (complexity, architecture, coupling, bus factor...) and runs anywhere.
 <br />
-Drop it in any CI. Works offline. Nothing to install, no SaaS, no data leaves your machine.
+Drop it in any CI. Works offline: no data leaves your machine.
 <br />
 Fast: 20,000+ lines of code analyzed per second, on a laptop.
 <br />
@@ -61,27 +61,21 @@ Then analyze your project:
 ast-metrics analyze /path/to/your/code
 ```
 
-A summary is printed on the standard output: maintainability, estimated bug probability, coupling, then the usual counters and the hotspots worth refactoring first. Ask for a durable report when you need one, and nothing is ever written to disk unless you do:
+You get a summary right in your terminal: maintainability, estimated bug probability, coupling, and the hotspots worth refactoring first. Add `--report-html=<dir>` when you want a full report, or `--tui` to explore the results in a full-screen dashboard. Nothing is written to disk unless you ask for it.
 
-```console
-ast-metrics analyze --report-html=<directory> /path/to/your/code
-```
-
-Run `ast-metrics` with no argument to open the interactive menu, or add `--tui` to any analysis to explore the results in the full-screen dashboard. Anything piped, redirected or run in CI gets plain output.
-
-> Docker image, `.deb`/`.rpm` packages and manual downloads: see the detailed [installation instructions](https://ast-metrics.dev/getting-started/install/).
+> Docker image, `.deb`/`.rpm` packages and manual downloads: see the [installation instructions](https://ast-metrics.dev/getting-started/install/).
 
 ## What you get
 
 | | |
 |---|---|
-| **Architectural analysis** | Community detection, coupling, instability — catch design drift early |
+| **Architectural analysis** | Coupling, instability, community detection: catch design drift early |
 | **Code metrics** | Cyclomatic complexity, maintainability index, lines of code |
-| **Activity metrics** | Commit history, bus factor — know who owns what |
-| **Linter** | Enforce thresholds on coupling, complexity, LOC per method |
-| **CI/CD ready** | GitHub Actions, GitLab CI, any pipeline — exits non-zero on violations |
-| **Multiple report formats** | HTML dashboard, JSON, Markdown, SARIF, OpenMetrics |
-| **MCP server** | Give AI coding agents architectural awareness via Model Context Protocol |
+| **Activity metrics** | Commit history and bus factor: know who owns what |
+| **Linter** | Enforce thresholds on complexity, coupling, volume and architecture |
+| **CI/CD ready** | GitHub Actions, GitLab CI, any pipeline; exits non-zero on violations |
+| **Report formats** | HTML dashboard, JSON, Markdown, SARIF, OpenMetrics |
+| **MCP server** | Give AI coding agents architectural awareness |
 
 <p align="center" style="text-align:center">
 <a href="https://analyze.ast-metrics.dev/ast-metrics/ast-metrics"><img alt="The interactive dependency graph: hubs, natural communities and circular dependencies at a glance" src="https://raw.githubusercontent.com/ast-metrics/ast-metrics/main/docs/report-dependencies.png" /></a>
@@ -89,174 +83,47 @@ Run `ast-metrics` with no argument to open the interactive menu, or add `--tui` 
 <i>The dependency graph: hubs, natural communities and circular dependencies at a glance.</i>
 </p>
 
-[Read more in the documentation](https://ast-metrics.dev/)
-
-
-## Linting your code
-
-Run:
+## Lint your architecture
 
 ```bash
-# create a .ast-metrics.yaml config file
-ast-metrics init 
-
-# Add ruleset to your config file
-ast-metrics ruleset add architecture
-ast-metrics ruleset add volume
-ast-metrics ruleset list # see the list of available rulesets
-
-# Run the linter
+ast-metrics init                      # create a .ast-metrics.yaml config file
+ast-metrics ruleset add architecture  # pick rulesets (volume, complexity...)
 ast-metrics lint
 ```
 
-You can declare thresholds in your YAML config (*Lines of code per method, Coupling, Maintainability...*).
+Thresholds live in your YAML config: maximum complexity, coupling limits, forbidden dependencies between components, size limits per method... Legacy codebase with hundreds of violations? Run `ast-metrics baseline` once: it snapshots today's violations, and `lint` only fails on new ones.
 
-Example:
+➡️ [Rulesets, thresholds and baseline](https://ast-metrics.dev/ci/linting-architecture/)
 
-```yaml
-requirements:
-  rules:
-    architecture:
-      coupling:
-        forbidden:
-          - from: Controller
-            to: Repository
-          - from: Repository
-            to: Service
-      max_afferent_coupling: 10
-      max_efferent_coupling: 10
-      min_maintainability: 70
-    volume:
-      max_loc: 1000
-      max_logical_loc: 600
-      max_loc_by_method: 30
-      max_logical_loc_by_method: 20
-    complexity:
-      max_cyclomatic: 10
-    golang:
-      no_package_name_in_method: true
-      max_nesting: 4
-      max_file_size: 1000
-      max_files_per_package: 50
-      slice_prealloc: true
-      ignored_error: true
-      context_missing: true
-      context_ignored: true
-```
+## Run it in CI
 
-This makes it **easy to enforce architecture and quality at scale**.
-
-Run `ast-metrics ruleset list` to see the list of available rulesets. Then `ast-metrics ruleset add <ruleset-name>` to apply a ruleset to your project.
-
-### "I have hundreds of violations on my existing codebase, now what?"
-
-Generate a baseline: it snapshots today's violations so only new ones get reported.
-
-```bash
-ast-metrics baseline
-```
-
-Commit the resulting `.ast-metrics-baseline.yaml`, then `ast-metrics lint` only fails on violations introduced afterwards. Re-run `ast-metrics baseline` anytime to shrink it as you clean things up.
-
-## CI usage
-
-Use the dedicated CI command to run lint and generate all reports in one go:
-
-```bash
-ast-metrics ci [options] /path/to/your/code
-```
-
-Notes:
-- This command runs the linter first, then generates HTML, Markdown, JSON, OpenMetrics and SARIF reports.
-- If any lint violations are found, the command exits with a non-zero status but still produces the reports.
-- The previous alias `analyze --ci` is deprecated and will display a warning. Please migrate to `ast-metrics ci`.
-
-## Github Action
-
-Create a `.github/workflows/ast-metrics.yml` file in your project with the following content:
+`ast-metrics ci` runs the linter, generates every report (HTML, JSON, Markdown, SARIF, OpenMetrics) and exits non-zero when violations are found. On GitHub, a single step is enough:
 
 ```yaml
-name: "AST Metrics"
-on:
-  pull_request:
-
-permissions:
-  contents: read
-  pull-requests: write   # optional: allows the action to comment on the pull request
-
-jobs:
-  ast-metrics:
-    runs-on: ubuntu-latest
-    steps:
-        - uses: ast-metrics/action-ast-metrics@v2
+- uses: ast-metrics/action-ast-metrics@v2
 ```
 
-On each pull request, the action runs `ast-metrics review` and publishes the result in the check summary and, when permissions allow it, as a single updated comment. On `push` events it runs a full analysis instead. See [action-ast-metrics](https://github.com/ast-metrics/action-ast-metrics) for all options (`fail-on`, `sarif`, `html-artifact`...).
+On each pull request, the action runs `ast-metrics review` and comments with only the new or worsened findings.
 
+➡️ [CI/CD guides: GitHub Actions, GitLab CI](https://ast-metrics.dev/ci/github-actions/)
 
-## MCP Server for AI agents
+## Give your AI agent architectural awareness
 
-AI coding agents (Claude Code, Cursor, Copilot...) read code linearly and lack architectural awareness. AST Metrics can act as an [MCP server](https://modelcontextprotocol.io/) to give them on-demand access to complexity, coupling, dependency graphs, community detection, risk scoring, and test quality — without reading every file.
+AI coding agents read code linearly. Running as an [MCP server](https://modelcontextprotocol.io/), AST Metrics gives Claude Code, Cursor or Copilot on-demand access to complexity, coupling, dependencies and risk, so you can ask things like *"What are the riskiest files to refactor?"* or *"What would break if I change the UserService class?"*.
 
 ```bash
 ast-metrics mcp .
 ```
 
-This starts a stdio MCP server exposing 8 tools:
-
-| Tool | Purpose |
-|---|---|
-| `analyze_project` | High-level overview: languages, complexity, maintainability, top risks |
-| `get_file_metrics` | Detailed metrics for a specific file |
-| `find_risky_code` | Files/classes with highest risk scores |
-| `find_complex_code` | Functions/classes above a complexity threshold |
-| `get_dependencies` | Dependency subgraph around a component |
-| `get_coupling` | Afferent/efferent coupling for a component |
-| `get_communities` | Architectural community detection and metrics |
-| `get_test_quality` | Test isolation, traceability, god tests, orphan classes |
-
-Once configured, just talk to your AI agent naturally. For example:
-
-*"What are the riskiest files to refactor?"* · *"Show me the dependencies of the UserService class — what would break if I change it?"* · *"Are there complex classes with no tests?"* · *"I need to work on src/billing/invoice.go, what should I know?"*
-
-To use it with Claude Code or any MCP-compatible agent, add a `.mcp.json` at your project root:
-
-```json
-{
-  "mcpServers": {
-    "ast-metrics": {
-      "command": "ast-metrics",
-      "args": ["mcp", "."]
-    }
-  }
-}
-```
+➡️ [MCP server setup and tools](https://ast-metrics.dev/ai/mcp-server/)
 
 ## Supported languages
 
-+ ✅ **Golang** `any version`
-+ ✅ **Python** `Python 2, Python 3`
-+ ✅ **Rust** `any version`
-+ ✅ **PHP** `<= PHP 8.5`
-+ ✅ **Java** `any version`
-+ ✅ **C#** `any version`
-+ ✅ **TypeScript** `any version`
-+ 🕛 **Flutter**
-+ 🕛 **C++**
-+ 🕛 **Ruby**
-
-## License
-
-AST Metrics is open-source software [licensed under the MIT license](LICENSE)
-
+Go, PHP, Python, Rust, Java, C# and TypeScript.
 
 ## Contributing
 
-AST Metrics is an actively evolving project.
-
-We welcome discussions, bug reports, and pull requests.
-
-➡️ Start [contributing here](.github/CONTRIBUTING.md)
+Discussions, bug reports and pull requests are welcome: [start here](.github/CONTRIBUTING.md). AST Metrics is open-source software [licensed under the MIT license](LICENSE).
 
 ## Support the project
 
