@@ -552,9 +552,9 @@ func GetDependenciesInFile(file *pb.File) []*pb.StmtExternalDependency {
 		if _, ok := uniq[k]; ok {
 			return
 		}
-		// Make a shallow copy to avoid accidental mutation
-		cpy := *dep
-		uniq[k] = &cpy
+		// Clone protobuf state as well as fields; a struct assignment would copy
+		// the message's internal mutex.
+		uniq[k] = proto.Clone(dep).(*pb.StmtExternalDependency)
 	}
 
 	// 1) file-level externals

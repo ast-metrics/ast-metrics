@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
@@ -181,17 +182,7 @@ func TestBuildNodeToCommunityJSON_Empty(t *testing.T) {
 
 func TestBuildFileDepsJSON_EmptySlicesNotNull(t *testing.T) {
 	dict := NewStringDictionary()
-	// File with a class that references itself (self-dep should be skipped)
-	file := &pb.File{
-		Path:                "/tmp/a.go",
-		ProgrammingLanguage: "Golang",
-		Stmts: &pb.Stmts{
-			StmtClass: []*pb.StmtClass{
-				{Name: &pb.Name{Short: "Foo", Qualified: "pkg\\Foo"}},
-			},
-		},
-	}
-	raw := buildFileDepsJSON([]*pb.File{file}, nil, dict)
+	raw := buildFileDepsJSON(analyzer.FileDependencyGraph{}, dict)
 	if raw != "{}" {
 		t.Fatalf("expected empty json for no deps, got %s", raw)
 	}
@@ -199,28 +190,13 @@ func TestBuildFileDepsJSON_EmptySlicesNotNull(t *testing.T) {
 
 func TestBuildFileDepsJSON_HashedKeys(t *testing.T) {
 	dict := NewStringDictionary()
-	fileA := &pb.File{
-		Path:                "/tmp/a.go",
-		ProgrammingLanguage: "Golang",
-		Stmts: &pb.Stmts{
-			StmtClass: []*pb.StmtClass{
-				{Name: &pb.Name{Short: "Foo", Qualified: "pkg\\Foo"}},
-			},
-			StmtExternalDependencies: []*pb.StmtExternalDependency{
-				{ClassName: "Bar"},
-			},
-		},
+	fileA := "/tmp/a.go"
+	fileB := "/tmp/b.go"
+	graph := analyzer.FileDependencyGraph{
+		Efferent: map[string][]string{fileA: {fileB}},
+		Afferent: map[string][]string{fileB: {fileA}},
 	}
-	fileB := &pb.File{
-		Path:                "/tmp/b.go",
-		ProgrammingLanguage: "Golang",
-		Stmts: &pb.Stmts{
-			StmtClass: []*pb.StmtClass{
-				{Name: &pb.Name{Short: "Bar", Qualified: "pkg\\Bar"}},
-			},
-		},
-	}
-	raw := buildFileDepsJSON([]*pb.File{fileA, fileB}, nil, dict)
+	raw := buildFileDepsJSON(graph, dict)
 	if !json.Valid([]byte(raw)) {
 		t.Fatalf("invalid json: %s", raw)
 	}
@@ -235,113 +211,6 @@ func TestBuildFileDepsJSON_HashedKeys(t *testing.T) {
 		if v.Efferent == nil || v.Afferent == nil {
 			t.Fatalf("expected non-nil slices for key %s", k)
 		}
-	}
-}
-
-func TestBuildFileDepsJSON_ResolvesRelativeTypeScriptImport(t *testing.T) {
-	dict := NewStringDictionary()
-	fileA := &pb.File{
-		Path:                "/tmp/proj/Foo.ts",
-		ProgrammingLanguage: "TypeScript",
-		Stmts: &pb.Stmts{
-			StmtExternalDependencies: []*pb.StmtExternalDependency{
-				{Namespace: "./Bar", ClassName: "Bar"},
-			},
-		},
-	}
-	fileB := &pb.File{
-		Path:                "/tmp/proj/Bar.ts",
-		ProgrammingLanguage: "TypeScript",
-		Stmts:               &pb.Stmts{},
-	}
-	raw := buildFileDepsJSON([]*pb.File{fileA, fileB}, nil, dict)
-	var decoded map[string]fileDepsEntry
-	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
-		t.Fatalf("unmarshal error: %v", err)
-	}
-	entry, ok := decoded[dict.Add(fileA.Path)]
-	if !ok {
-		t.Fatalf("expected an entry for %s, got %v", fileA.Path, decoded)
-	}
-	if len(entry.Efferent) != 1 || entry.Efferent[0].Path != dict.Add(fileB.Path) {
-		t.Fatalf("expected %s to depend on %s, got %+v", fileA.Path, fileB.Path, entry.Efferent)
-	}
-}
-
-func TestBuildFileDepsJSON_ResolvesRelativeTypeScriptImportThroughIndex(t *testing.T) {
-	dict := NewStringDictionary()
-	fileA := &pb.File{
-		Path:                "/tmp/proj/Foo.ts",
-		ProgrammingLanguage: "TypeScript",
-		Stmts: &pb.Stmts{
-			StmtExternalDependencies: []*pb.StmtExternalDependency{
-				{Namespace: "./bar", ClassName: "Bar"},
-			},
-		},
-	}
-	fileB := &pb.File{
-		Path:                "/tmp/proj/bar/index.ts",
-		ProgrammingLanguage: "TypeScript",
-		Stmts:               &pb.Stmts{},
-	}
-	raw := buildFileDepsJSON([]*pb.File{fileA, fileB}, nil, dict)
-	var decoded map[string]fileDepsEntry
-	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
-		t.Fatalf("unmarshal error: %v", err)
-	}
-	entry, ok := decoded[dict.Add(fileA.Path)]
-	if !ok {
-		t.Fatalf("expected an entry for %s, got %v", fileA.Path, decoded)
-	}
-	if len(entry.Efferent) != 1 || entry.Efferent[0].Path != dict.Add(fileB.Path) {
-		t.Fatalf("expected %s to depend on %s, got %+v", fileA.Path, fileB.Path, entry.Efferent)
-	}
-}
-
-func TestBuildFileDepsJSON_ResolvesRelativeImportWithExplicitExtension(t *testing.T) {
-	dict := NewStringDictionary()
-	fileA := &pb.File{
-		Path:                "/tmp/proj/Modal.ts",
-		ProgrammingLanguage: "TypeScript",
-		Stmts: &pb.Stmts{
-			StmtExternalDependencies: []*pb.StmtExternalDependency{
-				{Namespace: "./Steps/CelebrationStep.vue", ClassName: "CelebrationStep"},
-			},
-		},
-	}
-	fileB := &pb.File{
-		Path:                "/tmp/proj/Steps/CelebrationStep.vue",
-		ProgrammingLanguage: "TypeScript",
-		Stmts:               &pb.Stmts{},
-	}
-	raw := buildFileDepsJSON([]*pb.File{fileA, fileB}, nil, dict)
-	var decoded map[string]fileDepsEntry
-	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
-		t.Fatalf("unmarshal error: %v", err)
-	}
-	entry, ok := decoded[dict.Add(fileA.Path)]
-	if !ok {
-		t.Fatalf("expected an entry for %s, got %v", fileA.Path, decoded)
-	}
-	if len(entry.Efferent) != 1 || entry.Efferent[0].Path != dict.Add(fileB.Path) {
-		t.Fatalf("expected %s to depend on %s, got %+v", fileA.Path, fileB.Path, entry.Efferent)
-	}
-}
-
-func TestBuildFileDepsJSON_BareImportSpecifierStaysUnresolved(t *testing.T) {
-	dict := NewStringDictionary()
-	fileA := &pb.File{
-		Path:                "/tmp/proj/Foo.ts",
-		ProgrammingLanguage: "TypeScript",
-		Stmts: &pb.Stmts{
-			StmtExternalDependencies: []*pb.StmtExternalDependency{
-				{Namespace: "react", ClassName: "React"},
-			},
-		},
-	}
-	raw := buildFileDepsJSON([]*pb.File{fileA}, nil, dict)
-	if raw != "{}" {
-		t.Fatalf("expected external bare-specifier import to stay unresolved, got %s", raw)
 	}
 }
 
@@ -368,7 +237,11 @@ func TestBuildFolderDepsJSON_HashedKeys(t *testing.T) {
 			},
 		},
 	}
-	raw := buildFolderDepsJSON([]*pb.File{fileA, fileB}, nil, dict)
+	graph := analyzer.FileDependencyGraph{
+		Efferent: map[string][]string{fileA.Path: {fileB.Path}},
+		Afferent: map[string][]string{fileB.Path: {fileA.Path}},
+	}
+	raw := buildFolderDepsJSON([]*pb.File{fileA, fileB}, graph, dict)
 	if raw == "" {
 		t.Fatalf("expected non-empty json for cross-folder deps")
 	}
@@ -391,6 +264,38 @@ func TestBuildFolderDepsJSON_HashedKeys(t *testing.T) {
 	dictJSON := dict.ToJSON()
 	if !json.Valid([]byte(dictJSON)) {
 		t.Fatalf("invalid dict json: %s", dictJSON)
+	}
+}
+
+func TestDependencyJSONIsDeterministic(t *testing.T) {
+	source := &pb.File{Path: "/tmp/source/a.ts", Stmts: &pb.Stmts{}}
+	targetB := &pb.File{Path: "/tmp/b/b.ts", Stmts: &pb.Stmts{}}
+	targetZ := &pb.File{Path: "/tmp/z/z.ts", Stmts: &pb.Stmts{}}
+	firstGraph := analyzer.FileDependencyGraph{
+		Efferent: map[string][]string{source.Path: {targetZ.Path, targetB.Path}},
+		Afferent: map[string][]string{
+			targetB.Path: {source.Path},
+			targetZ.Path: {source.Path},
+		},
+	}
+	secondGraph := analyzer.FileDependencyGraph{
+		Efferent: map[string][]string{source.Path: {targetB.Path, targetZ.Path}},
+		Afferent: map[string][]string{
+			targetZ.Path: {source.Path},
+			targetB.Path: {source.Path},
+		},
+	}
+
+	firstFiles := buildFileDepsJSON(firstGraph, NewStringDictionary())
+	secondFiles := buildFileDepsJSON(secondGraph, NewStringDictionary())
+	if firstFiles != secondFiles {
+		t.Fatalf("file dependency JSON depends on input order:\n%s\n%s", firstFiles, secondFiles)
+	}
+
+	firstFolders := buildFolderDepsJSON([]*pb.File{source, targetZ, targetB}, firstGraph, NewStringDictionary())
+	secondFolders := buildFolderDepsJSON([]*pb.File{targetB, source, targetZ}, secondGraph, NewStringDictionary())
+	if firstFolders != secondFolders {
+		t.Fatalf("folder dependency JSON depends on input order:\n%s\n%s", firstFolders, secondFolders)
 	}
 }
 

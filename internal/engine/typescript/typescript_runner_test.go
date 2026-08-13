@@ -2,6 +2,7 @@ package typescript
 
 import (
 	"os"
+	"reflect"
 	"testing"
 
 	enginePkg "github.com/ast-metrics/ast-metrics/internal/engine"
@@ -144,8 +145,9 @@ func TestTypeScriptParser_TreeSitter_Decisions(t *testing.T) {
 
 const sampleImports = `
 import fs from 'fs';
-import { readFile, writeFile } from 'fs/promises';
+import { readFile, writeFile as write } from 'fs/promises';
 import * as path from 'path';
+import './setup';
 `
 
 func TestTypeScriptParser_TreeSitter_Imports(t *testing.T) {
@@ -162,35 +164,13 @@ func TestTypeScriptParser_TreeSitter_Imports(t *testing.T) {
 		t.Fatalf("nil ns stmts")
 	}
 
-	got := len(ns.Stmts.StmtExternalDependencies)
-	if got < 4 {
-		t.Fatalf("expected at least 4 external deps, got %d", got)
-	}
-
-	has := func(module, name string) bool {
-		for _, d := range ns.Stmts.StmtExternalDependencies {
-			if d.Namespace == module && d.ClassName == name {
-				return true
-			}
-			if name == "" && d.Namespace == module {
-				return true
-			}
-		}
-		return false
-	}
-
-	if !has("fs", "fs") {
-		t.Fatalf("missing dep: import fs from 'fs'")
-	}
-	if !has("fs/promises", "readFile") {
-		t.Fatalf("missing dep: import { readFile } from 'fs/promises'")
-	}
-	if !has("fs/promises", "writeFile") {
-		t.Fatalf("missing dep: import { writeFile } from 'fs/promises'")
-	}
-	if !has("path", "path") {
-		t.Fatalf("missing dep: import * as path from 'path'")
-	}
+	assertTypeScriptDependencies(t, ns.Stmts.StmtExternalDependencies, map[importKey]struct{}{
+		{module: "fs", name: "fs"}:                 {},
+		{module: "fs/promises", name: "readFile"}:  {},
+		{module: "fs/promises", name: "writeFile"}: {},
+		{module: "path", name: "path"}:             {},
+		{module: "./setup"}:                        {},
+	})
 }
 
 const sampleReExports = `
@@ -215,37 +195,34 @@ func TestTypeScriptParser_TreeSitter_ReExports(t *testing.T) {
 		t.Fatalf("nil ns stmts")
 	}
 
-	has := func(module, name string) bool {
-		for _, d := range ns.Stmts.StmtExternalDependencies {
-			if d.Namespace == module && d.ClassName == name {
-				return true
-			}
-			if name == "" && d.Namespace == module {
-				return true
-			}
-		}
-		return false
-	}
+	assertTypeScriptDependencies(t, ns.Stmts.StmtExternalDependencies, map[importKey]struct{}{
+		{module: "./components"}:       {},
+		{module: "./bar", name: "ns"}:  {},
+		{module: "./foo", name: "a"}:   {},
+		{module: "./foo", name: "b"}:   {},
+		{module: "./types", name: "X"}: {},
+	})
+}
 
-	if !has("./components", "") {
-		t.Fatalf("missing dep: export * from './components'")
+type importKey struct {
+	module string
+	name   string
+}
+
+func assertTypeScriptDependencies(t *testing.T, dependencies []*pb.StmtExternalDependency, want map[importKey]struct{}) {
+	t.Helper()
+	if len(dependencies) != len(want) {
+		t.Fatalf("expected %d dependencies, got %d: %+v", len(want), len(dependencies), dependencies)
 	}
-	if !has("./bar", "ns") {
-		t.Fatalf("missing dep: export * as ns from './bar'")
-	}
-	if !has("./foo", "a") {
-		t.Fatalf("missing dep: export { a } from './foo'")
-	}
-	if !has("./foo", "b") {
-		t.Fatalf("missing dep: export { b as c } from './foo'")
-	}
-	if !has("./types", "X") {
-		t.Fatalf("missing dep: export type { X } from './types'")
-	}
-	for _, d := range ns.Stmts.StmtExternalDependencies {
-		if d.Namespace == "" {
-			t.Fatalf("local export `export { local }` must not be recorded as a dependency, got %+v", d)
+	got := make(map[importKey]struct{}, len(dependencies))
+	for _, dependency := range dependencies {
+		if dependency == nil {
+			t.Fatal("unexpected nil dependency")
 		}
+		got[importKey{module: dependency.GetNamespace(), name: dependency.GetClassName()}] = struct{}{}
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected dependencies:\nwant: %v\ngot:  %v", want, got)
 	}
 }
 
