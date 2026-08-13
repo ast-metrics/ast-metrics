@@ -102,7 +102,7 @@ class calculatrice {
 	operandsAsString = fmt.Sprintf("%v", func3.Operands)
 	operandsExpectedAsString = "[name:\"a\" name:\"b\" name:\"a\" name:\"b\"]"
 	assert.Equal(t, operandsExpectedAsString, operandsAsString)
-	
+
 	// Ensure operators
 	// the parameter separator, the "return" and the "+"
 	// Convert to string (for easier comparison)
@@ -717,13 +717,19 @@ class Registry
 	analyzer.AnalyzeFile(file)
 
 	assert.Equal(t, int32(25), *file.Stmts.Analyze.Volume.Loc, "Incorrect number of lines of code")
-	assert.Equal(t, int32(7), *file.Stmts.Analyze.Volume.Cloc, "Incorrect number of comment lines of code")
+	// 6 comment-only lines. The line where the docblock closes carries the
+	// return right after it, so it is a line of code that happens to be
+	// documented, like the one ending in "// inline comment". scc counts it the
+	// same way; tokei is the odd one out here and calls it a comment.
+	assert.Equal(t, int32(6), *file.Stmts.Analyze.Volume.Cloc, "Incorrect number of comment lines of code")
 
 	// classes
 	assert.Equal(t, 1, len(file.Stmts.StmtClass), "Incorrect number of classes")
 	class1 := file.Stmts.StmtClass[0]
-	assert.Equal(t, int32(20), *class1.Stmts.Analyze.Volume.Loc, "Incorrect number of lines of code")
-	assert.Equal(t, int32(6), *class1.Stmts.Analyze.Volume.Cloc, "Incorrect number of comment lines of code")
+	// the class is as long as its declaration: from "class Registry" to its
+	// closing brace, both included
+	assert.Equal(t, int32(21), *class1.Stmts.Analyze.Volume.Loc, "Incorrect number of lines of code")
+	assert.Equal(t, int32(5), *class1.Stmts.Analyze.Volume.Cloc, "Incorrect number of comment lines of code")
 	// 2 statement lines in the class: the return of method2 (even though its
 	// line also carries comments) and the return of method3
 	assert.Equal(t, int32(2), *class1.Stmts.Analyze.Volume.Lloc, "Incorrect number of logical lines of code")
@@ -734,12 +740,13 @@ class Registry
 	assert.Equal(t, int32(0), *class1.Stmts.StmtFunction[0].Stmts.Analyze.Volume.Lloc, "Incorrect number of logical lines of code")
 	assert.Equal(t, int32(0), *class1.Stmts.StmtFunction[0].Stmts.Analyze.Volume.Cloc, "Incorrect number of comment lines of code")
 
-	assert.Equal(t, int32(6), *class1.Stmts.StmtFunction[1].Stmts.Analyze.Volume.Loc, "Incorrect number of lines of code")
+	// method2 spans its signature line, the brace on the next line, and its body
+	assert.Equal(t, int32(7), *class1.Stmts.StmtFunction[1].Stmts.Analyze.Volume.Loc, "Incorrect number of lines of code")
 	// the return statement counts even though its line also carries comments
 	assert.Equal(t, int32(1), *class1.Stmts.StmtFunction[1].Stmts.Analyze.Volume.Lloc, "Incorrect number of logical lines of code")
-	assert.Equal(t, int32(4), *class1.Stmts.StmtFunction[1].Stmts.Analyze.Volume.Cloc, "Incorrect number of comment lines of code")
+	assert.Equal(t, int32(3), *class1.Stmts.StmtFunction[1].Stmts.Analyze.Volume.Cloc, "Incorrect number of comment lines of code")
 
-	assert.Equal(t, int32(5), *class1.Stmts.StmtFunction[2].Stmts.Analyze.Volume.Loc, "Incorrect number of lines of code")
+	assert.Equal(t, int32(6), *class1.Stmts.StmtFunction[2].Stmts.Analyze.Volume.Loc, "Incorrect number of lines of code")
 	assert.Equal(t, int32(1), *class1.Stmts.StmtFunction[2].Stmts.Analyze.Volume.Lloc, "Incorrect number of logical lines of code")
 	assert.Equal(t, int32(2), *class1.Stmts.StmtFunction[2].Stmts.Analyze.Volume.Cloc, "Incorrect number of comment lines of code")
 
@@ -777,10 +784,11 @@ class Registry
 	// a single statement line in the whole file: the return
 	assert.Equal(t, int32(1), *file.Stmts.Analyze.Volume.Lloc, "Incorrect number of logical lines of code")
 
-	// The method itself: body spans 3 lines ("{", "return", "}"), no comment
+	// The method itself: its signature line, the brace below it, the return and
+	// the closing brace, and no comment of its own (the docblock sits above it)
 	class := file.Stmts.StmtClass[0]
 	method := class.Stmts.StmtFunction[0]
-	assert.Equal(t, int32(3), *method.Stmts.Analyze.Volume.Loc, "Incorrect number of lines of code")
+	assert.Equal(t, int32(4), *method.Stmts.Analyze.Volume.Loc, "Incorrect number of lines of code")
 	assert.Equal(t, int32(1), *method.Stmts.Analyze.Volume.Lloc, "Incorrect number of logical lines of code")
 	assert.Equal(t, int32(0), *method.Stmts.Analyze.Volume.Cloc, "Incorrect number of comment lines of code")
 }

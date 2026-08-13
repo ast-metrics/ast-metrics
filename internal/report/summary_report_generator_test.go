@@ -44,13 +44,15 @@ func fileWithRisk(path string, risk float64, maintainability float64, commits in
 
 func aggregatedForTest() analyzer.ProjectAggregated {
 	combined := analyzer.Aggregated{
-		NbFiles:                       3,
-		NbTestFiles:                   1,
-		NbMethods:                     42,
-		NbFunctions:                   7,
+		NbFiles:     3,
+		NbTestFiles: 1,
+		NbMethods:   42,
+		NbFunctions: 7,
 		// Counter is what tells a real measurement from an aggregate the
 		// analysis never fed, so every fixture carries one.
-		Loc:                           analyzer.AggregateResult{Sum: 1200, Counter: 3},
+		// 3 files: 2 of production summing to 1200 lines, 1 test file of 450
+		Loc:                           analyzer.AggregateResult{Sum: 1200, Counter: 2},
+		TestLoc:                       analyzer.AggregateResult{Sum: 450, Counter: 1},
 		Cloc:                          analyzer.AggregateResult{Sum: 300, Counter: 3},
 		Lloc:                          analyzer.AggregateResult{Sum: 800, Counter: 3},
 		LocPerClass:                   analyzer.AggregateResult{Avg: 47, Counter: 10},
@@ -125,6 +127,51 @@ func TestSummaryLeadsWithWhatTheToolKnows(t *testing.T) {
 		if !strings.Contains(rendered, value) {
 			t.Errorf("expected %q in the summary:\n%s", value, rendered)
 		}
+	}
+}
+
+// TestSummaryAccountsForEveryFileItCounted pins down what a bare "Lines of
+// code" used to hide: the number covers the production files only, while the
+// file count above it covers the whole tree. A reader comparing the total with
+// cloc or scc on the same directory found a third of it missing and nothing to
+// explain the gap.
+//
+// Both sides carry their scope in their own label, so the split is read rather
+// than deduced, and the two numbers add up to the whole tree.
+func TestSummaryAccountsForEveryFileItCounted(t *testing.T) {
+	rendered := (&SummaryReportGenerator{}).Render([]*pb.File{}, aggregatedForTest())
+
+	expected := []string{
+		"production                       2",
+		"test                             1",
+		"Production lines of code (LOC)     1200",
+		"Test lines of code (LOC)           450",
+	}
+	for _, value := range expected {
+		if !strings.Contains(rendered, value) {
+			t.Errorf("expected %q in the summary:\n%s", value, rendered)
+		}
+	}
+
+	// nothing is left saying "lines of code" without saying whose
+	if strings.Contains(rendered, "  Lines of code") {
+		t.Errorf("a lines-of-code row must name the files it covers:\n%s", rendered)
+	}
+}
+
+// TestSummaryStaysQuietWithoutTestFiles keeps the test row out of a project that
+// has none, where it would only ever read zero.
+func TestSummaryStaysQuietWithoutTestFiles(t *testing.T) {
+	aggregated := aggregatedForTest()
+	aggregated.Combined.NbTestFiles = 0
+	aggregated.Combined.TestLoc = analyzer.AggregateResult{}
+
+	rendered := (&SummaryReportGenerator{}).Render([]*pb.File{}, aggregated)
+	if strings.Contains(rendered, "Test lines of code") {
+		t.Errorf("the test LOC row should be absent without test files:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "Production lines of code (LOC)") {
+		t.Errorf("the production row stays, whatever the tests:\n%s", rendered)
 	}
 }
 

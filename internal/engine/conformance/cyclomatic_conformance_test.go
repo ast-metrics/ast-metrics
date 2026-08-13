@@ -205,13 +205,13 @@ var scenarios = []scenario{
 		ccn:  6,
 		why:  "1 + 2 cases + 2 ifs + 1 loop nested inside the branches",
 		impl: map[string]string{
-			langGo: "package p\nfunc f(a int) int {\n\tswitch a {\n\tcase 1:\n\t\tif a > 0 {\n\t\t\tfor i := 0; i < 3; i++ { a++ }\n\t\t}\n\tcase 2:\n\t\tif a < 0 { a-- }\n\t}\n\treturn a\n}\n",
-			langPHP: "<?php\nfunction f($a) {\n    switch ($a) {\n        case 1:\n            if ($a > 0) {\n                for ($i = 0; $i < 3; $i++) { $a++; }\n            }\n            break;\n        case 2:\n            if ($a < 0) { $a--; }\n            break;\n    }\n    return $a;\n}\n",
+			langGo:     "package p\nfunc f(a int) int {\n\tswitch a {\n\tcase 1:\n\t\tif a > 0 {\n\t\t\tfor i := 0; i < 3; i++ { a++ }\n\t\t}\n\tcase 2:\n\t\tif a < 0 { a-- }\n\t}\n\treturn a\n}\n",
+			langPHP:    "<?php\nfunction f($a) {\n    switch ($a) {\n        case 1:\n            if ($a > 0) {\n                for ($i = 0; $i < 3; $i++) { $a++; }\n            }\n            break;\n        case 2:\n            if ($a < 0) { $a--; }\n            break;\n    }\n    return $a;\n}\n",
 			langPython: "def f(a):\n    match a:\n        case 1:\n            if a > 0:\n                while a < 3:\n                    a += 1\n        case 2:\n            if a < 0:\n                a -= 1\n    return a\n",
-			langTS: "function f(a: number): number {\n\tswitch (a) {\n\t\tcase 1:\n\t\t\tif (a > 0) {\n\t\t\t\tfor (let i = 0; i < 3; i++) { a++ }\n\t\t\t}\n\t\t\tbreak\n\t\tcase 2:\n\t\t\tif (a < 0) { a-- }\n\t\t\tbreak\n\t}\n\treturn a\n}\n",
-			langJava: "class C {\n\tint f(int a) {\n\t\tswitch (a) {\n\t\t\tcase 1:\n\t\t\t\tif (a > 0) {\n\t\t\t\t\tfor (int i = 0; i < 3; i++) { a++; }\n\t\t\t\t}\n\t\t\t\tbreak;\n\t\t\tcase 2:\n\t\t\t\tif (a < 0) { a--; }\n\t\t\t\tbreak;\n\t\t}\n\t\treturn a;\n\t}\n}\n",
+			langTS:     "function f(a: number): number {\n\tswitch (a) {\n\t\tcase 1:\n\t\t\tif (a > 0) {\n\t\t\t\tfor (let i = 0; i < 3; i++) { a++ }\n\t\t\t}\n\t\t\tbreak\n\t\tcase 2:\n\t\t\tif (a < 0) { a-- }\n\t\t\tbreak\n\t}\n\treturn a\n}\n",
+			langJava:   "class C {\n\tint f(int a) {\n\t\tswitch (a) {\n\t\t\tcase 1:\n\t\t\t\tif (a > 0) {\n\t\t\t\t\tfor (int i = 0; i < 3; i++) { a++; }\n\t\t\t\t}\n\t\t\t\tbreak;\n\t\t\tcase 2:\n\t\t\t\tif (a < 0) { a--; }\n\t\t\t\tbreak;\n\t\t}\n\t\treturn a;\n\t}\n}\n",
 			langCSharp: "class C {\n\tint f(int a) {\n\t\tswitch (a) {\n\t\t\tcase 1:\n\t\t\t\tif (a > 0) {\n\t\t\t\t\tfor (int i = 0; i < 3; i++) { a++; }\n\t\t\t\t}\n\t\t\t\tbreak;\n\t\t\tcase 2:\n\t\t\t\tif (a < 0) { a--; }\n\t\t\t\tbreak;\n\t\t}\n\t\treturn a;\n\t}\n}\n",
-			langRust: "fn f(a: i32) -> i32 {\n\tlet mut a = a;\n\tmatch a {\n\t\t1 => { if a > 0 { for _i in 0..3 { a += 1 } } }\n\t\t2 => { if a < 0 { a -= 1 } }\n\t\t_ => {}\n\t}\n\ta\n}\n",
+			langRust:   "fn f(a: i32) -> i32 {\n\tlet mut a = a;\n\tmatch a {\n\t\t1 => { if a > 0 { for _i in 0..3 { a += 1 } } }\n\t\t2 => { if a < 0 { a -= 1 } }\n\t\t_ => {}\n\t}\n\ta\n}\n",
 		},
 	},
 	{
@@ -251,9 +251,23 @@ var scenarios = []scenario{
 			langPHP:    "<?php\nfunction f($a) { try { g(); } catch (A $e) { return 1; } catch (B $e) { return 2; } return 0; }\n",
 			langPython: "def f(a):\n    try:\n        g()\n    except ValueError:\n        return 1\n    except KeyError:\n        return 2\n    return 0\n",
 			// TypeScript allows a single catch per try, so two are needed
-			langTS: "function f(a: number): number { try { g() } catch (e) { return 1 } try { h() } catch (e) { return 2 } return 0 }\n",
+			langTS:     "function f(a: number): number { try { g() } catch (e) { return 1 } try { h() } catch (e) { return 2 } return 0 }\n",
 			langJava:   "class C { int f(int a) { try { g(); } catch (RuntimeException e) { return 1; } catch (Error e) { return 2; } return 0; } }\n",
 			langCSharp: "class C { int f(int a) { try { G(); } catch (System.Exception e) { return 1; } catch { return 2; } return 0; } }\n",
+		},
+	},
+	{
+		// Returning early on failure is a branch, whether the language spells
+		// it out or hides it in an operator. Rust `?` returns from the function
+		// exactly like the `if err != nil` it replaces in Go, and must cost the
+		// same, or idiomatic Rust would look simpler than the same code
+		// written anywhere else.
+		name: "early_return_on_error",
+		ccn:  3,
+		why:  "1 + one branch per early return on failure",
+		impl: map[string]string{
+			langRust: "fn f(a: i32) -> Option<i32> {\n\tlet x = g(a)?;\n\tlet y = h(x)?;\n\tSome(y)\n}\n",
+			langGo:   "package p\nfunc f(a int) (int, error) {\n\tx, err := g(a)\n\tif err != nil { return 0, err }\n\ty, err := h(x)\n\tif err != nil { return 0, err }\n\treturn y, nil\n}\n",
 		},
 	},
 	{
@@ -291,9 +305,9 @@ func TestEveryLanguageCoversEveryUniversalConstruct(t *testing.T) {
 	universal := map[string]bool{
 		"baseline": true, "if_else": true, "if_elseif_else": true,
 		"while_loop": true, "foreach_loop": true,
-		"switch_two_cases_and_default": true,
-		"decisions_inside_case_bodies": true,
-		"logical_operators_in_condition": true,
+		"switch_two_cases_and_default":                true,
+		"decisions_inside_case_bodies":                true,
+		"logical_operators_in_condition":              true,
 		"nested_function_does_not_inflate_its_parent": true,
 	}
 	all := []string{langGo, langPHP, langPython, langTS, langJava, langCSharp, langRust}

@@ -597,8 +597,10 @@ public class Foo
 	class := result.Stmts.StmtClass[0]
 	fn := class.Stmts.StmtFunction[0]
 
-	// method body spans from "{" to "}" = 8 lines
-	assert.Equal(t, int32(8), fn.LinesOfCode.LinesOfCode, "Method LOC")
+	// the method is as long as its declaration, from the signature line to the
+	// closing brace = 9 lines. Measuring the body alone would drop the
+	// signature, which C# puts on a line of its own by convention.
+	assert.Equal(t, int32(9), fn.LinesOfCode.LinesOfCode, "Method LOC")
 	assert.Equal(t, int32(2), fn.LinesOfCode.CommentLinesOfCode, "Method CLOC: // line + /* */ line")
 
 	// file-level comments: 3 xml-doc lines + // line + /* */ line = 5

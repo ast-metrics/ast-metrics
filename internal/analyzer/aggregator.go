@@ -58,7 +58,11 @@ type Aggregated struct {
 	NbFiles                 int
 	// Number of test files. Test files are counted in NbFiles, but their metrics
 	// are excluded from all the aggregates below (they are not production code).
-	NbTestFiles                             int
+	NbTestFiles int
+	// TestLoc holds the physical lines of the test files, the one measure kept
+	// about them. It exists so a report can account for the whole tree: without
+	// it, Loc covers a part of NbFiles and nothing on screen says which part.
+	TestLoc                                 AggregateResult
 	NbFunctions                             int
 	NbClasses                               int
 	NbClassesWithCode                       int
@@ -174,6 +178,7 @@ func newAggregated() Aggregated {
 		NbMethods:                               0,
 		NbFunctions:                             0,
 		Loc:                                     NewAggregateResult(),
+		TestLoc:                                 NewAggregateResult(),
 		MethodsPerClass:                         NewAggregateResult(),
 		LocPerClass:                             NewAggregateResult(),
 		LocPerMethod:                            NewAggregateResult(),
@@ -585,8 +590,13 @@ func (r *Aggregator) mapSums(file *pb.File, specificAggregation Aggregated) Aggr
 
 	// Test files are not production code: they are kept in ConcernedFiles (the
 	// TestQuality and Graph analyzers need them), but their metrics must not
-	// pollute the averages of the project.
+	// pollute the averages of the project. Their size is kept aside, so a report
+	// can say how much of the tree it left out.
 	if file.GetIsTest() {
+		if file.LinesOfCode != nil {
+			result.TestLoc.Sum += float64(file.LinesOfCode.LinesOfCode)
+			result.TestLoc.Counter++
+		}
 		return result
 	}
 
@@ -918,6 +928,8 @@ func (r *Aggregator) mergeChunks(aggregated Aggregated, chunk *Aggregated) Aggre
 
 	result.Loc.Sum += chunk.Loc.Sum
 	result.Loc.Counter += chunk.Loc.Counter
+	result.TestLoc.Sum += chunk.TestLoc.Sum
+	result.TestLoc.Counter += chunk.TestLoc.Counter
 	result.Cloc.Sum += chunk.Cloc.Sum
 	result.Cloc.Counter += chunk.Cloc.Counter
 	result.Lloc.Sum += chunk.Lloc.Sum

@@ -9,7 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestLocVisitorVisit(t *testing.T) {
+// The visitor publishes the counts the parser measured; it computes none of
+// them. These tests check that each scope ends up exposing its own measure,
+// unchanged.
+func TestLocVisitorPublishesTheMeasureOfEachScope(t *testing.T) {
 	visitor := LocVisitor{}
 
 	stmts := pb.Stmts{
@@ -20,11 +23,7 @@ func TestLocVisitorVisit(t *testing.T) {
 					LogicalLinesOfCode: 20,
 					CommentLinesOfCode: 30,
 				},
-				Stmts: &pb.Stmts{
-					Analyze: &pb.Analyze{
-						Volume: &pb.Volume{},
-					},
-				},
+				Stmts: &pb.Stmts{Analyze: &pb.Analyze{Volume: &pb.Volume{}}},
 			},
 		},
 		StmtClass: []*pb.StmtClass{
@@ -39,63 +38,83 @@ func TestLocVisitorVisit(t *testing.T) {
 		},
 	}
 
-	visitor.Visit(&stmts, &stmts)
+	visitor.Visit(&stmts, nil)
 
-	if stmts.StmtFunction[0].Stmts.Analyze.Volume.GetLoc() != 10 {
-		t.Errorf("Expected 10, got %d", stmts.StmtFunction[0].Stmts.Analyze.Volume.GetLoc())
-	}
+	fn := stmts.StmtFunction[0].Stmts.Analyze.Volume
+	assert.Equal(t, int32(10), fn.GetLoc())
+	assert.Equal(t, int32(20), fn.GetLloc())
+	assert.Equal(t, int32(30), fn.GetCloc())
 
-	if stmts.StmtFunction[0].Stmts.Analyze.Volume.GetLloc() != 20 {
-		t.Errorf("Expected 20, got %d", stmts.StmtFunction[0].Stmts.Analyze.Volume.GetLloc())
-	}
-
-	if stmts.StmtFunction[0].Stmts.Analyze.Volume.GetCloc() != 30 {
-		t.Errorf("Expected 30, got %d", stmts.StmtFunction[0].Stmts.Analyze.Volume.GetCloc())
-	}
-
-	// Assertions on class
-	if stmts.StmtClass[0].LinesOfCode.GetLinesOfCode() != 40 {
-		t.Errorf("Expected 40, got %d", stmts.StmtClass[0].LinesOfCode.GetLinesOfCode())
-	}
-
-	if stmts.StmtClass[0].LinesOfCode.GetLogicalLinesOfCode() != 50 {
-		t.Errorf("Expected 50, got %d", stmts.StmtClass[0].LinesOfCode.GetLogicalLinesOfCode())
-	}
-
-	if stmts.StmtClass[0].LinesOfCode.GetCommentLinesOfCode() != 60 {
-		t.Errorf("Expected 60, got %d", stmts.StmtClass[0].LinesOfCode.GetCommentLinesOfCode())
-	}
-
+	// a class exposes its own measure too, and the Volume is created for it
+	class := stmts.StmtClass[0].Stmts.Analyze.Volume
+	assert.Equal(t, int32(40), class.GetLoc())
+	assert.Equal(t, int32(50), class.GetLloc())
+	assert.Equal(t, int32(60), class.GetCloc())
 }
 
-func TestLocVisitorCountWithoutClasses(t *testing.T) {
-	fileContent := `
-    package main
+// TestLocVisitorDoesNotSumTheScopesItVisits is the regression that matters: the
+// visitor used to add up the functions of a scope, so a class came out as the
+// total of its methods and the file as the total of its functions. A scope
+// already knows its own size.
+func TestLocVisitorDoesNotSumTheScopesItVisits(t *testing.T) {
+	visitor := LocVisitor{}
 
-    import "fmt"
+	stmts := pb.Stmts{
+		StmtClass: []*pb.StmtClass{
+			{
+				LinesOfCode: &pb.LinesOfCode{LinesOfCode: 12, LogicalLinesOfCode: 4},
+				Stmts: &pb.Stmts{
+					StmtFunction: []*pb.StmtFunction{
+						{
+							LinesOfCode: &pb.LinesOfCode{LinesOfCode: 5, LogicalLinesOfCode: 2},
+							Stmts:       &pb.Stmts{},
+						},
+						{
+							LinesOfCode: &pb.LinesOfCode{LinesOfCode: 5, LogicalLinesOfCode: 2},
+							Stmts:       &pb.Stmts{},
+						},
+					},
+				},
+			},
+		},
+	}
 
-    func example() {
+	visitor.Visit(&stmts, nil)
+
+	class := stmts.StmtClass[0]
+	assert.Equal(t, int32(12), class.Stmts.Analyze.Volume.GetLoc(),
+		"the class keeps its own 12 lines, not the 10 of its two methods")
+	assert.Equal(t, int32(4), class.Stmts.Analyze.Volume.GetLloc())
+}
+
+func TestLocVisitorOnAParsedFile(t *testing.T) {
+	fileContent := `package main
+
+import "fmt"
+
+func example() {
+    if true {
         if true {
-            if true {
-                fmt.Println("Hello")
-            }
-        } else if true {
-            fmt.Println("Hello")
-        } else {
             fmt.Println("Hello")
         }
+    } else if true {
+        fmt.Println("Hello")
+    } else {
+        fmt.Println("Hello")
     }
-    `
+}
+`
 
 	parser := &golang.GolangRunner{}
-	pbFile, _ := engine.CreateTestFileWithCode(parser, fileContent)
+	pbFile, err := engine.CreateTestFileWithCode(parser, fileContent)
+	assert.Nil(t, err)
 
 	visitor := LocVisitor{}
-	visitor.Visit(pbFile.Stmts, pbFile.Stmts)
+	visitor.Visit(pbFile.Stmts, nil)
 
-	// first function should have 11 lines of code
-	assert.Equal(t, int32(11), pbFile.Stmts.StmtFunction[0].Stmts.Analyze.Volume.GetLoc())
-
-	// file should have 11 lines of code
-	assert.Equal(t, int32(11), pbFile.Stmts.Analyze.Volume.GetLoc())
+	fn := pbFile.Stmts.StmtFunction[0]
+	// the function spans its declaration line down to its closing brace
+	assert.Equal(t, int32(11), fn.Stmts.Analyze.Volume.GetLoc())
+	// if, nested if, the three calls, and the else-if
+	assert.Equal(t, int32(6), fn.Stmts.Analyze.Volume.GetLloc())
 }
