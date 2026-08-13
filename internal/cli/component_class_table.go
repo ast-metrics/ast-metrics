@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ast-metrics/ast-metrics/internal/engine"
+	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/ast-metrics/ast-metrics/internal/engine"
-	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
 type ComponentTableClass struct {
@@ -118,7 +118,7 @@ func (v *ComponentTableClass) Init() {
 
 		for _, class := range classes {
 
-			if class == nil {
+			if class == nil || class.Name == nil {
 				continue
 			}
 
@@ -142,39 +142,26 @@ func (v *ComponentTableClass) Init() {
 				nbFunctions = len(class.Stmts.StmtFunction)
 			}
 
+			analyze := class.Stmts.Analyze
+			volume := analyze.GetVolume()
+			complexity := analyze.GetComplexity()
+			maintainability := analyze.GetMaintainability()
+			maintainabilityIndex := float64(0)
+			if maintainability != nil && maintainability.MaintainabilityIndex != nil {
+				maintainabilityIndex = maintainability.GetMaintainabilityIndex()
+			}
+
 			rows = append(rows, table.Row{
 				class.Name.Qualified,
 				strconv.Itoa(nbCommits),
 				strconv.Itoa(nbCommitters),
 				strconv.Itoa(nbFunctions),
-				strconv.Itoa(int(*class.Stmts.Analyze.Volume.Loc)),
-				strconv.Itoa(int(*class.Stmts.Analyze.Complexity.Cyclomatic)),
-				strconv.Itoa(int(*class.Stmts.Analyze.Volume.HalsteadLength)),
-				fmt.Sprintf("%.2f", ToFixed(*class.Stmts.Analyze.Volume.HalsteadVolume, 2)),
-				DecorateMaintainabilityIndex(int(*class.Stmts.Analyze.Maintainability.MaintainabilityIndex), class.Stmts.Analyze),
+				strconv.Itoa(int(volume.GetLoc())),
+				strconv.Itoa(int(complexity.GetCyclomatic())),
+				strconv.Itoa(int(volume.GetHalsteadLength())),
+				fmt.Sprintf("%.2f", ToFixed(volume.GetHalsteadVolume(), 2)),
+				DecorateMaintainabilityIndex(int(maintainabilityIndex), analyze),
 			})
-		}
-
-		for _, namespace := range file.Stmts.StmtNamespace {
-			for _, class := range namespace.Stmts.StmtClass {
-
-				if class == nil {
-					continue
-				}
-				if class.Stmts == nil {
-					continue
-				}
-
-				rows = append(rows, table.Row{
-					class.Name.Qualified,
-					strconv.Itoa(len(class.Stmts.StmtFunction)),
-					strconv.Itoa(int(*class.Stmts.Analyze.Volume.Loc)),
-					strconv.Itoa(int(*class.Stmts.Analyze.Complexity.Cyclomatic)),
-					strconv.Itoa(int(*class.Stmts.Analyze.Volume.HalsteadLength)),
-					fmt.Sprintf("%.2f", ToFixed(*class.Stmts.Analyze.Volume.HalsteadVolume, 2)),
-					DecorateMaintainabilityIndex(int(*class.Stmts.Analyze.Maintainability.MaintainabilityIndex), class.Stmts.Analyze),
-				})
-			}
 		}
 	}
 
