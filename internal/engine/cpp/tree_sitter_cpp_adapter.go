@@ -157,7 +157,13 @@ func (a *TreeSitterAdapter) Statement(n *sitter.Node) Treesitter.StatementKind {
 }
 
 func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
-	if n == nil || n.Type() != "preproc_include" {
+	if n == nil {
+		return nil
+	}
+	if a.IsClass(n) {
+		return a.classDependencies(n)
+	}
+	if n.Type() != "preproc_include" {
 		return nil
 	}
 	path := n.ChildByFieldName("path")
@@ -169,6 +175,80 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 		return nil
 	}
 	return []Treesitter.ImportItem{{Module: module}}
+}
+
+// classDependencies maps syntax-level type references in a class to the
+// common external-dependency representation. It covers bases, fields, method
+// signatures, construction and qualified static use without attempting C++
+// name lookup or overload resolution.
+func (a *TreeSitterAdapter) classDependencies(class *sitter.Node) []Treesitter.ImportItem {
+	self := a.NodeName(class)
+	seen := map[string]bool{}
+	var items []Treesitter.ImportItem
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		name = strings.TrimPrefix(name, "::")
+		if name == "" || name == self || isBuiltinCppType(name) || strings.HasPrefix(name, "std::") || seen[name] {
+			return
+		}
+		seen[name] = true
+		short := name
+		if idx := strings.LastIndex(short, "::"); idx >= 0 {
+			short = short[idx+2:]
+		}
+		items = append(items, Treesitter.ImportItem{Module: name, Name: short})
+	}
+
+	var walk func(*sitter.Node)
+	walk = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		// A nested class owns its own dependencies.
+		if node != class && a.IsClass(node) {
+			return
+		}
+		switch node.Type() {
+		case "type_identifier":
+			parent := node.Parent()
+			if parent == nil || (parent.Type() != "qualified_identifier" && parent.Type() != "template_type") {
+				add(nodeText(a.src, node))
+			}
+		case "qualified_identifier":
+			// In a type position this is the full dependency (ns::Type). In
+			// an expression such as Logger::instance(), the scope is the type.
+			if node.Parent() != nil && isCppTypePosition(node.Parent().Type()) {
+				add(nodeText(a.src, node))
+			} else if scope := node.ChildByFieldName("scope"); scope != nil {
+				add(nodeText(a.src, scope))
+			}
+		}
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			walk(node.NamedChild(i))
+		}
+	}
+	walk(class)
+	return items
+}
+
+func isCppTypePosition(nodeType string) bool {
+	switch nodeType {
+	case "base_class_clause", "field_declaration", "parameter_declaration", "optional_parameter_declaration",
+		"function_definition", "declaration", "new_expression", "type_descriptor", "template_argument_list":
+		return true
+	}
+	return false
+}
+
+func isBuiltinCppType(name string) bool {
+	switch name {
+	case "void", "bool", "char", "char8_t", "char16_t", "char32_t", "wchar_t",
+		"short", "int", "long", "float", "double", "signed", "unsigned", "auto", "decltype",
+		"size_t", "ssize_t", "ptrdiff_t", "nullptr_t":
+		return true
+	}
+	return strings.HasPrefix(name, "int") && strings.HasSuffix(name, "_t") ||
+		strings.HasPrefix(name, "uint") && strings.HasSuffix(name, "_t")
 }
 
 func (a *TreeSitterAdapter) CommentSyntax() engine.CommentSyntax {

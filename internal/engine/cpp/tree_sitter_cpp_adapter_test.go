@@ -3,6 +3,8 @@ package cpp
 import (
 	"testing"
 
+	"github.com/ast-metrics/ast-metrics/internal/analyzer"
+	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -90,4 +92,53 @@ struct Callable { int operator()(int x) const { return x; } };
 	require.Len(t, file.Stmts.StmtClass, 1)
 	require.Len(t, file.Stmts.StmtClass[0].Stmts.StmtFunction, 1)
 	assert.Equal(t, "operator()", file.Stmts.StmtClass[0].Stmts.StmtFunction[0].Name.Short)
+}
+
+func TestCppClassDependenciesFromTypesConstructionAndStaticUse(t *testing.T) {
+	file := parseCpp(t, `
+class Transport {};
+class BaseController {};
+class Logger { public: static Logger& instance(); };
+
+class Controller : public BaseController {
+public:
+    Controller(Transport& transport) : transport_(transport) {}
+    Transport* replacement() {
+        auto next = new Transport();
+        Logger::instance();
+        return next;
+    }
+private:
+    Transport& transport_;
+};
+`)
+	require.Len(t, file.Stmts.StmtClass, 4)
+	controller := file.Stmts.StmtClass[3]
+	deps := controller.Stmts.StmtExternalDependencies
+	depNames := make([]string, 0, len(deps))
+	for _, dep := range deps {
+		depNames = append(depNames, dep.ClassName)
+		assert.Equal(t, controller.Name.Qualified, dep.From)
+	}
+	assert.ElementsMatch(t, []string{"BaseController", "Transport", "Logger"}, depNames)
+}
+
+func TestCppClassDependenciesDriveCouplingMetrics(t *testing.T) {
+	file := parseCpp(t, `
+class Motor {};
+class Controller {
+    Motor* motor_;
+public:
+    explicit Controller(Motor* motor) : motor_(motor) {}
+};
+`)
+	analyzer.AnalyzeFile(file)
+	project := analyzer.NewAggregator([]*pb.File{file}, nil).Aggregates()
+	controller := file.Stmts.StmtClass[1]
+	motor := file.Stmts.StmtClass[0]
+	require.NotNil(t, controller.Stmts.Analyze.Coupling)
+	require.NotNil(t, motor.Stmts.Analyze.Coupling)
+	assert.Equal(t, int32(1), controller.Stmts.Analyze.Coupling.Efferent)
+	assert.GreaterOrEqual(t, motor.Stmts.Analyze.Coupling.Afferent, int32(1))
+	assert.Greater(t, project.ByClass.EfferentCoupling.Sum, float64(0))
 }
