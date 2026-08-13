@@ -538,10 +538,45 @@ func buildLinterDataJS(eval *requirement.EvaluationResult) string {
 	return js.String()
 }
 
+// tsResolveExtensions lists the file extensions that ES module resolution may
+// omit from a relative import specifier (e.g. `import x from './Foo'`),
+// longest suffix first so `.d.ts` is stripped before the shorter `.ts`.
+var tsResolveExtensions = []string{".d.ts", ".tsx", ".ts", ".jsx", ".js", ".mjs", ".cjs", ".vue"}
+
+// stripResolveExtension removes a known JS/TS/Vue extension from p, if present.
+func stripResolveExtension(p string) string {
+	for _, ext := range tsResolveExtensions {
+		if strings.HasSuffix(p, ext) {
+			return strings.TrimSuffix(p, ext)
+		}
+	}
+	return p
+}
+
+// resolveRelativeImport resolves a relative import specifier (starting with
+// "." or "..") from fromPath to the path of an analyzed file, the way Node/TS
+// module resolution would: the specifier is joined to the importing file's
+// directory, its extension (if any) is stripped, and the result is looked up
+// against every known file with its own extension stripped. Directory imports
+// resolve through the "index" entry registered for that directory.
+func resolveRelativeImport(fromPath, spec string, noExtToFile map[string]string) string {
+	if !strings.HasPrefix(spec, ".") {
+		return ""
+	}
+	joined := filepath.Clean(filepath.Join(filepath.Dir(fromPath), spec))
+	if fp, ok := noExtToFile[stripResolveExtension(joined)]; ok {
+		return fp
+	}
+	return ""
+}
+
 // buildFileDepsJSON builds a JSON map of file dependency relationships keyed by path hash.
 func buildFileDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictionary) string {
-	// Step 1: Build class qualified name -> file path lookup
+	// Step 1: Build class qualified name -> file path lookup, and an
+	// extension-less path -> file path lookup used to resolve TS/JS relative
+	// imports (e.g. "./GeButton"), which name a file rather than a class.
 	classToFile := map[string]string{}
+	noExtToFile := map[string]string{}
 	for _, f := range files {
 		if !keepFile(keep, f) {
 			continue
@@ -561,6 +596,14 @@ func buildFileDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictionary
 				if _, exists := classToFile[s]; !exists {
 					classToFile[s] = f.Path
 				}
+			}
+		}
+
+		noExtToFile[stripResolveExtension(f.Path)] = f.Path
+		if stripResolveExtension(filepath.Base(f.Path)) == "index" {
+			dir := filepath.Dir(f.Path)
+			if _, exists := noExtToFile[dir]; !exists {
+				noExtToFile[dir] = f.Path
 			}
 		}
 	}
@@ -593,8 +636,13 @@ func buildFileDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictionary
 			}
 			targetFile := ""
 			if ns := dep.GetNamespace(); ns != "" {
-				if fp, ok := classToFile[ns]; ok {
-					targetFile = fp
+				if strings.HasPrefix(ns, ".") {
+					targetFile = resolveRelativeImport(f.Path, ns, noExtToFile)
+				}
+				if targetFile == "" {
+					if fp, ok := classToFile[ns]; ok {
+						targetFile = fp
+					}
 				}
 			}
 			if targetFile == "" {
@@ -683,6 +731,7 @@ func buildFileDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictionary
 // Keys are hashed via the dictionary.
 func buildFolderDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictionary) string {
 	classToFile := map[string]string{}
+	noExtToFile := map[string]string{}
 	for _, f := range files {
 		if !keepFile(keep, f) {
 			continue
@@ -702,6 +751,14 @@ func buildFolderDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictiona
 				if _, exists := classToFile[s]; !exists {
 					classToFile[s] = f.Path
 				}
+			}
+		}
+
+		noExtToFile[stripResolveExtension(f.Path)] = f.Path
+		if stripResolveExtension(filepath.Base(f.Path)) == "index" {
+			dir := filepath.Dir(f.Path)
+			if _, exists := noExtToFile[dir]; !exists {
+				noExtToFile[dir] = f.Path
 			}
 		}
 	}
@@ -740,8 +797,13 @@ func buildFolderDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictiona
 			}
 			targetFile := ""
 			if ns := dep.GetNamespace(); ns != "" {
-				if fp, ok := classToFile[ns]; ok {
-					targetFile = fp
+				if strings.HasPrefix(ns, ".") {
+					targetFile = resolveRelativeImport(f.Path, ns, noExtToFile)
+				}
+				if targetFile == "" {
+					if fp, ok := classToFile[ns]; ok {
+						targetFile = fp
+					}
 				}
 			}
 			if targetFile == "" {
