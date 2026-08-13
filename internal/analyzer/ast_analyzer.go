@@ -14,6 +14,11 @@ import (
 	"github.com/pterm/pterm"
 )
 
+type analyzeJob struct {
+	index int
+	file  *pb.File
+}
+
 // AnalyzeFiles runs all metric visitors on pre-parsed in-memory files.
 func AnalyzeFiles(parsedFiles []*pb.File, progressbar *pterm.SpinnerPrinter) []*pb.File {
 	if len(parsedFiles) == 0 {
@@ -25,28 +30,30 @@ func AnalyzeFiles(parsedFiles []*pb.File, progressbar *pterm.SpinnerPrinter) []*
 	total := len(parsedFiles)
 
 	numWorkers := runtime.NumCPU()
-	filesChan := make(chan *pb.File, numWorkers)
-	resultChan := make(chan *pb.File, total)
+	filesChan := make(chan analyzeJob, numWorkers)
+	allResults := make([]*pb.File, total)
 
 	for i := 0; i < numWorkers; i++ {
 		go func() {
-			for file := range filesChan {
-				AnalyzeFile(file)
+			for job := range filesChan {
+				AnalyzeFile(job.file)
 
 				nbDone.Add(1)
 				if progressbar != nil {
 					details := strconv.Itoa(int(nbDone.Load())) + "/" + strconv.Itoa(total)
 					progressbar.UpdateText("Analyzing (" + details + ")")
 				}
-				resultChan <- file
+				// Each worker owns a distinct slot. This preserves the parser order
+				// even though analysis completes concurrently.
+				allResults[job.index] = job.file
 				wg.Done()
 			}
 		}()
 	}
 
-	for _, file := range parsedFiles {
+	for i, file := range parsedFiles {
 		wg.Add(1)
-		filesChan <- file
+		filesChan <- analyzeJob{index: i, file: file}
 	}
 
 	close(filesChan)
@@ -56,11 +63,6 @@ func AnalyzeFiles(parsedFiles []*pb.File, progressbar *pterm.SpinnerPrinter) []*
 		progressbar.Info("AST Analysis finished")
 	}
 
-	allResults := make([]*pb.File, 0, total)
-	for i := 0; i < total; i++ {
-		allResults = append(allResults, <-resultChan)
-	}
-	close(resultChan)
 	return allResults
 }
 

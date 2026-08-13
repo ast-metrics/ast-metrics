@@ -447,15 +447,23 @@ func (r *Aggregator) executeAggregationOnFiles(files []*pb.File) ProjectAggregat
 
 	wg.Wait()
 
+	// Chunk workers complete in an arbitrary order, so mergeChunks may append
+	// their file blocks differently from one run to the next. Canonicalize every
+	// aggregate before coupling and test-quality analyzers consume these lists.
+	sortFilesByPath(projectAggregated.ByClass.ConcernedFiles)
+	sortFilesByPath(projectAggregated.ByFile.ConcernedFiles)
+
 	// Now  we have sums. We want to reduce metrics and get the averages
 	projectAggregated.ByClass = r.reduceMetrics(projectAggregated.ByClass)
 	projectAggregated.ByFile = r.reduceMetrics(projectAggregated.ByFile)
 	for k, v := range projectAggregated.ByProgrammingLanguage {
+		sortFilesByPath(v.ConcernedFiles)
 		v = r.reduceMetrics(v)
 		f := r.mapCoupling(&v)
 		projectAggregated.ByProgrammingLanguage[k] = f
 	}
 	for k, v := range projectAggregated.ByDirectory {
+		sortFilesByPath(v.ConcernedFiles)
 		v = r.reduceMetrics(v)
 		f := r.mapCoupling(&v)
 		projectAggregated.ByDirectory[k] = f
@@ -474,6 +482,21 @@ func (r *Aggregator) executeAggregationOnFiles(files []*pb.File) ProjectAggregat
 	riskAnalyzer.Analyze(projectAggregated)
 
 	return projectAggregated
+}
+
+func sortFilesByPath(files []*pb.File) {
+	sort.SliceStable(files, func(i, j int) bool {
+		if files[i] == nil {
+			return false
+		}
+		if files[j] == nil {
+			return true
+		}
+		if files[i].Path != files[j].Path {
+			return files[i].Path < files[j].Path
+		}
+		return files[i].ProgrammingLanguage < files[j].ProgrammingLanguage
+	})
 }
 
 // Add an analyzer to the aggregator
