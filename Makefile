@@ -14,6 +14,7 @@ bin/protoc:
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	go install github.com/golang/protobuf/protoc-gen-go
 	@echo "\e[34m\033[1mDONE \033[0m\e[39m\n"
+
 build-protobuff: bin/protoc
 	@echo "\e[34m\033[1m-> Building protobuff\033[0m\e[39m\n"
 	rm -rf pb || true
@@ -23,16 +24,19 @@ build-protobuff: bin/protoc
 	echo 'THIS DIRECTORY IS BUILT BY MAKEFILE (make build-protobuff)' > pb/README.md
 	rm -rf pb/github.com || true
 	@echo "\e[34m\033[1mDONE \033[0m\e[39m\n"
+
 build-go: # for local development and tests
 	@echo "\e[34m\033[1m-> Building go binaries\033[0m\e[39m\n"
 	go build -o bin/ast-metrics ./cmd/ast-metrics
 	@echo "\e[34m\033[1mDONE \033[0m\e[39m\n"
+
 build-release:
 	@echo "\e[34m\033[1m-> Building go binaries for supported platforms\033[0m\e[39m\n"
 	rm -Rf dist || true
 	go install github.com/goreleaser/goreleaser@latest
 	GOPATH=$(shell go env GOPATH) PATH=$$PATH:$(shell go env GOPATH)/bin goreleaser build --snapshot
 	@echo "\e[34m\033[1mDONE \033[0m\e[39m\n"
+
 build: build-protobuff build-go
 	@echo "\n\e[42m  BUILD FINISHED  \e[49m\n"
 
@@ -54,7 +58,6 @@ profile:
 	go run ./cmd/ast-metrics a --non-interactive --profile .
 	go tool pprof -png  ast-metrics.cpu
 	go tool pprof -png  ast-metrics.mem
-
 
 dev-prepare-examples:
 	@echo "\e[34m\033[1m-> Preparing example projects for development\033[0m\e[39m\n"
