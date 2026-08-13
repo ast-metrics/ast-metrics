@@ -238,6 +238,113 @@ func TestBuildFileDepsJSON_HashedKeys(t *testing.T) {
 	}
 }
 
+func TestBuildFileDepsJSON_ResolvesRelativeTypeScriptImport(t *testing.T) {
+	dict := NewStringDictionary()
+	fileA := &pb.File{
+		Path:                "/tmp/proj/Foo.ts",
+		ProgrammingLanguage: "TypeScript",
+		Stmts: &pb.Stmts{
+			StmtExternalDependencies: []*pb.StmtExternalDependency{
+				{Namespace: "./Bar", ClassName: "Bar"},
+			},
+		},
+	}
+	fileB := &pb.File{
+		Path:                "/tmp/proj/Bar.ts",
+		ProgrammingLanguage: "TypeScript",
+		Stmts:               &pb.Stmts{},
+	}
+	raw := buildFileDepsJSON([]*pb.File{fileA, fileB}, nil, dict)
+	var decoded map[string]fileDepsEntry
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	entry, ok := decoded[dict.Add(fileA.Path)]
+	if !ok {
+		t.Fatalf("expected an entry for %s, got %v", fileA.Path, decoded)
+	}
+	if len(entry.Efferent) != 1 || entry.Efferent[0].Path != dict.Add(fileB.Path) {
+		t.Fatalf("expected %s to depend on %s, got %+v", fileA.Path, fileB.Path, entry.Efferent)
+	}
+}
+
+func TestBuildFileDepsJSON_ResolvesRelativeTypeScriptImportThroughIndex(t *testing.T) {
+	dict := NewStringDictionary()
+	fileA := &pb.File{
+		Path:                "/tmp/proj/Foo.ts",
+		ProgrammingLanguage: "TypeScript",
+		Stmts: &pb.Stmts{
+			StmtExternalDependencies: []*pb.StmtExternalDependency{
+				{Namespace: "./bar", ClassName: "Bar"},
+			},
+		},
+	}
+	fileB := &pb.File{
+		Path:                "/tmp/proj/bar/index.ts",
+		ProgrammingLanguage: "TypeScript",
+		Stmts:               &pb.Stmts{},
+	}
+	raw := buildFileDepsJSON([]*pb.File{fileA, fileB}, nil, dict)
+	var decoded map[string]fileDepsEntry
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	entry, ok := decoded[dict.Add(fileA.Path)]
+	if !ok {
+		t.Fatalf("expected an entry for %s, got %v", fileA.Path, decoded)
+	}
+	if len(entry.Efferent) != 1 || entry.Efferent[0].Path != dict.Add(fileB.Path) {
+		t.Fatalf("expected %s to depend on %s, got %+v", fileA.Path, fileB.Path, entry.Efferent)
+	}
+}
+
+func TestBuildFileDepsJSON_ResolvesRelativeImportWithExplicitExtension(t *testing.T) {
+	dict := NewStringDictionary()
+	fileA := &pb.File{
+		Path:                "/tmp/proj/Modal.ts",
+		ProgrammingLanguage: "TypeScript",
+		Stmts: &pb.Stmts{
+			StmtExternalDependencies: []*pb.StmtExternalDependency{
+				{Namespace: "./Steps/CelebrationStep.vue", ClassName: "CelebrationStep"},
+			},
+		},
+	}
+	fileB := &pb.File{
+		Path:                "/tmp/proj/Steps/CelebrationStep.vue",
+		ProgrammingLanguage: "TypeScript",
+		Stmts:               &pb.Stmts{},
+	}
+	raw := buildFileDepsJSON([]*pb.File{fileA, fileB}, nil, dict)
+	var decoded map[string]fileDepsEntry
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	entry, ok := decoded[dict.Add(fileA.Path)]
+	if !ok {
+		t.Fatalf("expected an entry for %s, got %v", fileA.Path, decoded)
+	}
+	if len(entry.Efferent) != 1 || entry.Efferent[0].Path != dict.Add(fileB.Path) {
+		t.Fatalf("expected %s to depend on %s, got %+v", fileA.Path, fileB.Path, entry.Efferent)
+	}
+}
+
+func TestBuildFileDepsJSON_BareImportSpecifierStaysUnresolved(t *testing.T) {
+	dict := NewStringDictionary()
+	fileA := &pb.File{
+		Path:                "/tmp/proj/Foo.ts",
+		ProgrammingLanguage: "TypeScript",
+		Stmts: &pb.Stmts{
+			StmtExternalDependencies: []*pb.StmtExternalDependency{
+				{Namespace: "react", ClassName: "React"},
+			},
+		},
+	}
+	raw := buildFileDepsJSON([]*pb.File{fileA}, nil, dict)
+	if raw != "{}" {
+		t.Fatalf("expected external bare-specifier import to stay unresolved, got %s", raw)
+	}
+}
+
 func TestBuildFolderDepsJSON_HashedKeys(t *testing.T) {
 	dict := NewStringDictionary()
 	fileA := &pb.File{

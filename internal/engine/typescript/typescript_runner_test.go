@@ -193,6 +193,62 @@ func TestTypeScriptParser_TreeSitter_Imports(t *testing.T) {
 	}
 }
 
+const sampleReExports = `
+export * from './components';
+export * as ns from './bar';
+export { a, b as c } from './foo';
+export type { X } from './types';
+export { local };
+`
+
+func TestTypeScriptParser_TreeSitter_ReExports(t *testing.T) {
+	r := &TypeScriptRunner{}
+	file, err := enginePkg.CreateTestFileWithCode(r, sampleReExports)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if file == nil || file.Stmts == nil || len(file.Stmts.StmtNamespace) != 1 {
+		t.Fatalf("invalid file/namespace")
+	}
+	ns := file.Stmts.StmtNamespace[0]
+	if ns == nil || ns.Stmts == nil {
+		t.Fatalf("nil ns stmts")
+	}
+
+	has := func(module, name string) bool {
+		for _, d := range ns.Stmts.StmtExternalDependencies {
+			if d.Namespace == module && d.ClassName == name {
+				return true
+			}
+			if name == "" && d.Namespace == module {
+				return true
+			}
+		}
+		return false
+	}
+
+	if !has("./components", "") {
+		t.Fatalf("missing dep: export * from './components'")
+	}
+	if !has("./bar", "ns") {
+		t.Fatalf("missing dep: export * as ns from './bar'")
+	}
+	if !has("./foo", "a") {
+		t.Fatalf("missing dep: export { a } from './foo'")
+	}
+	if !has("./foo", "b") {
+		t.Fatalf("missing dep: export { b as c } from './foo'")
+	}
+	if !has("./types", "X") {
+		t.Fatalf("missing dep: export type { X } from './types'")
+	}
+	for _, d := range ns.Stmts.StmtExternalDependencies {
+		if d.Namespace == "" {
+			t.Fatalf("local export `export { local }` must not be recorded as a dependency, got %+v", d)
+		}
+	}
+}
+
 const sampleInterface = `
 interface Shape {
     area(): number;
