@@ -258,6 +258,7 @@ func (c *Configuration) SetExcludePatterns(patterns []string) {
 var defaultExtensions = map[string]string{
 	"php": ".php", "go": ".go", "python": ".py", "rust": ".rs", "typescript": ".ts",
 	"java": ".java", "csharp": ".cs",
+	"cpp": ".cpp",
 }
 
 // GetExtensionsForLanguage returns every extension a file of lang can carry:
