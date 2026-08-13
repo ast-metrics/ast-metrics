@@ -12,7 +12,7 @@ Drop it in any CI. Works offline: no data leaves your machine.
 Fast: 20,000+ lines of code analyzed per second, on a laptop.
 <br />
 <br />
-<code>Go</code> · <code>PHP</code> · <code>Python</code> · <code>Rust</code> · <code>Java</code> · <code>C#</code> · <code>TypeScript</code>
+<code>Go</code> · <code>PHP</code> · <code>Python</code> · <code>Rust</code> · <code>Java</code> · <code>C#</code> · <code>TypeScript</code> · <code>C++ (initial/basic)</code>
 </p>
 <br />
 
@@ -119,7 +119,12 @@ ast-metrics mcp .
 
 ## Supported languages
 
-Go, PHP, Python, Rust, Java, C# and TypeScript.
+Go, PHP, Python, Rust, Java, C#, TypeScript, and initial/basic syntax-level C++ support.
+
+C++ discovery includes `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, and `.hxx`. Generic
+`.h` files are not claimed automatically because they may contain either C or C++.
+The C++ engine maps Tree-sitter syntax into the common metrics representation; it
+does not provide preprocessing, include resolution, or complete semantic/type analysis.
 
 ## Contributing
 
