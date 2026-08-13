@@ -99,6 +99,7 @@ type Aggregated struct {
 	TopCommitters                           []TopCommitter
 	ResultOfGitAnalysis                     []ResultOfGitAnalysis
 	PackageRelations                        map[string]map[string]int // counter of dependencies. Ex: A -> B -> 2
+	FileDependencies                        FileDependencyGraph
 	Graph                                   *pb.Graph
 	ExternalNodes                           map[string]bool // node IDs that are external (not from project source)
 	Community                               *CommunityMetrics
@@ -154,6 +155,7 @@ func NewAggregator(files []*pb.File, gitSummaries []ResultOfGitAnalysis) *Aggreg
 		gitSummaries: gitSummaries,
 	}
 	// Register default analyzers
+	a.WithAggregateAnalyzer(NewFileDependencyAnalyzer())
 	a.WithAggregateAnalyzer(NewGraphAggregator())
 	// Run community detection after graph is built
 	a.WithAggregateAnalyzer(NewCommunityAggregator())
