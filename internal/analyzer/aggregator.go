@@ -11,6 +11,12 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/analyzer/classifier"
 	requirement "github.com/ast-metrics/ast-metrics/internal/analyzer/requirement"
 	engine "github.com/ast-metrics/ast-metrics/internal/engine"
+	csharpdeps "github.com/ast-metrics/ast-metrics/internal/engine/csharp/deps"
+	golangdeps "github.com/ast-metrics/ast-metrics/internal/engine/golang/deps"
+	javadeps "github.com/ast-metrics/ast-metrics/internal/engine/java/deps"
+	pythondeps "github.com/ast-metrics/ast-metrics/internal/engine/python/deps"
+	rustdeps "github.com/ast-metrics/ast-metrics/internal/engine/rust/deps"
+	typescriptdeps "github.com/ast-metrics/ast-metrics/internal/engine/typescript/deps"
 	Scm "github.com/ast-metrics/ast-metrics/internal/scm"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
@@ -99,6 +105,7 @@ type Aggregated struct {
 	TopCommitters                           []TopCommitter
 	ResultOfGitAnalysis                     []ResultOfGitAnalysis
 	PackageRelations                        map[string]map[string]int // counter of dependencies. Ex: A -> B -> 2
+	FileDependencies                        FileDependencyGraph
 	Graph                                   *pb.Graph
 	ExternalNodes                           map[string]bool // node IDs that are external (not from project source)
 	Community                               *CommunityMetrics
@@ -154,6 +161,18 @@ func NewAggregator(files []*pb.File, gitSummaries []ResultOfGitAnalysis) *Aggreg
 		gitSummaries: gitSummaries,
 	}
 	// Register default analyzers
+	// One resolver per language: an import means something different in each,
+	// and each is consulted only for the files it owns. They live in leaf
+	// packages beside their engine rather than inside it, so that an engine
+	// test may keep importing this package.
+	a.WithAggregateAnalyzer(NewFileDependencyAnalyzer(
+		typescriptdeps.NewFileDependencyResolver(),
+		golangdeps.NewFileDependencyResolver(),
+		javadeps.NewFileDependencyResolver(),
+		csharpdeps.NewFileDependencyResolver(),
+		rustdeps.NewFileDependencyResolver(),
+		pythondeps.NewFileDependencyResolver(),
+	))
 	a.WithAggregateAnalyzer(NewGraphAggregator())
 	// Run community detection after graph is built
 	a.WithAggregateAnalyzer(NewCommunityAggregator())

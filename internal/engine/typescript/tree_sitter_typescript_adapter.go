@@ -235,28 +235,39 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	if n == nil {
 		return nil
 	}
-	if n.Type() != "import_statement" {
+	switch n.Type() {
+	case "import_statement":
+		return a.importsFromImportStatement(n)
+	case "export_statement":
+		// A re-export (`export ... from 'module'`) is a dependency on that
+		// module just like an import; a local export (no `from` clause) is not.
+		return a.importsFromExportStatement(n)
+	default:
 		return nil
 	}
-	items := []Treesitter.ImportItem{}
+}
 
-	// Find the source module (the string literal at the end)
-	var module string
+// moduleOf reads the source module string of an import/export statement (the
+// string literal in its "source" field, falling back to the first string
+// child for grammars that don't expose the field).
+func (a *TreeSitterAdapter) moduleOf(n *sitter.Node) string {
 	if src := n.ChildByFieldName("source"); src != nil {
-		module = stripQuotes(text(a.src, src))
-	} else {
-		// fallback: find a string child
-		for i := 0; i < int(n.ChildCount()); i++ {
-			ch := n.Child(i)
-			if ch.Type() == "string" {
-				module = stripQuotes(text(a.src, ch))
-				break
-			}
+		return stripQuotes(text(a.src, src))
+	}
+	for i := 0; i < int(n.ChildCount()); i++ {
+		if ch := n.Child(i); ch.Type() == "string" {
+			return stripQuotes(text(a.src, ch))
 		}
 	}
+	return ""
+}
+
+func (a *TreeSitterAdapter) importsFromImportStatement(n *sitter.Node) []Treesitter.ImportItem {
+	module := a.moduleOf(n)
 	if module == "" {
 		return nil
 	}
+	items := []Treesitter.ImportItem{}
 
 	// Walk import clause children
 	var walkClause func(*sitter.Node)
@@ -297,6 +308,50 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	}
 
 	// If no symbols found, record as plain module import
+	if len(items) == 0 {
+		items = append(items, Treesitter.ImportItem{Module: module})
+	}
+	return items
+}
+
+// importsFromExportStatement handles re-exports: `export * from 'module'`,
+// `export * as ns from 'module'`, and `export { a, b as c } from 'module'`
+// (optionally prefixed with `type`). These reference another module just like
+// an import does, so barrel files (`export * from './components'`) are
+// tracked as dependencies rather than silently dropped.
+func (a *TreeSitterAdapter) importsFromExportStatement(n *sitter.Node) []Treesitter.ImportItem {
+	if n.ChildByFieldName("source") == nil {
+		// Local export (`export { d }`, `export const x = ...`): no module involved.
+		return nil
+	}
+	module := a.moduleOf(n)
+	if module == "" {
+		return nil
+	}
+	items := []Treesitter.ImportItem{}
+	for i := 0; i < int(n.ChildCount()); i++ {
+		ch := n.Child(i)
+		switch ch.Type() {
+		case "export_clause":
+			for j := 0; j < int(ch.ChildCount()); j++ {
+				spec := ch.Child(j)
+				if spec.Type() == "export_specifier" {
+					if nm := spec.ChildByFieldName("name"); nm != nil {
+						items = append(items, Treesitter.ImportItem{Module: module, Name: text(a.src, nm)})
+					} else if id := firstChildOfType(spec, "identifier"); id != nil {
+						items = append(items, Treesitter.ImportItem{Module: module, Name: text(a.src, id)})
+					}
+				}
+			}
+		case "namespace_export":
+			// export * as ns from 'module'
+			if id := firstChildOfType(ch, "identifier"); id != nil {
+				items = append(items, Treesitter.ImportItem{Module: module, Name: text(a.src, id)})
+			}
+		}
+	}
+
+	// export * from 'module', or nothing more specific found: record as a plain module dependency.
 	if len(items) == 0 {
 		items = append(items, Treesitter.ImportItem{Module: module})
 	}

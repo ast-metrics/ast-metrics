@@ -1,6 +1,7 @@
 package report
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,8 +11,10 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	"github.com/ast-metrics/ast-metrics/internal/engine/csharp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/java"
+	"github.com/ast-metrics/ast-metrics/internal/engine/typescript"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestLanguageURLSlug guards the URL-safe naming of per-language report files:
@@ -205,4 +208,41 @@ namespace App.Services
 	csPage, err := os.ReadFile(filepath.Join(reportDir, "index_CSharp.html"))
 	assert.Nil(t, err)
 	assert.True(t, strings.Contains(string(csPage), "C#"), "Display name stays C#")
+}
+
+func TestHtmlReportFullPipelineTypeScriptDependencies(t *testing.T) {
+	projectDir := t.TempDir()
+	sourcePath := filepath.Join(projectDir, "Foo.ts")
+	targetPath := filepath.Join(projectDir, "Bar.ts")
+	require.NoError(t, os.WriteFile(sourcePath, []byte("import { Bar } from './Bar';\nexport const foo = new Bar();\n"), 0o600))
+	require.NoError(t, os.WriteFile(targetPath, []byte("export class Bar {}\n"), 0o600))
+
+	runner := &typescript.TypeScriptRunner{}
+	source, err := runner.Parse(sourcePath)
+	require.NoError(t, err)
+	target, err := runner.Parse(targetPath)
+	require.NoError(t, err)
+	files := []*pb.File{source, target}
+	analyzer.AnalyzeFiles(files, nil)
+	project := analyzer.NewAggregator(files, nil).Aggregates()
+	assert.Equal(t, []string{targetPath}, project.Combined.FileDependencies.Efferent[sourcePath])
+	assert.Equal(t, []string{sourcePath}, project.Combined.FileDependencies.Afferent[targetPath])
+
+	reportDir := t.TempDir()
+	generator := NewHtmlReportGenerator(reportDir).(*HtmlReportGenerator)
+	_, err = generator.Generate(files, project)
+	require.NoError(t, err)
+	require.Contains(t, generator.langCache, "All")
+
+	data, err := os.ReadFile(filepath.Join(reportDir, "data", "data_All.js"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), generator.langCache["All"].fileDepsJSON)
+
+	var dependencies map[string]fileDepsEntry
+	require.NoError(t, json.Unmarshal([]byte(generator.langCache["All"].fileDepsJSON), &dependencies))
+	dictionary := NewStringDictionary()
+	sourceHash := dictionary.Add(sourcePath)
+	targetHash := dictionary.Add(targetPath)
+	assert.Equal(t, []depRef{{Path: targetHash, Short: "Bar.ts"}}, dependencies[sourceHash].Efferent)
+	assert.Equal(t, []depRef{{Path: sourceHash, Short: "Foo.ts"}}, dependencies[targetHash].Afferent)
 }
