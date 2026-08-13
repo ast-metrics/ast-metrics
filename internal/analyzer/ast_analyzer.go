@@ -129,69 +129,27 @@ func recomputeFileCyclomatic(file *pb.File) {
 	file.Stmts.Analyze.Complexity.Cyclomatic = &fileCyclomatic
 }
 
+// consolidateLoc exposes the line counts of the file as its Volume metrics.
+//
+// The whole file is one range of source, measured once by the parser: its LOC,
+// LLOC and CLOC are read off that measure and never summed from the functions
+// it holds. Summing would ignore everything written outside a function (fields,
+// top-level code, the comments between two methods) and would count a nested
+// function twice.
 func consolidateLoc(file *pb.File) {
-	if file != nil {
-		if file.Stmts == nil {
-			file.Stmts = &pb.Stmts{}
-		}
-		if file.Stmts.Analyze == nil {
-			file.Stmts.Analyze = &pb.Analyze{}
-		}
-		if file.Stmts.Analyze.Volume == nil {
-			file.Stmts.Analyze.Volume = &pb.Volume{}
-		}
-
-		// consolidate loc
-		if file.LinesOfCode != nil {
-			file.Stmts.Analyze.Volume.Loc = &file.LinesOfCode.LinesOfCode
-			file.Stmts.Analyze.Volume.Lloc = &file.LinesOfCode.LogicalLinesOfCode
-			file.Stmts.Analyze.Volume.Cloc = &file.LinesOfCode.CommentLinesOfCode
-		}
-		// Prefer not to override LOC if already computed by visitors; only set if missing
-		if file.LinesOfCode != nil && file.Stmts.Analyze.Volume.Loc == nil {
-			v := file.LinesOfCode.LinesOfCode
-			file.Stmts.Analyze.Volume.Loc = &v
-		}
-		// Aggregate LLOC/CLOC from functions (avoid counting namespace duplicates)
-		var sumLloc int32
-		var sumCloc int32
-		// Sum top-level functions
-		for _, fn := range file.Stmts.StmtFunction {
-			if fn == nil || fn.LinesOfCode == nil {
-				continue
-			}
-			ll := fn.LinesOfCode.LogicalLinesOfCode
-			if ll == 0 {
-				// Consider at least one logical line per function when compacted on one line
-				ll = 1
-			}
-			sumLloc += ll
-			sumCloc += fn.LinesOfCode.CommentLinesOfCode
-		}
-		// Add class methods
-		classes := engine.GetClassesInFile(file)
-		for _, cls := range classes {
-			if cls == nil || cls.Stmts == nil {
-				continue
-			}
-			for _, fn := range cls.Stmts.StmtFunction {
-				if fn == nil || fn.LinesOfCode == nil {
-					continue
-				}
-				ll := fn.LinesOfCode.LogicalLinesOfCode
-				if ll == 0 {
-					ll = 1
-				}
-				sumLloc += ll
-				sumCloc += fn.LinesOfCode.CommentLinesOfCode
-			}
-		}
-		if file.Stmts.Analyze.Volume.Lloc == nil || *file.Stmts.Analyze.Volume.Lloc == 0 {
-			file.Stmts.Analyze.Volume.Lloc = &sumLloc
-		}
-		// Prefer existing file-level CLOC if already computed by adapter; otherwise fall back to sum of function CLOCs
-		if file.Stmts.Analyze.Volume.Cloc == nil || *file.Stmts.Analyze.Volume.Cloc == 0 {
-			file.Stmts.Analyze.Volume.Cloc = &sumCloc
-		}
+	if file == nil || file.LinesOfCode == nil {
+		return
 	}
+	if file.Stmts == nil {
+		file.Stmts = &pb.Stmts{}
+	}
+	if file.Stmts.Analyze == nil {
+		file.Stmts.Analyze = &pb.Analyze{}
+	}
+	if file.Stmts.Analyze.Volume == nil {
+		file.Stmts.Analyze.Volume = &pb.Volume{}
+	}
+	file.Stmts.Analyze.Volume.Loc = &file.LinesOfCode.LinesOfCode
+	file.Stmts.Analyze.Volume.Lloc = &file.LinesOfCode.LogicalLinesOfCode
+	file.Stmts.Analyze.Volume.Cloc = &file.LinesOfCode.CommentLinesOfCode
 }

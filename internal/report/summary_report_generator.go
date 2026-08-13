@@ -119,11 +119,18 @@ func (v *SummaryReportGenerator) Render(files []*pb.File, projectAggregated anal
 	})
 
 	section(out, "Size", func(body *strings.Builder) {
+		// Production and test lines are two labelled rows next to each other, so
+		// that the split is read off the labels rather than explained in a note,
+		// and so that the two add up to what a line counter reports for the same
+		// directory. Everything else in this report describes production code,
+		// which is why only the lines of the test files appear at all.
 		row(body, "Files", integer(combined.NbFiles))
-		row(body, "  including test files", integer(combined.NbTestFiles))
-		total(body, "Lines of code (LOC)", combined.Loc)
+		row(body, "  production", integer(combined.NbFiles-combined.NbTestFiles))
+		row(body, "  test", integer(combined.NbTestFiles))
+		total(body, "Production lines of code (LOC)", combined.Loc)
 		total(body, "  comment lines (CLOC)", combined.Cloc)
 		total(body, "  logical lines (LLOC)", combined.Lloc)
+		total(body, "Test lines of code (LOC)", combined.TestLoc)
 		row(body, "Classes", integer(byClass.NbClasses))
 		row(body, "Methods", integer(combined.NbMethods))
 		row(body, "Functions", integer(combined.NbFunctions))

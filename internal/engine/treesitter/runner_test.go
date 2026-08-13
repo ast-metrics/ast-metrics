@@ -10,19 +10,20 @@ import (
 // Mock adapter for testing
 type mockAdapter struct{}
 
-func (m *mockAdapter) Language() *sitter.Language                                { return nil }
-func (m *mockAdapter) IsModule(*sitter.Node) bool                               { return false }
-func (m *mockAdapter) IsClass(*sitter.Node) bool                                { return false }
-func (m *mockAdapter) IsFunction(*sitter.Node) bool                             { return false }
-func (m *mockAdapter) NodeName(*sitter.Node) string                             { return "" }
-func (m *mockAdapter) NodeBody(*sitter.Node) *sitter.Node                       { return nil }
-func (m *mockAdapter) NodeParams(*sitter.Node) *sitter.Node                     { return nil }
-func (m *mockAdapter) ModuleNameFromPath(path string) string                    { return "" }
-func (m *mockAdapter) AttachQualified(parentClass, fn string) string           { return "" }
-func (m *mockAdapter) EachChildBody(n *sitter.Node, yield func(*sitter.Node))  {}
-func (m *mockAdapter) EachParamIdent(params *sitter.Node, yield func(string))  {}
-func (m *mockAdapter) Decision(n *sitter.Node) DecisionKind                    { return DecNone }
-func (m *mockAdapter) Imports(n *sitter.Node) []ImportItem                     { return nil }
+func (m *mockAdapter) Language() *sitter.Language                             { return nil }
+func (m *mockAdapter) IsModule(*sitter.Node) bool                             { return false }
+func (m *mockAdapter) IsClass(*sitter.Node) bool                              { return false }
+func (m *mockAdapter) IsFunction(*sitter.Node) bool                           { return false }
+func (m *mockAdapter) NodeName(*sitter.Node) string                           { return "" }
+func (m *mockAdapter) NodeBody(*sitter.Node) *sitter.Node                     { return nil }
+func (m *mockAdapter) NodeParams(*sitter.Node) *sitter.Node                   { return nil }
+func (m *mockAdapter) ModuleNameFromPath(path string) string                  { return "" }
+func (m *mockAdapter) AttachQualified(parentClass, fn string) string          { return "" }
+func (m *mockAdapter) EachChildBody(n *sitter.Node, yield func(*sitter.Node)) {}
+func (m *mockAdapter) EachParamIdent(params *sitter.Node, yield func(string)) {}
+func (m *mockAdapter) Decision(n *sitter.Node) DecisionKind                   { return DecNone }
+func (m *mockAdapter) Statement(n *sitter.Node) StatementKind                 { return NotAStatement }
+func (m *mockAdapter) Imports(n *sitter.Node) []ImportItem                    { return nil }
 
 func TestRunner_ParseFile_NonExistentFile(t *testing.T) {
 	runner := Runner{

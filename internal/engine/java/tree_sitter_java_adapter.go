@@ -193,7 +193,6 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	}
 }
 
-
 // javaDecisions maps the Java grammar onto the shared complexity model.
 //
 // Java has no else_clause node: the else branch is the `alternative` field of
@@ -257,53 +256,45 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	return []Treesitter.ImportItem{{Module: path, Name: ""}}
 }
 
-
 // IsLogicalNode reports whether a node begins a logical line. In Java, local
 // variable declarations are statements but their node type does not carry the
 // "_statement" suffix.
-func (a *TreeSitterAdapter) IsLogicalNode(n *sitter.Node) bool {
-	if n.Type() == "local_variable_declaration" {
-		return true
-	}
-	return Treesitter.IsDefaultLogicalNode(n.Type())
+// javaStatements maps the Java grammar onto the shared logical-lines model.
+//
+// `switch_expression` is the single node the grammar uses for a switch, whether
+// it is written as a statement or as an expression. It carries no "_statement"
+// suffix, which is exactly how the switch line used to go uncounted in Java
+// while counting in the six other languages. `switch_label` and
+// `switch_block_statement_group` are labels, and `field_declaration`,
+// `static_initializer`, `method_declaration` and `import_declaration` declare
+// members.
+var javaStatements = &Treesitter.StatementSpec{
+	Statement: []string{
+		"expression_statement", "local_variable_declaration",
+		"if_statement",
+		"for_statement", "enhanced_for_statement", "while_statement", "do_statement",
+		"switch_expression", "try_statement", "try_with_resources_statement",
+		"return_statement", "break_statement", "continue_statement",
+		"throw_statement", "yield_statement", "assert_statement",
+		"labeled_statement", "synchronized_statement",
+	},
 }
 
-// CountComments counts Java comment lines (//, /* */ and /** */) in the given range.
-// CommentMarkers declares Java comment tokens: "//" and "/* */" only.
-// "#" has no meaning in Java source.
-func (a *TreeSitterAdapter) CommentMarkers() engine.CommentMarkers {
-	return engine.CommentMarkers{SlashSlash: true, SlashStar: true}
+func (a *TreeSitterAdapter) Statement(n *sitter.Node) Treesitter.StatementKind {
+	return javaStatements.Classify(n)
 }
 
-func (a *TreeSitterAdapter) CountComments(lines []string, start, end int) int {
-	cnt := 0
-	inBlock := false
-	for i := start - 1; i < end && i < len(lines); i++ {
-		ln := strings.TrimSpace(lines[i])
-		if ln == "" {
-			continue
-		}
-		clean := stripJavaStrings(ln)
-		if inBlock {
-			cnt++
-			if strings.Contains(clean, "*/") {
-				inBlock = false
-			}
-			continue
-		}
-		if strings.HasPrefix(clean, "//") {
-			cnt++
-			continue
-		}
-		if strings.HasPrefix(clean, "/*") {
-			cnt++
-			if !strings.Contains(clean, "*/") {
-				inBlock = true
-			}
-			continue
-		}
+// CommentSyntax declares Java comment tokens: "//" and "/* */" only. "#" has no
+// meaning in Java source.
+func (a *TreeSitterAdapter) CommentSyntax() engine.CommentSyntax {
+	return engine.CommentSyntax{
+		Line:       []string{"//"},
+		BlockOpen:  "/*",
+		BlockClose: "*/",
+		Quote:      []rune{'"', '\''},
+		// a text block holds a value over several lines
+		RawString: []string{`"""`},
 	}
-	return cnt
 }
 
 // javaOperatorTokens lists the anonymous token types counted as Halstead
