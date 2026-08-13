@@ -3,11 +3,12 @@ package cli
 import (
 	"fmt"
 	"os"
+	"sort"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/fsnotify/fsnotify"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	pb "github.com/ast-metrics/ast-metrics/pb"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/fsnotify/fsnotify"
 	"github.com/muesli/termenv"
 )
 
@@ -140,8 +141,15 @@ func fillInScreens(modelChoices *modelChoices) {
 		&viewRisks,
 	}
 
-	// Append one screen per programming language
-	for languageName, lang := range modelChoices.projectAggregated.ByProgrammingLanguage {
+	// Append one screen per programming language. Go deliberately randomizes map
+	// iteration, so sort the names to keep menu positions stable across renders.
+	languageNames := make([]string, 0, len(modelChoices.projectAggregated.ByProgrammingLanguage))
+	for languageName := range modelChoices.projectAggregated.ByProgrammingLanguage {
+		languageNames = append(languageNames, languageName)
+	}
+	sort.Strings(languageNames)
+	for _, languageName := range languageNames {
+		lang := modelChoices.projectAggregated.ByProgrammingLanguage[languageName]
 		viewByProgrammingLanguage := ScreenByProgrammingLanguage{isInteractive: true}
 		viewByProgrammingLanguage.programmingLangageName = languageName
 		viewByProgrammingLanguage.programmingLangageAggregated = lang
