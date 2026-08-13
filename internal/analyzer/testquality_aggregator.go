@@ -236,6 +236,12 @@ func (tqa *TestQualityAggregator) Calculate(aggregate *Aggregated) {
 		}
 	}
 
+	sort.Slice(allTestMetrics, func(i, j int) bool {
+		if allTestMetrics[i].FilePath != allTestMetrics[j].FilePath {
+			return allTestMetrics[i].FilePath < allTestMetrics[j].FilePath
+		}
+		return allTestMetrics[i].ShortPath < allTestMetrics[j].ShortPath
+	})
 	metrics.TestFiles = allTestMetrics
 
 	// 5. Build ProdClassCoverage
@@ -276,6 +282,12 @@ func (tqa *TestQualityAggregator) Calculate(aggregate *Aggregated) {
 			testedCount++
 		}
 	}
+	sort.Slice(prodCoverage, func(i, j int) bool {
+		if prodCoverage[i].ClassName != prodCoverage[j].ClassName {
+			return prodCoverage[i].ClassName < prodCoverage[j].ClassName
+		}
+		return prodCoverage[i].FilePath < prodCoverage[j].FilePath
+	})
 	metrics.ProdClassCoverage = prodCoverage
 	metrics.NbTestedClasses = testedCount
 	if len(prodClassIndex) > 0 {
@@ -290,7 +302,13 @@ func (tqa *TestQualityAggregator) Calculate(aggregate *Aggregated) {
 		}
 	}
 	sort.Slice(godTests, func(i, j int) bool {
-		return godTests[i].SUTFanOut > godTests[j].SUTFanOut
+		if godTests[i].SUTFanOut != godTests[j].SUTFanOut {
+			return godTests[i].SUTFanOut > godTests[j].SUTFanOut
+		}
+		if godTests[i].FilePath != godTests[j].FilePath {
+			return godTests[i].FilePath < godTests[j].FilePath
+		}
+		return godTests[i].ShortPath < godTests[j].ShortPath
 	})
 	if len(godTests) > 20 {
 		godTests = godTests[:20]
@@ -316,7 +334,13 @@ func (tqa *TestQualityAggregator) Calculate(aggregate *Aggregated) {
 		}
 	}
 	sort.Slice(orphans, func(i, j int) bool {
-		return orphans[i].Weight > orphans[j].Weight
+		if orphans[i].Weight != orphans[j].Weight {
+			return orphans[i].Weight > orphans[j].Weight
+		}
+		if orphans[i].ClassName != orphans[j].ClassName {
+			return orphans[i].ClassName < orphans[j].ClassName
+		}
+		return orphans[i].FilePath < orphans[j].FilePath
 	})
 	if len(orphans) > 20 {
 		orphans = orphans[:20]

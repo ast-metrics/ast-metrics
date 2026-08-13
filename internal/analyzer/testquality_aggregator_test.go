@@ -1,6 +1,8 @@
 package analyzer
 
 import (
+	"fmt"
+	"path/filepath"
 	"testing"
 
 	pb "github.com/ast-metrics/ast-metrics/pb"
@@ -279,6 +281,57 @@ func TestTestQualityAggregator_OrphanDetection(t *testing.T) {
 	// ImportantService should be first (higher weight)
 	assert.Equal(t, "ImportantService", agg.TestQuality.OrphanClasses[0].ClassName)
 	assert.Greater(t, agg.TestQuality.OrphanClasses[0].Weight, agg.TestQuality.OrphanClasses[1].Weight)
+}
+
+func TestTestQualityAggregator_TopListsBreakTiesDeterministically(t *testing.T) {
+	agg := newAggregated()
+
+	// More than 20 equal-weight orphans and equal-fan-out god tests exercise
+	// the truncation boundary used by baseline project rules.
+	classes := make([]*pb.StmtClass, 0, 30)
+	for i := 0; i < 30; i++ {
+		name := fmt.Sprintf("Class%02d", i)
+		complexity := int32(1)
+		classes = append(classes, &pb.StmtClass{
+			Name: &pb.Name{Qualified: name, Short: name},
+			Stmts: &pb.Stmts{Analyze: &pb.Analyze{
+				Complexity: &pb.Complexity{Cyclomatic: &complexity},
+			}},
+		})
+	}
+
+	prodFile := &pb.File{
+		Path:                "src/classes.go",
+		ProgrammingLanguage: "Go",
+		Stmts:               &pb.Stmts{StmtClass: classes},
+	}
+	agg.ConcernedFiles = append(agg.ConcernedFiles, prodFile)
+
+	deps := make([]*pb.StmtExternalDependency, 0, 5)
+	for i := 0; i < 5; i++ {
+		deps = append(deps, &pb.StmtExternalDependency{ClassName: fmt.Sprintf("Class%02d", i)})
+	}
+	// Reverse input order to prove that equal fan-out does not inherit parser
+	// completion order.
+	for i := 24; i >= 0; i-- {
+		path := fmt.Sprintf("tests/test%02d_test.go", i)
+		agg.ConcernedFiles = append(agg.ConcernedFiles, &pb.File{
+			Path:                path,
+			ShortPath:           filepath.Base(path),
+			ProgrammingLanguage: "Go",
+			IsTest:              true,
+			Stmts:               &pb.Stmts{StmtExternalDependencies: deps},
+		})
+	}
+
+	NewTestQualityAggregator().Calculate(&agg)
+
+	assert.Len(t, agg.TestQuality.GodTests, 20)
+	assert.Len(t, agg.TestQuality.OrphanClasses, 20)
+	for i := 0; i < 20; i++ {
+		assert.Equal(t, fmt.Sprintf("tests/test%02d_test.go", i), agg.TestQuality.GodTests[i].FilePath)
+		assert.Equal(t, fmt.Sprintf("Class%02d", i+5), agg.TestQuality.OrphanClasses[i].ClassName)
+	}
 }
 
 func TestBuildTestQualityJSON(t *testing.T) {
