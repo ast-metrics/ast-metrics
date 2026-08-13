@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
 	sitter "github.com/smacker/go-tree-sitter"
 	tsPhp "github.com/smacker/go-tree-sitter/php"
@@ -843,43 +844,38 @@ func (a *TreeSitterAdapter) ExtractMethodCalls(src []byte, startLine, endLine in
 
 // stripStrings removes content inside single or double quotes
 // CountComments counts PHP-style comment lines in the given range
-func (a *TreeSitterAdapter) CountComments(lines []string, start, end int) int {
-	cnt := 0
-	inBlock := false
-	for i := start - 1; i < end && i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-		clean := stripStrings(line)
+// phpStatements maps the PHP grammar onto the shared logical-lines model.
+//
+// `case_statement` and `default_statement` carry the "_statement" suffix but are
+// labels: they hold the branches of a switch, they are not instructions. A
+// class constant and a property are members, so `const_declaration` and
+// `property_declaration` are absent. `else_if_clause` is listed because an
+// elseif carries a condition of its own, exactly like the `if` it extends,
+// while `else_clause`, `catch_clause` and `finally_clause` are branch headers.
+var phpStatements = &Treesitter.StatementSpec{
+	Statement: []string{
+		"expression_statement", "echo_statement", "unset_statement",
+		"if_statement", "else_if_clause",
+		"for_statement", "foreach_statement", "while_statement", "do_statement",
+		"switch_statement", "try_statement",
+		"return_statement", "break_statement", "continue_statement", "goto_statement",
+		"global_declaration", "function_static_declaration", "static_variable_declaration",
+		"declare_statement", "unset_expression",
+	},
+}
 
-		if inBlock {
-			// Every line of a block comment is a comment line, including the
-			// closing "*/" delimiter line.
-			cnt++
-			if strings.Contains(clean, "*/") {
-				inBlock = false
-			}
-			continue
-		}
+func (a *TreeSitterAdapter) Statement(n *sitter.Node) Treesitter.StatementKind {
+	return phpStatements.Classify(n)
+}
 
-		if strings.HasPrefix(clean, "/*") {
-			// Opening line of a "/*" or "/**" block; a block closing on the
-			// same line stays a single comment line.
-			cnt++
-			if !strings.Contains(clean, "*/") {
-				inBlock = true
-			}
-			continue
-		}
-
-		// line comments anywhere on the line
-		if strings.Contains(clean, "//") || strings.HasPrefix(clean, "#") || strings.Contains(clean, "# ") {
-			cnt++
-			continue
-		}
+// CommentSyntax declares PHP comment tokens: "//", "#" and "/* */".
+func (a *TreeSitterAdapter) CommentSyntax() engine.CommentSyntax {
+	return engine.CommentSyntax{
+		Line:       []string{"//", "#"},
+		BlockOpen:  "/*",
+		BlockClose: "*/",
+		Quote:      []rune{'"', '\''},
 	}
-	return cnt
 }
 
 func stripStrings(s string) string {

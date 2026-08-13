@@ -306,50 +306,42 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 // IsLogicalNode reports whether a node begins a logical line. In TypeScript,
 // "const"/"let"/"var" declarations are statements but their node types do not
 // carry the "_statement" suffix.
-func (a *TreeSitterAdapter) IsLogicalNode(n *sitter.Node) bool {
-	switch n.Type() {
-	case "lexical_declaration", "variable_declaration":
-		return true
-	}
-	return Treesitter.IsDefaultLogicalNode(n.Type())
+// tsStatements maps the TypeScript grammar onto the shared logical-lines model.
+//
+// `switch_case` and `switch_default` are labels; `class_declaration`,
+// `interface_declaration`, `enum_declaration`, `type_alias_declaration` and
+// `public_field_definition` declare members; `import_statement` and
+// `export_statement` carry the "_statement" suffix but declare nothing that
+// runs. An `else if` is spelled as an `else_clause` holding an `if_statement`,
+// so the nested if is what counts.
+var tsStatements = &Treesitter.StatementSpec{
+	Statement: []string{
+		"expression_statement",
+		"lexical_declaration", "variable_declaration",
+		"if_statement",
+		"for_statement", "for_in_statement", "while_statement", "do_statement",
+		"switch_statement", "try_statement",
+		"return_statement", "break_statement", "continue_statement",
+		"throw_statement", "labeled_statement", "with_statement", "debugger_statement",
+	},
 }
 
-// CountComments counts TypeScript comment lines (// and /* */ and /** */) in the given range.
-// CommentMarkers declares TypeScript comment tokens: "//" and "/* */" only.
-// "#" introduces private class fields, which are code, not comments.
-func (a *TreeSitterAdapter) CommentMarkers() engine.CommentMarkers {
-	return engine.CommentMarkers{SlashSlash: true, SlashStar: true}
+func (a *TreeSitterAdapter) Statement(n *sitter.Node) Treesitter.StatementKind {
+	return tsStatements.Classify(n)
 }
 
-func (a *TreeSitterAdapter) CountComments(lines []string, start, end int) int {
-	cnt := 0
-	inBlock := false
-	for i := start - 1; i < end && i < len(lines); i++ {
-		ln := strings.TrimSpace(lines[i])
-		if ln == "" {
-			continue
-		}
-		clean := stripTSStrings(ln)
-		if inBlock {
-			cnt++
-			if strings.Contains(clean, "*/") {
-				inBlock = false
-			}
-			continue
-		}
-		if strings.HasPrefix(clean, "//") {
-			cnt++
-			continue
-		}
-		if strings.HasPrefix(clean, "/*") || strings.HasPrefix(clean, "/**") {
-			cnt++
-			if !strings.Contains(clean, "*/") {
-				inBlock = true
-			}
-			continue
-		}
+// CommentSyntax declares TypeScript comment tokens: "//" and "/* */" only.
+// "#" introduces a private class field, which is code, not a comment.
+// Backticks open a template literal, whose content must be ignored like any
+// other string.
+func (a *TreeSitterAdapter) CommentSyntax() engine.CommentSyntax {
+	return engine.CommentSyntax{
+		Line:       []string{"//"},
+		BlockOpen:  "/*",
+		BlockClose: "*/",
+		Quote:      []rune{'"', '\''},
+		RawString:  []string{"`"},
 	}
-	return cnt
 }
 
 // tsOperatorTokens lists the anonymous token types counted as Halstead
@@ -500,38 +492,4 @@ func stripQuotes(s string) string {
 		}
 	}
 	return s
-}
-
-// stripTSStrings removes content inside quotes to avoid false positives in comment/operator scanning.
-func stripTSStrings(s string) string {
-	out := make([]rune, 0, len(s))
-	inBack := false
-	inDq := false
-	inSq := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c == '\\' {
-			if i+1 < len(s) {
-				i++
-			}
-			continue
-		}
-		if !inDq && !inSq && c == '`' {
-			inBack = !inBack
-			continue
-		}
-		if !inBack && !inSq && c == '"' {
-			inDq = !inDq
-			continue
-		}
-		if !inBack && !inDq && c == '\'' {
-			inSq = !inSq
-			continue
-		}
-		if inBack || inDq || inSq {
-			continue
-		}
-		out = append(out, rune(c))
-	}
-	return string(out)
 }

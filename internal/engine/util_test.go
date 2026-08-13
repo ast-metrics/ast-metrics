@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetLocPositionFromSource_BasicCase(t *testing.T) {
+func TestCountLinesOfCode_BasicCase(t *testing.T) {
 	source := []string{
 		"package main",
 		"",
@@ -19,21 +19,93 @@ func TestGetLocPositionFromSource_BasicCase(t *testing.T) {
 		"}",
 	}
 
-	loc := GetLocPositionFromSource(source, 1, 6)
+	loc := CountLinesOfCode(source, 1, 6, DefaultCommentSyntax())
 	if loc.LinesOfCode != 6 {
 		t.Errorf("expected 6 lines of code, got %d", loc.LinesOfCode)
 	}
 	if loc.CommentLinesOfCode != 1 {
 		t.Errorf("expected 1 comment line, got %d", loc.CommentLinesOfCode)
 	}
+	// the blank line is neither code nor comment
+	if loc.NonCommentLinesOfCode != 4 {
+		t.Errorf("expected 4 lines holding code, got %d", loc.NonCommentLinesOfCode)
+	}
 }
 
-func TestGetLocPositionFromSource_InvalidBounds(t *testing.T) {
+func TestCountLinesOfCode_InvalidBounds(t *testing.T) {
 	source := []string{"line1", "line2"}
 
-	loc := GetLocPositionFromSource(source, 0, 10)
+	loc := CountLinesOfCode(source, 0, 10, DefaultCommentSyntax())
 	if loc.LinesOfCode != 2 {
 		t.Errorf("expected 2 lines of code, got %d", loc.LinesOfCode)
+	}
+}
+
+func TestSplitSourceLines_TrailingNewlineIsATerminator(t *testing.T) {
+	if got := SplitSourceLines([]byte("a\nb\nc\n")); len(got) != 3 {
+		t.Errorf("expected 3 lines for a file ending with a newline, got %d (%q)", len(got), got)
+	}
+	// no final newline: the last line is still a line
+	if got := SplitSourceLines([]byte("a\nb\nc")); len(got) != 3 {
+		t.Errorf("expected 3 lines without a final newline, got %d", len(got))
+	}
+	// a genuinely empty last line, kept because two newlines end the file
+	if got := SplitSourceLines([]byte("a\n\n")); len(got) != 2 {
+		t.Errorf("expected 2 lines, got %d (%q)", len(got), got)
+	}
+	// an empty file holds no line, which is what wc, cloc and scc all report
+	if got := SplitSourceLines([]byte("")); len(got) != 0 {
+		t.Errorf("expected 0 lines for an empty file, got %d", len(got))
+	}
+	// a file holding just a newline holds one empty line
+	if got := SplitSourceLines([]byte("\n")); len(got) != 1 {
+		t.Errorf("expected 1 line for a lone newline, got %d", len(got))
+	}
+	if got := SplitSourceLines([]byte("a\r\nb\r\n")); len(got) != 2 {
+		t.Errorf("expected 2 lines for CRLF input, got %d (%q)", len(got), got)
+	}
+}
+
+func TestCountLinesOfCode_ACommentAfterCodeIsCode(t *testing.T) {
+	// cloc, tokei and scc all agree: a documented line of code is code
+	source := []string{"total += 1 // sum it up"}
+	loc := CountLinesOfCode(source, 1, 1, DefaultCommentSyntax())
+	if loc.CommentLinesOfCode != 0 || loc.NonCommentLinesOfCode != 1 {
+		t.Errorf("expected the line to be code, got cloc=%d ncloc=%d",
+			loc.CommentLinesOfCode, loc.NonCommentLinesOfCode)
+	}
+}
+
+func TestCountLinesOfCode_BlockOpenedBeforeTheRange(t *testing.T) {
+	// measuring lines 3 to 4 must still know that a block opened on line 1
+	source := []string{"/*", "one", "two", "*/", "code()"}
+	loc := CountLinesOfCode(source, 3, 4, DefaultCommentSyntax())
+	if loc.CommentLinesOfCode != 2 {
+		t.Errorf("expected 2 comment lines inside the block, got %d", loc.CommentLinesOfCode)
+	}
+}
+
+func TestCountLinesOfCode_CommentMarkersInsideStrings(t *testing.T) {
+	source := []string{
+		`url := "http://example.com"`,
+		"path := \"/* not a comment */\"",
+		"code()",
+	}
+	loc := CountLinesOfCode(source, 1, 3, DefaultCommentSyntax())
+	if loc.CommentLinesOfCode != 0 {
+		t.Errorf("expected no comment line, got %d", loc.CommentLinesOfCode)
+	}
+	if loc.NonCommentLinesOfCode != 3 {
+		t.Errorf("expected 3 lines of code, got %d", loc.NonCommentLinesOfCode)
+	}
+}
+
+func TestCountLinesOfCode_CodeAfterABlockCloses(t *testing.T) {
+	source := []string{"/* doc", "   more */ code()"}
+	loc := CountLinesOfCode(source, 1, 2, DefaultCommentSyntax())
+	if loc.CommentLinesOfCode != 1 || loc.NonCommentLinesOfCode != 1 {
+		t.Errorf("expected one comment line and one code line, got cloc=%d ncloc=%d",
+			loc.CommentLinesOfCode, loc.NonCommentLinesOfCode)
 	}
 }
 
@@ -339,39 +411,36 @@ func TestNamespacesParsing(t *testing.T) {
 
 }
 
-func TestGetLocPositionFromSourceWithMarkers(t *testing.T) {
+func TestCountLinesOfCode_PerLanguageSyntax(t *testing.T) {
 	// Python: "//" is floor division, "#" is a comment
 	pySource := []string{
 		"def divide(a, b):",
 		"    # a real comment",
 		"    return a // b",
 	}
-	loc := GetLocPositionFromSourceWithMarkers(pySource, 1, 3, CommentMarkers{Hash: true})
+	python := CommentSyntax{Line: []string{"#"}, DocString: []string{`"""`, `'''`}, Quote: []rune{'"', '\''}}
+	loc := CountLinesOfCode(pySource, 1, 3, python)
 	if loc.CommentLinesOfCode != 1 {
 		t.Errorf("python: expected 1 comment line, got %d", loc.CommentLinesOfCode)
 	}
-	if loc.LogicalLinesOfCode != 0 { // 3 - (1 + 0 + 2)
-		t.Errorf("python: expected 0 logical lines, got %d", loc.LogicalLinesOfCode)
-	}
-	// With every marker active, any line containing "//" counts as a comment
-	locAll := GetLocPositionFromSourceWithMarkers(pySource, 1, 3, AllCommentMarkers())
-	if locAll.CommentLinesOfCode != 2 {
-		t.Errorf("all markers: expected 2 comment lines, got %d", locAll.CommentLinesOfCode)
-	}
 
-	// Rust: "#[...]" is an attribute, "//" is a comment
+	// Rust: "#[...]" is an attribute, "//" is a comment, "'a" is a lifetime
 	rsSource := []string{
-		"fn f() {",
+		"fn f<'a>(s: &'a str) {",
 		"    // a real comment",
 		"    #[allow(unused)]",
 		"    let x = 1;",
 		"}",
 	}
-	loc = GetLocPositionFromSourceWithMarkers(rsSource, 1, 5, CommentMarkers{SlashSlash: true, SlashStar: true})
+	rust := CommentSyntax{
+		Line: []string{"//"}, BlockOpen: "/*", BlockClose: "*/",
+		Quote: []rune{'"'}, LifetimeQuote: true,
+	}
+	loc = CountLinesOfCode(rsSource, 1, 5, rust)
 	if loc.CommentLinesOfCode != 1 {
 		t.Errorf("rust: expected 1 comment line, got %d", loc.CommentLinesOfCode)
 	}
-	if loc.LogicalLinesOfCode != 2 { // 5 - (1 + 0 + 2)
-		t.Errorf("rust: expected 2 logical lines, got %d", loc.LogicalLinesOfCode)
+	if loc.NonCommentLinesOfCode != 4 {
+		t.Errorf("rust: expected 4 lines of code, got %d", loc.NonCommentLinesOfCode)
 	}
 }

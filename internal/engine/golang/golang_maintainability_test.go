@@ -102,7 +102,7 @@ func Test_FileLevel_Loc_SampleGo(t *testing.T) {
 	if file.Stmts.Analyze.Volume == nil {
 		t.Fatalf("missing Volume on sampleGo file")
 	}
-	if *file.Stmts.Analyze.Volume.Loc != int32(28) {
+	if *file.Stmts.Analyze.Volume.Loc != int32(27) {
 		t.Fatalf("incorrect Loc on sampleGo file, got %d", *file.Stmts.Analyze.Volume.Loc)
 	}
 	// statement lines: if, 2x Println, for, switch, return x, return z * 2
