@@ -140,12 +140,12 @@ func (r *PhpRunner) getFileList() file.FileList {
 }
 
 // isTestFile determines if a PHP file is a test file based on:
-// 1. Filename pattern (ends with Test.php)
+// 1. Filename pattern (ends with Test.php or Spec.php)
 // 2. Class inheritance (extends PHPUnit\Framework\TestCase or similar test base classes)
 func (r PhpRunner) isTestFile(path string, file *pb.File) bool {
 	// Check filename pattern
 	baseName := strings.ToLower(path)
-	if strings.HasSuffix(baseName, "test.php") {
+	if strings.HasSuffix(baseName, "test.php") || strings.HasSuffix(baseName, "spec.php") {
 		return true
 	}
 

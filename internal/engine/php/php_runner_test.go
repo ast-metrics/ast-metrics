@@ -948,20 +948,35 @@ class Calculator {
 	}
 }
 `
-	// Create a temporary file with Test.php suffix
-	tmpDir := t.TempDir()
-	tmpFile := tmpDir + "/CalculatorTest.php"
-
-	err := os.WriteFile(tmpFile, []byte(phpSource), 0644)
-	if err != nil {
-		t.Fatalf("failed to create test file: %v", err)
+	tests := []struct {
+		filename string
+		expected bool
+	}{
+		{"CalculatorTest.php", true},
+		{"CalculatorSpec.php", true},
+		{"Calculator.spec.php", true},
+		{"CALCULATORSPEC.PHP", true},
+		{"Inspector.php", false},
+		{"Calculator.php", false},
 	}
 
 	runner := &PhpRunner{}
-	file, err := runner.Parse(tmpFile)
+	for _, tt := range tests {
+		t.Run(tt.filename, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			tmpFile := tmpDir + "/" + tt.filename
 
-	assert.Nil(t, err, "Expected no error")
-	assert.True(t, file.IsTest, "Expected file to be detected as test (Test.php suffix)")
+			err := os.WriteFile(tmpFile, []byte(phpSource), 0644)
+			if err != nil {
+				t.Fatalf("failed to create test file: %v", err)
+			}
+
+			file, err := runner.Parse(tmpFile)
+
+			assert.Nil(t, err, "Expected no error")
+			assert.Equal(t, tt.expected, file.IsTest, "Expected IsTest to be %v for %s", tt.expected, tt.filename)
+		})
+	}
 }
 
 func TestPhpRunner_IsTest_ByInheritance(t *testing.T) {
