@@ -14,6 +14,10 @@ type Visitor struct {
 	file  *pb.File
 	ns    *pb.StmtNamespace
 	lines []string
+	// joined is the source rebuilt from lines, computed once: the adapters that
+	// extract operators, operands or method calls from the source text all need
+	// it, and rebuilding it per scope copied the whole file for every function.
+	joined []byte
 
 	classStk []*pb.StmtClass
 	funcStk  []*pb.StmtFunction
@@ -121,10 +125,11 @@ func NewVisitor(ad LangAdapter, path string, src []byte) *Visitor {
 	mod := ad.ModuleNameFromPath(filepath.Base(path))
 
 	return &Visitor{
-		ad:    ad,
-		file:  &pb.File{Path: path, ProgrammingLanguage: "", Stmts: engine.FactoryStmts(), LinesOfCode: &pb.LinesOfCode{LinesOfCode: int32(len(lines))}},
-		ns:    &pb.StmtNamespace{Name: &pb.Name{Short: mod, Qualified: mod}, Stmts: engine.FactoryStmts(), LinesOfCode: &pb.LinesOfCode{}},
-		lines: lines,
+		ad:     ad,
+		file:   &pb.File{Path: path, ProgrammingLanguage: "", Stmts: engine.FactoryStmts(), LinesOfCode: &pb.LinesOfCode{LinesOfCode: int32(len(lines))}},
+		ns:     &pb.StmtNamespace{Name: &pb.Name{Short: mod, Qualified: mod}, Stmts: engine.FactoryStmts(), LinesOfCode: &pb.LinesOfCode{}},
+		lines:  lines,
+		joined: []byte(strings.Join(lines, "\n")),
 	}
 }
 
@@ -471,7 +476,7 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		if va, ok := v.ad.(interface {
 			ExtractOperatorsOperands(src []byte, startLine, endLine int) (ops []string, operands []string)
 		}); ok {
-			ops, opr := va.ExtractOperatorsOperands([]byte(strings.Join(v.lines, "\n")), nodeStart, nodeEnd)
+			ops, opr := va.ExtractOperatorsOperands(v.joined, nodeStart, nodeEnd)
 			for _, o := range ops {
 				fn.Operators = append(fn.Operators, &pb.StmtOperator{Name: o})
 			}
@@ -483,7 +488,7 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		if mc, ok := v.ad.(interface {
 			ExtractMethodCalls(src []byte, startLine, endLine int) []string
 		}); ok {
-			calls := mc.ExtractMethodCalls([]byte(strings.Join(v.lines, "\n")), nodeStart, nodeEnd)
+			calls := mc.ExtractMethodCalls(v.joined, nodeStart, nodeEnd)
 			for _, m := range calls {
 				fn.MethodCalls = append(fn.MethodCalls, &pb.StmtMethodCall{Name: m})
 			}
