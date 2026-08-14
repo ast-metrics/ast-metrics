@@ -16,6 +16,9 @@ type TreeSitterAdapter struct {
 	// ns caches the declared namespace (parsed lazily from src)
 	ns       string
 	nsParsed bool
+	// srcLines holds the source split into lines, so that the extractors called
+	// once per function do not split the whole file again for each of them
+	srcLines Treesitter.LineCache
 }
 
 func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter   { return &TreeSitterAdapter{src: src} }
@@ -405,7 +408,7 @@ func (a *TreeSitterAdapter) ExtractMethodCalls(src []byte, startLine, endLine in
 	if src == nil || startLine <= 0 || endLine <= 0 || endLine < startLine {
 		return nil
 	}
-	lines := strings.Split(string(src), "\n")
+	lines := a.srcLines.Lines(src)
 	var calls []string
 	for i := startLine - 1; i < endLine && i < len(lines); i++ {
 		ln := strings.TrimSpace(lines[i])

@@ -1,6 +1,7 @@
 package php
 
 import (
+	"bytes"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -29,6 +30,12 @@ type TreeSitterAdapter struct {
 	aliases  map[string]string
 	computed bool
 	extDeps  []Treesitter.ImportItem
+	// srcLines holds the source split into lines, so that the extractors called
+	// once per function do not split the whole file again for each of them
+	srcLines Treesitter.LineCache
+	// pipes holds the lines carrying a mis-parsed "|>", found once per file
+	pipes      []int
+	pipesFound bool
 }
 
 func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
@@ -666,7 +673,7 @@ func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endL
 		return nil, nil
 	}
 	ops, operands := phpOperandSpec.Extract(root, source, startLine, endLine)
-	return foldPhpPipes(root, source, ops, startLine, endLine), operands
+	return foldPhpPipes(a.pipeLines(root, source), ops, startLine, endLine), operands
 }
 
 // foldPhpPipes repairs the PHP 8.5 pipe operator. The bundled grammar predates
@@ -674,8 +681,13 @@ func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endL
 // and whose left side ends with an ERROR node holding a lone "|". Reporting two
 // operators where the source writes one would inflate both the vocabulary and
 // the length, so each such pair is folded back into a single "|>".
-func foldPhpPipes(root *sitter.Node, src []byte, ops []string, startLine, endLine int) []string {
-	pipes := countPhpPipes(root, src, startLine, endLine)
+func foldPhpPipes(pipeLines []int, ops []string, startLine, endLine int) []string {
+	pipes := 0
+	for _, line := range pipeLines {
+		if line >= startLine && line <= endLine {
+			pipes++
+		}
+	}
 	if pipes == 0 {
 		return ops
 	}
@@ -700,23 +712,35 @@ func foldPhpPipes(root *sitter.Node, src []byte, ops []string, startLine, endLin
 	return folded
 }
 
-// countPhpPipes counts the "|>" written between startLine and endLine.
-func countPhpPipes(root *sitter.Node, src []byte, startLine, endLine int) int {
-	count := 0
+// pipeLines returns the lines of the file carrying a mis-parsed "|>", found
+// once for the whole file.
+//
+// Looking for them per function meant walking down from the root for each of
+// them, so a file paid a pass over its top-level declarations once per
+// function. The operator is also rare enough that most files can be answered by
+// looking for the two characters in the source.
+func (a *TreeSitterAdapter) pipeLines(root *sitter.Node, src []byte) []int {
+	if a.pipesFound {
+		return a.pipes
+	}
+	a.pipesFound = true
+
+	if !bytes.Contains(src, []byte("|>")) {
+		return nil
+	}
+
 	var walk func(n *sitter.Node)
 	walk = func(n *sitter.Node) {
-		if int(n.EndPoint().Row)+1 < startLine || int(n.StartPoint().Row)+1 > endLine {
-			return
-		}
 		if n.Type() == "binary_expression" && isPhpPipe(n, src) {
-			count++
+			a.pipes = append(a.pipes, int(n.StartPoint().Row)+1)
 		}
 		for i := 0; i < int(n.ChildCount()); i++ {
 			walk(n.Child(i))
 		}
 	}
 	walk(root)
-	return count
+
+	return a.pipes
 }
 
 // isPhpPipe reports whether a binary expression is a mis-parsed "|>".
@@ -747,7 +771,7 @@ func (a *TreeSitterAdapter) ExtractMethodCalls(src []byte, startLine, endLine in
 	if src == nil || startLine <= 0 || endLine <= 0 || endLine < startLine {
 		return nil
 	}
-	lines := strings.Split(string(src), "\n")
+	lines := a.srcLines.Lines(src)
 	res := []string{}
 	add := func(s string) {
 		if s != "" {
