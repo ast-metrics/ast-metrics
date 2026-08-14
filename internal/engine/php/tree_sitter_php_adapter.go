@@ -44,6 +44,8 @@ func (a *TreeSitterAdapter) SetSource(src []byte) {
 	a.root = nil
 	a.computed = false
 	a.ns = ""
+	a.pipes = nil
+	a.pipesFound = false
 }
 func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root }
 
