@@ -5,9 +5,43 @@ import (
 	"os"
 	"testing"
 
+	"github.com/ast-metrics/ast-metrics/internal/analyzer"
+	"github.com/ast-metrics/ast-metrics/internal/analyzer/classifier"
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	"github.com/ast-metrics/ast-metrics/internal/storage"
+	pb "github.com/ast-metrics/ast-metrics/pb"
 )
+
+func TestAnalyzeCommand_ArchitectureClassificationIsOptIn(t *testing.T) {
+	config := configuration.NewConfiguration()
+	config.SourcesToAnalyzePath = []string{"/project"}
+	cmd := NewAnalyzeCommand(config, bufio.NewWriter(os.Stdout), nil, false)
+
+	calls := 0
+	expected := []classifier.ClassPrediction{{Class: "App\\Controller"}}
+	cmd.predictArchitecture = func(string, []*pb.File, string) ([]classifier.ClassPrediction, error) {
+		calls++
+		return expected, nil
+	}
+
+	aggregated := analyzer.ProjectAggregated{}
+	cmd.runArchitectureClassification(nil, &aggregated)
+	if calls != 0 {
+		t.Fatalf("architecture classifier called %d time(s) without --architecture; want 0", calls)
+	}
+	if aggregated.Predictions != nil {
+		t.Fatalf("predictions populated without --architecture: %#v", aggregated.Predictions)
+	}
+
+	config.Architecture = true
+	cmd.runArchitectureClassification(nil, &aggregated)
+	if calls != 1 {
+		t.Fatalf("architecture classifier called %d time(s) with --architecture; want 1", calls)
+	}
+	if len(aggregated.Predictions) != 1 || aggregated.Predictions[0].Class != expected[0].Class {
+		t.Fatalf("predictions = %#v; want %#v", aggregated.Predictions, expected)
+	}
+}
 
 func TestAnalyzeCommand_Execute(t *testing.T) {
 	t.Run("TestAnalyzeCommand_Execute", func(t *testing.T) {

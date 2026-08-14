@@ -349,6 +349,11 @@ func main() {
 						Usage:    "Generate a profiling reports into files ast-metrics.cpu and ast-metrics.mem",
 						Category: "Global options",
 					},
+					&cliV2.BoolFlag{
+						Name:     "architecture",
+						Usage:    "Enable AI-based architecture classification",
+						Category: "Analysis",
+					},
 					// Extra file extensions per language
 					&cliV2.StringFlag{
 						Name:     "php-extensions",
@@ -485,6 +490,9 @@ func main() {
 
 					// Merge extra file extensions from CLI flags into config
 					mergeExtensionFlags(cCtx, config)
+
+					// The AI classifier is opt-in to keep the default analysis fast.
+					config.Architecture = cCtx.Bool("architecture")
 
 					// Reports
 					if cCtx.String("report-html") != "" {
@@ -802,6 +810,7 @@ func main() {
 				Usage: "Run lint then full analysis with reports (CI mode)",
 				Flags: []cliV2.Flag{
 					&cliV2.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Enable verbose mode", Category: "Global options"},
+					&cliV2.BoolFlag{Name: "architecture", Usage: "Enable AI-based architecture classification", Category: "Analysis"},
 					&cliV2.StringSliceFlag{Name: "exclude", Usage: "Regular expression to exclude files from analysis", Category: "File selection"},
 					&cliV2.StringFlag{Name: "report-html", Usage: "Generate an HTML report", Category: "Report"},
 					&cliV2.BoolFlag{Name: "open-html", Usage: "Automatically open HTML report in browser", Category: "Report"},
@@ -865,6 +874,9 @@ func main() {
 					}
 					// Merge extra file extensions from CLI flags into config
 					mergeExtensionFlags(cCtx, cfg)
+
+					// The AI classifier is opt-in to keep the default analysis fast.
+					cfg.Architecture = cCtx.Bool("architecture")
 					// Reports from flags
 					if cCtx.String("report-html") != "" {
 						cfg.Reports.Html = cCtx.String("report-html")

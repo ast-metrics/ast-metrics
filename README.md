@@ -67,6 +67,13 @@ A summary is printed on the standard output: maintainability, estimated bug prob
 ast-metrics analyze --report-html=<directory> /path/to/your/code
 ```
 
+AI-based architecture classification is optional because it is more expensive
+than the static analysis. Enable it only when needed:
+
+```console
+ast-metrics analyze --architecture /path/to/your/code
+```
+
 Run `ast-metrics` with no argument to open the interactive menu, or add `--tui` to any analysis to explore the results in the full-screen dashboard. Anything piped, redirected or run in CI gets plain output.
 
 > Docker image, `.deb`/`.rpm` packages and manual downloads: see the detailed [installation instructions](https://ast-metrics.dev/getting-started/install/).
@@ -168,6 +175,7 @@ ast-metrics ci [options] /path/to/your/code
 
 Notes:
 - This command runs the linter first, then generates HTML, Markdown, JSON, OpenMetrics and SARIF reports.
+- Add `--architecture` to include the optional AI-based architecture classification.
 - If any lint violations are found, the command exits with a non-zero status but still produces the reports.
 - The previous alias `analyze --ci` is deprecated and will display a warning. Please migrate to `ast-metrics ci`.
 
