@@ -10,20 +10,36 @@ import (
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
+// TopTestQualityListSize is how many god tests and orphan classes a report
+// shows. It is a display budget, not an analysis one: the lists below are
+// complete, so a lint rule sees every violation and a fixed one never promotes
+// the next offender into a "new" violation.
+const TopTestQualityListSize = 20
+
+// Top returns the head of a list, for a caller that displays it.
+func Top[T any](items []T) []T {
+	if len(items) > TopTestQualityListSize {
+		return items[:TopTestQualityListSize]
+	}
+	return items
+}
+
 // TestQualityMetrics holds all computed KPIs for test quality analysis
 type TestQualityMetrics struct {
 	GlobalIsolationScore float64
 	IsolationLabel       string
 	TestFiles            []TestFileMetrics
-	GodTests             []TestFileMetrics
-	OrphanClasses        []OrphanClass
-	ProdClassCoverage    []ProdClassCoverage
-	IsolationHistogram   [5]int // bins: 0-19, 20-39, 40-59, 60-79, 80-100
-	NbTestFiles          int
-	NbProdFiles          int
-	NbProdClasses        int
-	NbTestedClasses      int
-	TraceabilityPct      float64 // percentage of prod classes covered by at least one test
+	// GodTests and OrphanClasses hold every offender, worst first. Use Top to
+	// cut them down when displaying.
+	GodTests           []TestFileMetrics
+	OrphanClasses      []OrphanClass
+	ProdClassCoverage  []ProdClassCoverage
+	IsolationHistogram [5]int // bins: 0-19, 20-39, 40-59, 60-79, 80-100
+	NbTestFiles        int
+	NbProdFiles        int
+	NbProdClasses      int
+	NbTestedClasses    int
+	TraceabilityPct    float64 // percentage of prod classes covered by at least one test
 }
 
 // TestFileMetrics holds per-test-file metrics
@@ -38,22 +54,22 @@ type TestFileMetrics struct {
 
 // ProdClassCoverage holds per-prod-class test coverage metrics
 type ProdClassCoverage struct {
-	ClassName string
-	FilePath  string
-	TestCount int
+	ClassName  string
+	FilePath   string
+	TestCount  int
 	Complexity int32
-	Efferent  int32
-	Afferent  int32
+	Efferent   int32
+	Afferent   int32
 }
 
 // OrphanClass is a production class with zero tests, weighted by importance
 type OrphanClass struct {
-	ClassName string
-	FilePath  string
+	ClassName  string
+	FilePath   string
 	Complexity int32
-	Efferent  int32
-	Afferent  int32
-	Weight    float64
+	Efferent   int32
+	Afferent   int32
+	Weight     float64
 }
 
 // TestQualityAggregator computes test quality metrics
@@ -236,6 +252,12 @@ func (tqa *TestQualityAggregator) Calculate(aggregate *Aggregated) {
 		}
 	}
 
+	sort.Slice(allTestMetrics, func(i, j int) bool {
+		if allTestMetrics[i].FilePath != allTestMetrics[j].FilePath {
+			return allTestMetrics[i].FilePath < allTestMetrics[j].FilePath
+		}
+		return allTestMetrics[i].ShortPath < allTestMetrics[j].ShortPath
+	})
 	metrics.TestFiles = allTestMetrics
 
 	// 5. Build ProdClassCoverage
@@ -276,13 +298,19 @@ func (tqa *TestQualityAggregator) Calculate(aggregate *Aggregated) {
 			testedCount++
 		}
 	}
+	sort.Slice(prodCoverage, func(i, j int) bool {
+		if prodCoverage[i].ClassName != prodCoverage[j].ClassName {
+			return prodCoverage[i].ClassName < prodCoverage[j].ClassName
+		}
+		return prodCoverage[i].FilePath < prodCoverage[j].FilePath
+	})
 	metrics.ProdClassCoverage = prodCoverage
 	metrics.NbTestedClasses = testedCount
 	if len(prodClassIndex) > 0 {
 		metrics.TraceabilityPct = float64(testedCount) / float64(len(prodClassIndex)) * 100
 	}
 
-	// 6. God Tests: fan-out >= 5, top 20
+	// 6. God Tests: fan-out >= 5, worst first
 	var godTests []TestFileMetrics
 	for _, t := range allTestMetrics {
 		if t.SUTFanOut >= 5 {
@@ -290,14 +318,17 @@ func (tqa *TestQualityAggregator) Calculate(aggregate *Aggregated) {
 		}
 	}
 	sort.Slice(godTests, func(i, j int) bool {
-		return godTests[i].SUTFanOut > godTests[j].SUTFanOut
+		if godTests[i].SUTFanOut != godTests[j].SUTFanOut {
+			return godTests[i].SUTFanOut > godTests[j].SUTFanOut
+		}
+		if godTests[i].FilePath != godTests[j].FilePath {
+			return godTests[i].FilePath < godTests[j].FilePath
+		}
+		return godTests[i].ShortPath < godTests[j].ShortPath
 	})
-	if len(godTests) > 20 {
-		godTests = godTests[:20]
-	}
 	metrics.GodTests = godTests
 
-	// 7. Orphan Classes: TestCount == 0, sorted by weight desc, top 20
+	// 7. Orphan Classes: TestCount == 0, sorted by weight desc
 	var orphans []OrphanClass
 	for _, pc := range prodCoverage {
 		if pc.TestCount == 0 {
@@ -316,11 +347,14 @@ func (tqa *TestQualityAggregator) Calculate(aggregate *Aggregated) {
 		}
 	}
 	sort.Slice(orphans, func(i, j int) bool {
-		return orphans[i].Weight > orphans[j].Weight
+		if orphans[i].Weight != orphans[j].Weight {
+			return orphans[i].Weight > orphans[j].Weight
+		}
+		if orphans[i].ClassName != orphans[j].ClassName {
+			return orphans[i].ClassName < orphans[j].ClassName
+		}
+		return orphans[i].FilePath < orphans[j].FilePath
 	})
-	if len(orphans) > 20 {
-		orphans = orphans[:20]
-	}
 	metrics.OrphanClasses = orphans
 
 	// 8. Compute global isolation score (avg) and histogram
@@ -383,17 +417,17 @@ func isolationLabel(score float64) string {
 
 // testQualityJSON is the JSON-serializable representation of TestQualityMetrics
 type testQualityJSON struct {
-	GlobalIsolationScore float64            `json:"globalIsolationScore"`
-	IsolationLabel       string             `json:"isolationLabel"`
-	NbTestFiles          int                `json:"nbTestFiles"`
-	NbProdFiles          int                `json:"nbProdFiles"`
-	NbProdClasses        int                `json:"nbProdClasses"`
-	NbTestedClasses      int                `json:"nbTestedClasses"`
-	TraceabilityPct      float64            `json:"traceabilityPct"`
-	IsolationHistogram   [5]int             `json:"isolationHistogram"`
-	TestFiles            []testFileJSON     `json:"testFiles"`
-	GodTests             []godTestJSON      `json:"godTests"`
-	OrphanClasses        []orphanClassJSON  `json:"orphanClasses"`
+	GlobalIsolationScore float64           `json:"globalIsolationScore"`
+	IsolationLabel       string            `json:"isolationLabel"`
+	NbTestFiles          int               `json:"nbTestFiles"`
+	NbProdFiles          int               `json:"nbProdFiles"`
+	NbProdClasses        int               `json:"nbProdClasses"`
+	NbTestedClasses      int               `json:"nbTestedClasses"`
+	TraceabilityPct      float64           `json:"traceabilityPct"`
+	IsolationHistogram   [5]int            `json:"isolationHistogram"`
+	TestFiles            []testFileJSON    `json:"testFiles"`
+	GodTests             []godTestJSON     `json:"godTests"`
+	OrphanClasses        []orphanClassJSON `json:"orphanClasses"`
 }
 
 type testFileJSON struct {
@@ -447,8 +481,10 @@ func BuildTestQualityJSON(tq *TestQualityMetrics) string {
 		}
 	}
 
-	godTests := make([]godTestJSON, len(tq.GodTests))
-	for i, t := range tq.GodTests {
+	// The report shows the head of each list, the metrics keep them whole.
+	topGodTests := Top(tq.GodTests)
+	godTests := make([]godTestJSON, len(topGodTests))
+	for i, t := range topGodTests {
 		godTests[i] = godTestJSON{
 			ShortPath:      t.ShortPath,
 			FanOut:         t.SUTFanOut,
@@ -457,8 +493,9 @@ func BuildTestQualityJSON(tq *TestQualityMetrics) string {
 		}
 	}
 
-	orphans := make([]orphanClassJSON, len(tq.OrphanClasses))
-	for i, o := range tq.OrphanClasses {
+	topOrphans := Top(tq.OrphanClasses)
+	orphans := make([]orphanClassJSON, len(topOrphans))
+	for i, o := range topOrphans {
 		orphans[i] = orphanClassJSON{
 			ClassName:  o.ClassName,
 			FilePath:   o.FilePath,

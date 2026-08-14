@@ -26,6 +26,13 @@ func undirectedAdj(g *pb.Graph) map[string][]string {
 			}
 		}
 	}
+	// g.Nodes is a map, so the neighbours land in an arbitrary order. The label
+	// histogram below sums 1/sqrt(deg) weights and compares them with ==, which
+	// makes it sensitive to the order the terms are added in: sort the lists so
+	// two runs on the same graph agree on the same communities.
+	for id := range adj {
+		slices.Sort(adj[id])
+	}
 	return adj
 }
 

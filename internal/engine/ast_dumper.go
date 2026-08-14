@@ -17,6 +17,11 @@ type DumpOptions struct {
 	ProgressText func(done, total int, path string) string
 }
 
+type dumpJob struct {
+	index int
+	path  string
+}
+
 func DumpFiles(
 	files []string,
 	progress *pterm.SpinnerPrinter,
@@ -31,12 +36,14 @@ func DumpFiles(
 	}
 
 	var wg sync.WaitGroup
-	jobs := make(chan string, opts.Concurrency)
+	jobs := make(chan dumpJob, opts.Concurrency)
 	total := len(files)
 	done := 0
 	var mu sync.Mutex
 
-	results := make([]*pb.File, 0, total)
+	// Workers finish in an arbitrary order. Keep one result slot per input file
+	// so downstream aggregation always receives files in discovery order.
+	results := make([]*pb.File, total)
 
 	if opts.ProgressText == nil {
 		opts.ProgressText = func(done, total int, _ string) string {
@@ -48,25 +55,23 @@ func DumpFiles(
 	}
 
 	worker := func() {
-		for path := range jobs {
+		for job := range jobs {
 			if opts.ProgressText != nil && progress != nil {
 				mu.Lock()
 				done++
-				progress.UpdateText(opts.ProgressText(done, total, path))
+				progress.UpdateText(opts.ProgressText(done, total, job.path))
 				mu.Unlock()
 			}
 
 			if opts.BeforeParse != nil {
-				opts.BeforeParse(path)
+				opts.BeforeParse(job.path)
 			}
 
-			if file, err := parse(path); err == nil && file != nil {
+			if file, err := parse(job.path); err == nil && file != nil {
 				if opts.AfterParse != nil {
 					opts.AfterParse(file)
 				}
-				mu.Lock()
-				results = append(results, file)
-				mu.Unlock()
+				results[job.index] = file
 			}
 			wg.Done()
 		}
@@ -75,14 +80,23 @@ func DumpFiles(
 	for i := 0; i < opts.Concurrency; i++ {
 		go worker()
 	}
-	for _, f := range files {
+	for i, f := range files {
 		wg.Add(1)
-		jobs <- f
+		jobs <- dumpJob{index: i, path: f}
 	}
 	close(jobs)
 	wg.Wait()
 	if progress != nil {
 		progress.Info("AST parsed")
 	}
-	return results
+
+	// Parsing errors leave nil slots. Compact them without disturbing the
+	// relative order of successfully parsed files.
+	parsed := results[:0]
+	for _, file := range results {
+		if file != nil {
+			parsed = append(parsed, file)
+		}
+	}
+	return parsed
 }

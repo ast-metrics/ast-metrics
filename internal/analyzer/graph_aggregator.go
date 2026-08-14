@@ -1,9 +1,12 @@
 package analyzer
 
 import (
+	"maps"
+	"slices"
+	"strings"
+
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	pb "github.com/ast-metrics/ast-metrics/pb"
-	"sort"
 )
 
 type GraphAggregator struct{}
@@ -104,10 +107,17 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 		}
 		totalOut[fromNs] = sum
 	}
-	for fromNs, tos := range edgesCount {
+	// Sources and targets are walked in a fixed order: the edge list of a node is
+	// a slice, so letting Go's map iteration decide would give a different graph
+	// layout, and different community labels, on every run.
+	// Note that with absThreshold at 1 no candidate is ever filtered out, since
+	// an edge only exists once it has been counted at least once. The top-K and
+	// relative thresholds only start to bite if absThreshold is raised.
+	for _, fromNs := range slices.Sorted(maps.Keys(edgesCount)) {
+		tos := edgesCount[fromNs]
 		// ensure source node exists and is marked as package
 		ensureNode(fromNs, &pb.Name{Qualified: fromNs, Short: fromNs, Package: fromNs})
-		// collect and sort targets by weight desc
+		// collect and sort targets by weight desc, then by name to break ties
 		type pair struct {
 			to string
 			w  int
@@ -116,20 +126,25 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 		for toNs, w := range tos {
 			arr = append(arr, pair{to: toNs, w: w})
 		}
-		sort.Slice(arr, func(i, j int) bool { return arr[i].w > arr[j].w })
-		kept := map[string]bool{}
+		slices.SortFunc(arr, func(a, b pair) int {
+			if a.w != b.w {
+				return b.w - a.w
+			}
+			return strings.Compare(a.to, b.to)
+		})
+		kept := make([]string, 0, len(arr))
 		for i, p := range arr {
 			if i < topK || p.w >= absThreshold || float64(p.w) >= relThreshold*float64(totalOut[fromNs]) {
-				kept[p.to] = true
+				kept = append(kept, p.to)
 			}
 			// always ensure target node exists for visibility even if edge filtered
 			ensureNode(p.to, &pb.Name{Qualified: p.to, Short: p.to, Package: p.to})
 		}
 		// fallback: if nothing kept but at least one candidate, keep the strongest edge
 		if len(kept) == 0 && len(arr) > 0 {
-			kept[arr[0].to] = true
+			kept = append(kept, arr[0].to)
 		}
-		for toNs := range kept {
+		for _, toNs := range kept {
 			addEdge(fromNs, toNs)
 		}
 	}

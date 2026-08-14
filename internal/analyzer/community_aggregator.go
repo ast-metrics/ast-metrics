@@ -2,6 +2,9 @@ package analyzer
 
 import (
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 
 	graph "github.com/ast-metrics/ast-metrics/internal/analyzer/graph"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer/namer"
@@ -125,9 +128,17 @@ func computeModularityQ(g *pb.Graph, node2comm map[string]string) float64 {
 		return 0
 	}
 	twoM := 2.0 * m
-	// Precompute communities per node
+	// Precompute communities per node. The edges are summed in a fixed order:
+	// float addition is not associative, so walking the set in map order would
+	// move the last digits of Q from one run to the next.
+	orderedEdges := slices.SortedFunc(maps.Keys(edges), func(x, y pair) int {
+		if x.a != y.a {
+			return strings.Compare(x.a, y.a)
+		}
+		return strings.Compare(x.b, y.b)
+	})
 	Q := 0.0
-	for e := range edges {
+	for _, e := range orderedEdges {
 		ci := node2comm[e.a]
 		cj := node2comm[e.b]
 		if ci == "" || cj == "" {
@@ -254,7 +265,9 @@ func (ca *CommunityAggregator) Calculate(aggregate *Aggregated) {
 		// Rebuild communities and maxSize after merges
 		newComms := map[string][]string{}
 		newMax := 0
-		for u := range aggregate.Graph.Nodes {
+		// By node id rather than in map order: these lists are read as-is by
+		// the report and by the matrix ordering below.
+		for _, u := range slices.Sorted(maps.Keys(aggregate.Graph.Nodes)) {
 			c := node2comm[u]
 			if c == "" {
 				continue
@@ -623,12 +636,16 @@ func (ca *CommunityAggregator) Calculate(aggregate *Aggregated) {
 		}
 		visited := map[string]bool{}
 		seq := []string{}
+		// Communities and neighbours are walked by name rather than in map
+		// order: this produces a slice, so equal degrees have to be broken by
+		// something stable or the matrix comes out shuffled on every run.
+		orderedComms := slices.Sorted(maps.Keys(comms))
 		// multiple components: start from min-degree unvisited
 		for len(seq) < len(comms) {
 			// pick min-degree unvisited node
 			var start string
 			minD := 1 << 30
-			for c := range comms {
+			for _, c := range orderedComms {
 				if !visited[c] && deg[c] < minD {
 					minD = deg[c]
 					start = c
@@ -645,21 +662,19 @@ func (ca *CommunityAggregator) Calculate(aggregate *Aggregated) {
 				u := q[0]
 				q = q[1:]
 				comp = append(comp, u)
-				// neighbors sorted by degree
+				// neighbors sorted by degree, then by name
 				neigh := []string{}
 				for v := range und[u] {
 					if !visited[v] {
 						neigh = append(neigh, v)
 					}
 				}
-				// sort by degree asc
-				for i := 0; i < len(neigh); i++ {
-					for j := i + 1; j < len(neigh); j++ {
-						if deg[neigh[j]] < deg[neigh[i]] {
-							neigh[i], neigh[j] = neigh[j], neigh[i]
-						}
+				slices.SortFunc(neigh, func(a, b string) int {
+					if deg[a] != deg[b] {
+						return deg[a] - deg[b]
 					}
-				}
+					return strings.Compare(a, b)
+				})
 				for _, v := range neigh {
 					visited[v] = true
 					q = append(q, v)
