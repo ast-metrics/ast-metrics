@@ -8,8 +8,10 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -145,10 +147,54 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 	// programming language, then one per analyzed directory (CLI argument).
 	scopeDefs := buildScopes(files, projectAggregated)
 
-	// Pre-compute JSON data once per scope to avoid redundant work across pages
+	// Pre-compute JSON data once per scope to avoid redundant work across pages.
+	//
+	// A scope reads the files and writes only its own entry, and encoding the
+	// files of a scope to JSON is the longest part of the report, so the scopes
+	// are prepared in parallel and collected in order afterwards.
 	v.langCache = make(map[string]*cachedLangData)
-	for _, scope := range scopeDefs {
-		cd := &cachedLangData{}
+	prepared := make([]*cachedLangData, len(scopeDefs))
+
+	var scopeGroup sync.WaitGroup
+	for index, scope := range scopeDefs {
+		scopeGroup.Add(1)
+		go func(index int, scope scopeDef) {
+			defer scopeGroup.Done()
+			prepared[index] = v.prepareScopeData(scope, files)
+		}(index, scope)
+	}
+	scopeGroup.Wait()
+
+	for index, scope := range scopeDefs {
+		v.langCache[scope.DataKey] = prepared[index]
+	}
+
+	// Write shared data JS files (one per scope) to avoid duplicating JSON in every HTML page
+	dataDir := fmt.Sprintf("%s/data", v.ReportPath)
+	err = v.EnsureFolder(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	for dataKey, cd := range v.langCache {
+		if err := v.writeScopeData(dataDir, dataKey, cd); err != nil {
+			return nil, err
+		}
+	}
+
+	// Write shared linter data file (one copy for all languages, dictionary-encoded)
+	linterJS := buildLinterDataJS(projectAggregated.Evaluation)
+	if err := os.WriteFile(fmt.Sprintf("%s/linters.js", dataDir), []byte(linterJS), 0644); err != nil {
+		return nil, err
+	}
+
+	return v.generatePages(baseTemplateDir, scopeDefs, files, projectAggregated)
+}
+
+// prepareScopeData builds everything a scope's pages read: its files as JSON,
+// its risks, its communities, its dependencies.
+func (v *HtmlReportGenerator) prepareScopeData(scope scopeDef, files []*pb.File) *cachedLangData {
+	cd := &cachedLangData{}
+	{
 		dict := NewStringDictionary()
 
 		cd.filesJSON = buildFilesJSONPruned(files, scope.Keep)
@@ -199,17 +245,15 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 		cd.folderDepsJSON = buildFolderDepsJSON(currentView.ConcernedFiles, currentView.FileDependencies, dict)
 
 		cd.dictionaryJSON = dict.ToJSON()
-
-		v.langCache[scope.DataKey] = cd
 	}
 
-	// Write shared data JS files (one per scope) to avoid duplicating JSON in every HTML page
-	dataDir := fmt.Sprintf("%s/data", v.ReportPath)
-	err = v.EnsureFolder(dataDir)
-	if err != nil {
-		return nil, err
-	}
-	for dataKey, cd := range v.langCache {
+	return cd
+}
+
+// writeScopeData writes the data file the pages of one scope load, so that the
+// JSON is not duplicated in every page.
+func (v *HtmlReportGenerator) writeScopeData(dataDir string, dataKey string, cd *cachedLangData) error {
+	{
 		var jsBuilder strings.Builder
 		jsBuilder.WriteString("window.__AST_DATA__={")
 		jsBuilder.WriteString("files:")
@@ -239,18 +283,22 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 		jsBuilder.WriteString("};")
 		dataFile := fmt.Sprintf("%s/data_%s.js", dataDir, dataKey)
 		if err := os.WriteFile(dataFile, []byte(jsBuilder.String()), 0644); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	// Write shared linter data file (one copy for all languages, dictionary-encoded)
-	linterJS := buildLinterDataJS(projectAggregated.Evaluation)
-	if err := os.WriteFile(fmt.Sprintf("%s/linters.js", dataDir), []byte(linterJS), 0644); err != nil {
-		return nil, err
-	}
+	return nil
+}
 
-	// One page per template, for every scope (all / language / directory)
-	for _, template := range []string{
+// generatePages renders every page of every scope, and copies what they load.
+func (v *HtmlReportGenerator) generatePages(baseTemplateDir string, scopeDefs []scopeDef, files []*pb.File, projectAggregated analyzer.ProjectAggregated) ([]GeneratedReport, error) {
+	// One page per template, for every scope (all / language / directory).
+	//
+	// A page reads the aggregates and the cache built above, and writes a file
+	// of its own, so the pages are rendered in parallel: a project with three
+	// scopes renders three dozen of them, and rendering them one after the other
+	// was the second longest phase of an analysis.
+	pageTemplates := []string{
 		"index.html",
 		"risks.html",
 		"explorer.html",
@@ -263,16 +311,28 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 		"busfactor.html",
 		"testquality.html",
 		"classification.html",
-	} {
-		for _, scope := range scopeDefs {
-			// errors are logged by GenerateScopePage: a single broken page must
-			// not discard the whole report
-			v.GenerateScopePage(template, scope, scopeDefs, files, projectAggregated)
-		}
 	}
 
+	var pages sync.WaitGroup
+	slots := make(chan struct{}, runtime.NumCPU())
+	for _, template := range pageTemplates {
+		for _, scope := range scopeDefs {
+			pages.Add(1)
+			go func(template string, scope scopeDef) {
+				defer pages.Done()
+				slots <- struct{}{}
+				defer func() { <-slots }()
+
+				// errors are logged by GenerateScopePage: a single broken page
+				// must not discard the whole report
+				v.GenerateScopePage(template, scope, scopeDefs, files, projectAggregated)
+			}(template, scope)
+		}
+	}
+	pages.Wait()
+
 	// copy images
-	err = v.EnsureFolder(fmt.Sprintf("%s/images", v.ReportPath))
+	err := v.EnsureFolder(fmt.Sprintf("%s/images", v.ReportPath))
 	if err != nil {
 		return nil, err
 	}
@@ -842,8 +902,10 @@ func countFiles(files []*pb.File, keep fileFilter) int {
 
 func (v *HtmlReportGenerator) GenerateScopePage(template string, scope scopeDef, scopes []scopeDef, files []*pb.File, projectAggregated analyzer.ProjectAggregated) error {
 
-	// Compile the index.html template
-	tpl, err := pongo2.DefaultSet.FromFile(template)
+	// The same template is rendered once per scope, so it is compiled once and
+	// kept: FromCache is thread-safe and caches by filename, FromFile parses the
+	// file and its layout again on every call.
+	tpl, err := pongo2.DefaultSet.FromCache(template)
 	if err != nil {
 		log.Error(err)
 		return err
