@@ -194,58 +194,56 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 // its risks, its communities, its dependencies.
 func (v *HtmlReportGenerator) prepareScopeData(scope scopeDef, files []*pb.File) *cachedLangData {
 	cd := &cachedLangData{}
-	{
-		dict := NewStringDictionary()
+	dict := NewStringDictionary()
 
-		cd.filesJSON = buildFilesJSONPruned(files, scope.Keep)
+	cd.filesJSON = buildFilesJSONPruned(files, scope.Keep)
 
-		// Build risks
-		cd.risksByPath = map[string][]riskItemForTpl{}
-		ra := analyzer.NewRiskAnalyzer()
-		for _, f := range files {
-			if !scope.keeps(f) {
-				continue
+	// Build risks
+	cd.risksByPath = map[string][]riskItemForTpl{}
+	ra := analyzer.NewRiskAnalyzer()
+	for _, f := range files {
+		if !scope.keeps(f) {
+			continue
+		}
+		items := ra.DetectFileRisks(f)
+		if len(items) > 0 {
+			converted := make([]riskItemForTpl, 0, len(items))
+			for _, it := range items {
+				converted = append(converted, riskItemForTpl{ID: it.ID, Title: it.Title, Severity: it.Severity, Details: it.Details})
 			}
-			items := ra.DetectFileRisks(f)
-			if len(items) > 0 {
-				converted := make([]riskItemForTpl, 0, len(items))
-				for _, it := range items {
-					converted = append(converted, riskItemForTpl{ID: it.ID, Title: it.Title, Severity: it.Severity, Details: it.Details})
-				}
-				cd.risksByPath[f.Path] = converted
-			}
+			cd.risksByPath[f.Path] = converted
 		}
-		cd.risksJSON = buildRisksJSON(cd.risksByPath, dict)
-
-		// Community
-		currentView := scope.View
-		cd.nodeToCommunityJSON = "{}"
-		if currentView.Community != nil && len(currentView.Community.NodeToCommunity) > 0 {
-			cd.nodeToCommunityJSON = buildNodeToCommunityJSON(currentView.Community.NodeToCommunity)
-		}
-
-		cd.testQualityJSON = "{}"
-		if currentView.TestQuality != nil {
-			cd.testQualityJSON = analyzer.BuildTestQualityJSON(currentView.TestQuality)
-		}
-
-		cd.fileDepsJSON = buildFileDepsJSON(currentView.FileDependencies, dict)
-
-		// Count files for this scope
-		fileCount := 0
-		for _, f := range files {
-			if !scope.keeps(f) {
-				continue
-			}
-			fileCount++
-		}
-		cd.depFileCount = fileCount
-
-		// Build folder-level deps for dependency graph folder view
-		cd.folderDepsJSON = buildFolderDepsJSON(currentView.ConcernedFiles, currentView.FileDependencies, dict)
-
-		cd.dictionaryJSON = dict.ToJSON()
 	}
+	cd.risksJSON = buildRisksJSON(cd.risksByPath, dict)
+
+	// Community
+	currentView := scope.View
+	cd.nodeToCommunityJSON = "{}"
+	if currentView.Community != nil && len(currentView.Community.NodeToCommunity) > 0 {
+		cd.nodeToCommunityJSON = buildNodeToCommunityJSON(currentView.Community.NodeToCommunity)
+	}
+
+	cd.testQualityJSON = "{}"
+	if currentView.TestQuality != nil {
+		cd.testQualityJSON = analyzer.BuildTestQualityJSON(currentView.TestQuality)
+	}
+
+	cd.fileDepsJSON = buildFileDepsJSON(currentView.FileDependencies, dict)
+
+	// Count files for this scope
+	fileCount := 0
+	for _, f := range files {
+		if !scope.keeps(f) {
+			continue
+		}
+		fileCount++
+	}
+	cd.depFileCount = fileCount
+
+	// Build folder-level deps for dependency graph folder view
+	cd.folderDepsJSON = buildFolderDepsJSON(currentView.ConcernedFiles, currentView.FileDependencies, dict)
+
+	cd.dictionaryJSON = dict.ToJSON()
 
 	return cd
 }
@@ -253,38 +251,36 @@ func (v *HtmlReportGenerator) prepareScopeData(scope scopeDef, files []*pb.File)
 // writeScopeData writes the data file the pages of one scope load, so that the
 // JSON is not duplicated in every page.
 func (v *HtmlReportGenerator) writeScopeData(dataDir string, dataKey string, cd *cachedLangData) error {
-	{
-		var jsBuilder strings.Builder
-		jsBuilder.WriteString("window.__AST_DATA__={")
-		jsBuilder.WriteString("files:")
-		jsBuilder.WriteString(cd.filesJSON)
-		jsBuilder.WriteString(",risks:")
-		jsBuilder.WriteString(cd.risksJSON)
-		jsBuilder.WriteString(",dictionary:")
-		jsBuilder.WriteString(cd.dictionaryJSON)
-		jsBuilder.WriteString(",fileDeps:")
-		if cd.fileDepsJSON == "" || cd.fileDepsJSON == "{}" {
-			jsBuilder.WriteString("{}")
-		} else {
-			jsBuilder.WriteString(cd.fileDepsJSON)
-		}
-		jsBuilder.WriteString(",folderDeps:")
-		if cd.folderDepsJSON == "" {
-			jsBuilder.WriteString("null")
-		} else {
-			jsBuilder.WriteString(cd.folderDepsJSON)
-		}
-		jsBuilder.WriteString(",depFileCount:")
-		jsBuilder.WriteString(fmt.Sprintf("%d", cd.depFileCount))
-		jsBuilder.WriteString(",nodeToCommunity:")
-		jsBuilder.WriteString(cd.nodeToCommunityJSON)
-		jsBuilder.WriteString(",testQuality:")
-		jsBuilder.WriteString(cd.testQualityJSON)
-		jsBuilder.WriteString("};")
-		dataFile := fmt.Sprintf("%s/data_%s.js", dataDir, dataKey)
-		if err := os.WriteFile(dataFile, []byte(jsBuilder.String()), 0644); err != nil {
-			return err
-		}
+	var jsBuilder strings.Builder
+	jsBuilder.WriteString("window.__AST_DATA__={")
+	jsBuilder.WriteString("files:")
+	jsBuilder.WriteString(cd.filesJSON)
+	jsBuilder.WriteString(",risks:")
+	jsBuilder.WriteString(cd.risksJSON)
+	jsBuilder.WriteString(",dictionary:")
+	jsBuilder.WriteString(cd.dictionaryJSON)
+	jsBuilder.WriteString(",fileDeps:")
+	if cd.fileDepsJSON == "" || cd.fileDepsJSON == "{}" {
+		jsBuilder.WriteString("{}")
+	} else {
+		jsBuilder.WriteString(cd.fileDepsJSON)
+	}
+	jsBuilder.WriteString(",folderDeps:")
+	if cd.folderDepsJSON == "" {
+		jsBuilder.WriteString("null")
+	} else {
+		jsBuilder.WriteString(cd.folderDepsJSON)
+	}
+	jsBuilder.WriteString(",depFileCount:")
+	jsBuilder.WriteString(fmt.Sprintf("%d", cd.depFileCount))
+	jsBuilder.WriteString(",nodeToCommunity:")
+	jsBuilder.WriteString(cd.nodeToCommunityJSON)
+	jsBuilder.WriteString(",testQuality:")
+	jsBuilder.WriteString(cd.testQualityJSON)
+	jsBuilder.WriteString("};")
+	dataFile := fmt.Sprintf("%s/data_%s.js", dataDir, dataKey)
+	if err := os.WriteFile(dataFile, []byte(jsBuilder.String()), 0644); err != nil {
+		return err
 	}
 
 	return nil

@@ -85,7 +85,6 @@ func (r Finder) Search(fileExtension string) FileList {
 	result.Files = []string{}
 
 	excludes := compileExcludes(r.Configuration.ExcludePatterns)
-	compiledExcludes := excludes.all
 
 	projectRoot := r.resolveProjectRoot()
 
@@ -102,7 +101,7 @@ func (r Finder) Search(fileExtension string) FileList {
 
 		// deal with excluded files
 		for _, file := range matches {
-			if isExcluded(file, projectRoot, path, compiledExcludes) {
+			if isExcluded(file, projectRoot, path, excludes) {
 				continue
 			}
 
@@ -139,7 +138,6 @@ func (r Finder) SearchMultiple(extensions []string) map[string]FileList {
 	}
 
 	excludes := compileExcludes(r.Configuration.ExcludePatterns)
-	compiledExcludes := excludes.all
 
 	projectRoot := r.resolveProjectRoot()
 
@@ -154,7 +152,7 @@ func (r Finder) SearchMultiple(extensions []string) map[string]FileList {
 		if !info.IsDir() {
 			ext := filepath.Ext(srcPath)
 			if extSet[ext] {
-				if !isExcluded(srcPath, projectRoot, srcPath, compiledExcludes) {
+				if !isExcluded(srcPath, projectRoot, srcPath, excludes) {
 					fl := results[ext]
 					fl.Files = append(fl.Files, srcPath)
 					fl.FilesByDirectory[srcPath] = append(fl.FilesByDirectory[srcPath], srcPath)
@@ -183,7 +181,7 @@ func (r Finder) SearchMultiple(extensions []string) map[string]FileList {
 			if !extSet[ext] {
 				return nil
 			}
-			if isExcluded(path, projectRoot, srcPath, compiledExcludes) {
+			if isExcluded(path, projectRoot, srcPath, excludes) {
 				return nil
 			}
 			fl := results[ext]
@@ -279,14 +277,14 @@ func (m excludeMatcher) prunesDirectory(dir, projectRoot, sourceRoot string) boo
 // When the file lies outside the project root, the path relative to the
 // analyzed source root is used instead, and as a last resort the absolute
 // path.
-func isExcluded(file, projectRoot, sourceRoot string, compiledExcludes []*regexp.Regexp) bool {
+func isExcluded(file, projectRoot, sourceRoot string, excludes excludeMatcher) bool {
 	target, ok := relativeTo(projectRoot, file)
 	if !ok {
 		if target, ok = relativeTo(sourceRoot, file); !ok {
 			target = file
 		}
 	}
-	for _, re := range compiledExcludes {
+	for _, re := range excludes.all {
 		if re.MatchString(target) {
 			return true
 		}

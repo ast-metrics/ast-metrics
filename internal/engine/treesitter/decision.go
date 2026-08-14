@@ -80,14 +80,13 @@ type DecisionSpec struct {
 
 	once     sync.Once
 	byType   map[string]DecisionKind
-	logical  map[string]bool
 	ops      map[string]bool
 	bySymbol symbolTable[DecisionKind]
 }
 
-// decLogicalCandidate marks, inside the symbol table only, a node type that may
-// carry a short-circuit operator. It never leaves Classify: what the node holds
-// decides between DecLogical and DecNone.
+// decLogicalCandidate marks a node type that may carry a short-circuit
+// operator. It never leaves Classify: what the node holds decides between
+// DecLogical and DecNone.
 const decLogicalCandidate DecisionKind = -1
 
 func (s *DecisionSpec) index() {
@@ -108,25 +107,17 @@ func (s *DecisionSpec) index() {
 				s.byType[t] = kind
 			}
 		}
-		s.logical = make(map[string]bool, len(s.Logical))
+		// a node type that may carry a boolean operator is a candidate, whatever
+		// kind its name would otherwise give it
 		for _, t := range s.Logical {
-			s.logical[t] = true
+			s.byType[t] = decLogicalCandidate
 		}
 		s.ops = make(map[string]bool, len(s.Ops))
 		for _, o := range s.Ops {
 			s.ops[o] = true
 		}
 		if s.Language != nil {
-			// a candidate for a boolean operator wins over the kind its name
-			// would give it, as in Classify below
-			byName := make(map[string]DecisionKind, len(s.byType)+len(s.logical))
-			for t, kind := range s.byType {
-				byName[t] = kind
-			}
-			for t := range s.logical {
-				byName[t] = decLogicalCandidate
-			}
-			s.bySymbol = newSymbolTable(s.Language(), byName)
+			s.bySymbol = newSymbolTable(s.Language(), s.byType)
 		}
 	})
 }
@@ -139,22 +130,20 @@ func (s *DecisionSpec) Classify(n *sitter.Node, src []byte) DecisionKind {
 	}
 	s.index()
 
-	if s.bySymbol.ready() {
-		kind := s.bySymbol.at(n)
-		if kind == decLogicalCandidate {
-			return s.logicalKind(n, src)
-		}
-		return kind
-	}
-
-	t := n.Type()
-	if s.logical[t] {
+	kind := s.kindOf(n)
+	if kind == decLogicalCandidate {
 		return s.logicalKind(n, src)
 	}
-	if kind, ok := s.byType[t]; ok {
-		return kind
+	return kind
+}
+
+// kindOf reads the kind declared for the node's type: by symbol id when the
+// adapter named the grammar, by node type name otherwise.
+func (s *DecisionSpec) kindOf(n *sitter.Node) DecisionKind {
+	if s.bySymbol.ready() {
+		return s.bySymbol.at(n)
 	}
-	return DecNone
+	return s.byType[n.Type()]
 }
 
 // logicalKind decides what a candidate for a short-circuit operator is worth:
