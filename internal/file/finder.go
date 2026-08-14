@@ -84,13 +84,8 @@ func (r Finder) Search(fileExtension string) FileList {
 	result.FilesByDirectory = make(map[string][]string)
 	result.Files = []string{}
 
-	// Pre-compile exclude patterns once
-	compiledExcludes := make([]*regexp.Regexp, 0, len(r.Configuration.ExcludePatterns))
-	for _, pattern := range r.Configuration.ExcludePatterns {
-		if re, err := regexp.Compile(pattern); err == nil {
-			compiledExcludes = append(compiledExcludes, re)
-		}
-	}
+	excludes := compileExcludes(r.Configuration.ExcludePatterns)
+	compiledExcludes := excludes.all
 
 	projectRoot := r.resolveProjectRoot()
 
@@ -143,13 +138,8 @@ func (r Finder) SearchMultiple(extensions []string) map[string]FileList {
 		}
 	}
 
-	// Pre-compile exclude patterns once
-	compiledExcludes := make([]*regexp.Regexp, 0, len(r.Configuration.ExcludePatterns))
-	for _, pattern := range r.Configuration.ExcludePatterns {
-		if re, err := regexp.Compile(pattern); err == nil {
-			compiledExcludes = append(compiledExcludes, re)
-		}
-	}
+	excludes := compileExcludes(r.Configuration.ExcludePatterns)
+	compiledExcludes := excludes.all
 
 	projectRoot := r.resolveProjectRoot()
 
@@ -176,7 +166,17 @@ func (r Finder) SearchMultiple(extensions []string) map[string]FileList {
 
 		// Single walk for all extensions
 		filepath.WalkDir(srcPath, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				// An excluded directory is not descended into: reading a
+				// vendor tree, a build cache or a .git directory only to
+				// discard every file it holds is the most expensive part of
+				// the discovery on a real project.
+				if path != srcPath && excludes.prunesDirectory(path, projectRoot, srcPath) {
+					return filepath.SkipDir
+				}
 				return nil
 			}
 			ext := filepath.Ext(path)
@@ -209,6 +209,61 @@ func MergeFileLists(lists ...FileList) FileList {
 		}
 	}
 	return result
+}
+
+// excludeMatcher holds the compiled exclude patterns, and among them the ones
+// that can decide the fate of a whole directory during a walk.
+type excludeMatcher struct {
+	all []*regexp.Regexp
+	// prunable holds the patterns that match a prefix of the path, so that
+	// matching a directory proves that every file under it matches too. A
+	// pattern anchored on the end of the path ("$", "\z") is not one of them:
+	// "/vendor/" excludes everything under vendor, but "_test\.php$" says
+	// nothing about the directory holding the file.
+	prunable []*regexp.Regexp
+}
+
+func compileExcludes(patterns []string) excludeMatcher {
+	m := excludeMatcher{
+		all:      make([]*regexp.Regexp, 0, len(patterns)),
+		prunable: make([]*regexp.Regexp, 0, len(patterns)),
+	}
+	for _, pattern := range patterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			continue
+		}
+		m.all = append(m.all, re)
+		if !strings.Contains(pattern, "$") && !strings.Contains(pattern, `\z`) {
+			m.prunable = append(m.prunable, re)
+		}
+	}
+	return m
+}
+
+// prunesDirectory reports whether a directory can be skipped whole. It is only
+// true when a prefix pattern matches the directory path itself, which makes it
+// match every path below it: skipping is then exactly equivalent to excluding
+// each of those files one by one.
+func (m excludeMatcher) prunesDirectory(dir, projectRoot, sourceRoot string) bool {
+	if len(m.prunable) == 0 {
+		return false
+	}
+	target, ok := relativeTo(projectRoot, dir)
+	if !ok {
+		if target, ok = relativeTo(sourceRoot, dir); !ok {
+			target = dir
+		}
+	}
+	// patterns are written with delimiters ("/vendor/"), so the directory is
+	// matched as the prefix it is
+	target += "/"
+	for _, re := range m.prunable {
+		if re.MatchString(target) {
+			return true
+		}
+	}
+	return false
 }
 
 // isExcluded reports whether a discovered file must be skipped. Exclude

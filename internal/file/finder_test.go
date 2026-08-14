@@ -269,6 +269,49 @@ func TestFinder_SearchMultiple(t *testing.T) {
 		}
 	})
 
+	// An excluded directory is skipped whole instead of being walked to throw
+	// each of its files away afterwards. The result must not change, whatever
+	// the shape of the pattern.
+	t.Run("skips an excluded directory without changing the result", func(t *testing.T) {
+		base := t.TempDir()
+		vendor := filepath.Join(base, "vendor", "lib", "deep")
+		_ = os.MkdirAll(vendor, 0o777)
+		_ = os.WriteFile(filepath.Join(base, "main.go"), []byte("package main\n"), 0o644)
+		_ = os.WriteFile(filepath.Join(vendor, "dep.go"), []byte("package lib\n"), 0o644)
+
+		finder := Finder{Configuration: configuration.Configuration{
+			SourcesToAnalyzePath: []string{base},
+			ExcludePatterns:      []string{"/vendor/"},
+		}}
+		finder.projectRoot = base
+		results := finder.SearchMultiple([]string{".go"})
+
+		if len(results[".go"].Files) != 1 {
+			t.Fatalf("Expected 1 .go file (vendor pruned), got %d (%v)", len(results[".go"].Files), results[".go"].Files)
+		}
+	})
+
+	t.Run("keeps a directory whose pattern is anchored on the end of the path", func(t *testing.T) {
+		// "/tmp/$" excludes a file named tmp, not the content of a directory
+		// named tmp: pruning on such a pattern would drop files the
+		// file-by-file filter keeps.
+		base := t.TempDir()
+		tmp := filepath.Join(base, "tmp")
+		_ = os.MkdirAll(tmp, 0o777)
+		_ = os.WriteFile(filepath.Join(tmp, "kept.go"), []byte("package tmp\n"), 0o644)
+
+		finder := Finder{Configuration: configuration.Configuration{
+			SourcesToAnalyzePath: []string{base},
+			ExcludePatterns:      []string{"/tmp/$"},
+		}}
+		finder.projectRoot = base
+		results := finder.SearchMultiple([]string{".go"})
+
+		if len(results[".go"].Files) != 1 {
+			t.Fatalf("Expected 1 .go file (end-anchored pattern must not prune), got %d (%v)", len(results[".go"].Files), results[".go"].Files)
+		}
+	})
+
 	t.Run("should use SearchMultiple cache in Search", func(t *testing.T) {
 		base := t.TempDir()
 		_ = os.WriteFile(filepath.Join(base, "main.go"), []byte("package main\n"), 0o644)
