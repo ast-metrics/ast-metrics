@@ -62,28 +62,25 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 }
 
 // ---- Structure detection ----
-func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return n.Type() == "program" }
+//
+// These four questions are asked on every node of every walk, so they are
+// answered by symbol id rather than by node type name. See
+// internal/engine/treesitter/symbols.go.
+var (
+	phpModules    = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"program"}}
+	phpClasses    = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"class_declaration", "trait_declaration", "enum_declaration"}}
+	phpInterfaces = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"interface_declaration"}}
+	phpFunctions  = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"function_definition", "method_declaration"}}
+)
 
-func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
-	switch n.Type() {
-	case "class_declaration", "trait_declaration", "enum_declaration":
-		return true
-	}
-	return false
-}
+func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return phpModules.Has(n) }
+
+func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool { return phpClasses.Has(n) }
 
 // Optional interface awareness for Visitor
-func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool {
-	return n != nil && n.Type() == "interface_declaration"
-}
+func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool { return phpInterfaces.Has(n) }
 
-func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
-	switch n.Type() {
-	case "function_definition", "method_declaration":
-		return true
-	}
-	return false
-}
+func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool { return phpFunctions.Has(n) }
 
 // ---- Attributes ----
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
@@ -200,17 +197,18 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // with lizard, phploc and PMD, and with the languages that have no such
 // operator.
 var phpDecisions = &Treesitter.DecisionSpec{
-	If:      []string{"if_statement"},
-	Elif:    []string{"else_if_clause"},
-	Else:    []string{"else_clause"},
-	Loop:    []string{"while_statement", "for_statement", "foreach_statement", "do_statement"},
-	Switch:  []string{"switch_statement", "match_expression"},
-	Case:    []string{"case_statement", "match_conditional_expression"},
-	Default: []string{"default_statement", "match_default_expression"},
-	Catch:   []string{"catch_clause"},
-	Ternary: []string{"conditional_expression"},
-	Logical: []string{"binary_expression"},
-	Ops:     []string{"&&", "||", "and", "or"},
+	Language: tsPhp.GetLanguage,
+	If:       []string{"if_statement"},
+	Elif:     []string{"else_if_clause"},
+	Else:     []string{"else_clause"},
+	Loop:     []string{"while_statement", "for_statement", "foreach_statement", "do_statement"},
+	Switch:   []string{"switch_statement", "match_expression"},
+	Case:     []string{"case_statement", "match_conditional_expression"},
+	Default:  []string{"default_statement", "match_default_expression"},
+	Catch:    []string{"catch_clause"},
+	Ternary:  []string{"conditional_expression"},
+	Logical:  []string{"binary_expression"},
+	Ops:      []string{"&&", "||", "and", "or"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -853,6 +851,7 @@ func (a *TreeSitterAdapter) ExtractMethodCalls(src []byte, startLine, endLine in
 // elseif carries a condition of its own, exactly like the `if` it extends,
 // while `else_clause`, `catch_clause` and `finally_clause` are branch headers.
 var phpStatements = &Treesitter.StatementSpec{
+	Language: tsPhp.GetLanguage,
 	Statement: []string{
 		"expression_statement", "echo_statement", "unset_statement",
 		"if_statement", "else_if_clause",

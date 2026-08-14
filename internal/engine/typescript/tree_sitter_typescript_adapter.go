@@ -39,29 +39,23 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	return a.root, source
 }
 
-func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return n.Type() == "program" }
+// These four questions are asked on every node of every walk, so they are
+// answered by symbol id rather than by node type name. See
+// internal/engine/treesitter/symbols.go.
+var (
+	tsModules    = &Treesitter.TypeSet{Language: tsTsx.GetLanguage, Types: []string{"program"}}
+	tsClasses    = &Treesitter.TypeSet{Language: tsTsx.GetLanguage, Types: []string{"class_declaration", "abstract_class_declaration", "enum_declaration"}}
+	tsInterfaces = &Treesitter.TypeSet{Language: tsTsx.GetLanguage, Types: []string{"interface_declaration"}}
+	tsFunctions  = &Treesitter.TypeSet{Language: tsTsx.GetLanguage, Types: []string{"function_declaration", "method_definition", "generator_function_declaration", "arrow_function"}}
+)
 
-func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
-	switch n.Type() {
-	case "class_declaration", "abstract_class_declaration", "enum_declaration":
-		return true
-	}
-	return false
-}
+func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return tsModules.Has(n) }
 
-func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool {
-	return n.Type() == "interface_declaration"
-}
+func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool { return tsClasses.Has(n) }
 
-func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
-	switch n.Type() {
-	case "function_declaration", "method_definition", "generator_function_declaration":
-		return true
-	case "arrow_function":
-		return true
-	}
-	return false
-}
+func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool { return tsInterfaces.Has(n) }
+
+func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool { return tsFunctions.Has(n) }
 
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	if a.src == nil || n == nil {
@@ -211,16 +205,17 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // if is counted on its own. `??` is deliberately not a logical operator here,
 // for the same reason as in PHP.
 var tsDecisions = &Treesitter.DecisionSpec{
-	If:      []string{"if_statement"},
-	Else:    []string{"else_clause"},
-	Loop:    []string{"for_statement", "for_in_statement", "while_statement", "do_statement"},
-	Switch:  []string{"switch_statement"},
-	Case:    []string{"switch_case"},
-	Default: []string{"switch_default"},
-	Catch:   []string{"catch_clause"},
-	Ternary: []string{"ternary_expression"},
-	Logical: []string{"binary_expression"},
-	Ops:     []string{"&&", "||"},
+	Language: tsTsx.GetLanguage,
+	If:       []string{"if_statement"},
+	Else:     []string{"else_clause"},
+	Loop:     []string{"for_statement", "for_in_statement", "while_statement", "do_statement"},
+	Switch:   []string{"switch_statement"},
+	Case:     []string{"switch_case"},
+	Default:  []string{"switch_default"},
+	Catch:    []string{"catch_clause"},
+	Ternary:  []string{"ternary_expression"},
+	Logical:  []string{"binary_expression"},
+	Ops:      []string{"&&", "||"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -370,6 +365,7 @@ func (a *TreeSitterAdapter) importsFromExportStatement(n *sitter.Node) []Treesit
 // runs. An `else if` is spelled as an `else_clause` holding an `if_statement`,
 // so the nested if is what counts.
 var tsStatements = &Treesitter.StatementSpec{
+	Language: tsTsx.GetLanguage,
 	Statement: []string{
 		"expression_statement",
 		"lexical_declaration", "variable_declaration",

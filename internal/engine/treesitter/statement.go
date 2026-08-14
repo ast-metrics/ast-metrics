@@ -73,8 +73,14 @@ type StatementSpec struct {
 	// instruction only inside a function body.
 	LocalDeclaration []string
 
-	once   sync.Once
-	byType map[string]StatementKind
+	// Language is the grammar these node types belong to, which lets the
+	// classification work on symbol ids instead of node type names. See
+	// symbols.go.
+	Language func() *sitter.Language
+
+	once     sync.Once
+	byType   map[string]StatementKind
+	bySymbol symbolTable[StatementKind]
 }
 
 func (s *StatementSpec) index() {
@@ -86,6 +92,9 @@ func (s *StatementSpec) index() {
 		for _, t := range s.LocalDeclaration {
 			s.byType[t] = IsLocalDeclaration
 		}
+		if s.Language != nil {
+			s.bySymbol = newSymbolTable(s.Language(), s.byType)
+		}
 	})
 }
 
@@ -95,6 +104,9 @@ func (s *StatementSpec) Classify(n *sitter.Node) StatementKind {
 		return NotAStatement
 	}
 	s.index()
+	if s.bySymbol.ready() {
+		return s.bySymbol.at(n)
+	}
 	return s.byType[n.Type()]
 }
 

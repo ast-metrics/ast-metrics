@@ -39,13 +39,20 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	return a.root, source
 }
 
-func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return n.Type() == "source_file" }
+// These questions are asked on every node of every walk, so they are answered
+// by symbol id rather than by node type name. See
+// internal/engine/treesitter/symbols.go.
+var (
+	goModules      = &Treesitter.TypeSet{Language: tsGo.GetLanguage, Types: []string{"source_file"}}
+	goTypeDecls    = &Treesitter.TypeSet{Language: tsGo.GetLanguage, Types: []string{"type_declaration"}}
+	goFunctionsSet = &Treesitter.TypeSet{Language: tsGo.GetLanguage, Types: []string{"function_declaration", "method_declaration"}}
+)
+
+func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return goModules.Has(n) }
 func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
-	return n.Type() == "type_declaration" && firstChildOfType(n, "type_spec") != nil && firstDescendantOfType(n, "type_identifier") != nil && firstDescendantOfType(n, "type_parameter_list") == nil && firstDescendantOfType(n, "struct_type") != nil
+	return goTypeDecls.Has(n) && firstChildOfType(n, "type_spec") != nil && firstDescendantOfType(n, "type_identifier") != nil && firstDescendantOfType(n, "type_parameter_list") == nil && firstDescendantOfType(n, "struct_type") != nil
 }
-func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
-	return n.Type() == "function_declaration" || n.Type() == "method_declaration"
-}
+func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool { return goFunctionsSet.Has(n) }
 
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	switch n.Type() {
@@ -177,13 +184,14 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // and `for_clause` are children of `for_statement`, which is the single loop
 // node of the grammar, so only the latter is listed.
 var goDecisions = &Treesitter.DecisionSpec{
-	If:      []string{"if_statement"},
-	Loop:    []string{"for_statement"},
-	Switch:  []string{"expression_switch_statement", "type_switch_statement", "select_statement"},
-	Case:    []string{"expression_case", "type_case", "communication_case"},
-	Default: []string{"default_case"},
-	Logical: []string{"binary_expression"},
-	Ops:     []string{"&&", "||"},
+	Language: tsGo.GetLanguage,
+	If:       []string{"if_statement"},
+	Loop:     []string{"for_statement"},
+	Switch:   []string{"expression_switch_statement", "type_switch_statement", "select_statement"},
+	Case:     []string{"expression_case", "type_case", "communication_case"},
+	Default:  []string{"default_case"},
+	Logical:  []string{"binary_expression"},
+	Ops:      []string{"&&", "||"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -420,6 +428,7 @@ func goMethodAtLine(n *sitter.Node, line int) *sitter.Node {
 // The case clauses of a switch and of a select are labels, not instructions:
 // what they hold counts on its own lines.
 var goStatements = &Treesitter.StatementSpec{
+	Language: tsGo.GetLanguage,
 	Statement: []string{
 		"assignment_statement", "expression_statement", "inc_statement", "dec_statement",
 		"short_var_declaration", "send_statement",

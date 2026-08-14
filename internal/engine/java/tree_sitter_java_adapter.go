@@ -42,32 +42,29 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	return a.root, source
 }
 
-func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return n.Type() == "program" }
+// These four questions are asked on every node of every walk, so they are
+// answered by symbol id rather than by node type name. See
+// internal/engine/treesitter/symbols.go.
+//
+// Enums, records and annotation types are class-like containers in Java: they
+// hold fields and methods, so they count as classes for metrics. Lambdas are
+// intentionally not named functions: they have no name and would pollute method
+// counts, and their bodies still contribute decisions to the enclosing method
+// through the fallback recursion.
+var (
+	javaModules    = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"program"}}
+	javaClasses    = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"class_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration"}}
+	javaInterfaces = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"interface_declaration"}}
+	javaFunctions  = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"method_declaration", "constructor_declaration"}}
+)
 
-func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
-	switch n.Type() {
-	// enums, records and annotation types are class-like containers in Java:
-	// they hold fields and methods, so treat them as classes for metrics.
-	case "class_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration":
-		return true
-	}
-	return false
-}
+func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return javaModules.Has(n) }
 
-func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool {
-	return n.Type() == "interface_declaration"
-}
+func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool { return javaClasses.Has(n) }
 
-func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
-	// Lambdas are intentionally not treated as named functions: they have no
-	// name and would pollute method counts. Their bodies still contribute
-	// decisions to the enclosing method via the fallback recursion.
-	switch n.Type() {
-	case "method_declaration", "constructor_declaration":
-		return true
-	}
-	return false
-}
+func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool { return javaInterfaces.Has(n) }
+
+func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool { return javaFunctions.Has(n) }
 
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	if a.src == nil || n == nil {
@@ -202,14 +199,15 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // two labels sharing one body (`case 1: case 2:`) count as the two entry
 // points they are. switch_expression covers statements and expressions alike.
 var javaDecisions = &Treesitter.DecisionSpec{
-	If:      []string{"if_statement"},
-	Loop:    []string{"for_statement", "enhanced_for_statement", "while_statement", "do_statement"},
-	Switch:  []string{"switch_expression"},
-	Case:    []string{"switch_label"},
-	Catch:   []string{"catch_clause"},
-	Ternary: []string{"ternary_expression"},
-	Logical: []string{"binary_expression"},
-	Ops:     []string{"&&", "||"},
+	Language: tsJava.GetLanguage,
+	If:       []string{"if_statement"},
+	Loop:     []string{"for_statement", "enhanced_for_statement", "while_statement", "do_statement"},
+	Switch:   []string{"switch_expression"},
+	Case:     []string{"switch_label"},
+	Catch:    []string{"catch_clause"},
+	Ternary:  []string{"ternary_expression"},
+	Logical:  []string{"binary_expression"},
+	Ops:      []string{"&&", "||"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -269,6 +267,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 // `static_initializer`, `method_declaration` and `import_declaration` declare
 // members.
 var javaStatements = &Treesitter.StatementSpec{
+	Language: tsJava.GetLanguage,
 	Statement: []string{
 		"expression_statement", "local_variable_declaration",
 		"if_statement",

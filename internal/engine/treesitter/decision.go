@@ -73,11 +73,22 @@ type DecisionSpec struct {
 	Logical []string
 	Ops     []string
 
-	once    sync.Once
-	byType  map[string]DecisionKind
-	logical map[string]bool
-	ops     map[string]bool
+	// Language is the grammar these node types belong to, which lets the
+	// classification work on symbol ids instead of node type names. See
+	// symbols.go.
+	Language func() *sitter.Language
+
+	once     sync.Once
+	byType   map[string]DecisionKind
+	logical  map[string]bool
+	ops      map[string]bool
+	bySymbol symbolTable[DecisionKind]
 }
+
+// decLogicalCandidate marks, inside the symbol table only, a node type that may
+// carry a short-circuit operator. It never leaves Classify: what the node holds
+// decides between DecLogical and DecNone.
+const decLogicalCandidate DecisionKind = -1
 
 func (s *DecisionSpec) index() {
 	s.once.Do(func() {
@@ -105,6 +116,18 @@ func (s *DecisionSpec) index() {
 		for _, o := range s.Ops {
 			s.ops[o] = true
 		}
+		if s.Language != nil {
+			// a candidate for a boolean operator wins over the kind its name
+			// would give it, as in Classify below
+			byName := make(map[string]DecisionKind, len(s.byType)+len(s.logical))
+			for t, kind := range s.byType {
+				byName[t] = kind
+			}
+			for t := range s.logical {
+				byName[t] = decLogicalCandidate
+			}
+			s.bySymbol = newSymbolTable(s.Language(), byName)
+		}
 	})
 }
 
@@ -115,18 +138,34 @@ func (s *DecisionSpec) Classify(n *sitter.Node, src []byte) DecisionKind {
 		return DecNone
 	}
 	s.index()
+
+	if s.bySymbol.ready() {
+		kind := s.bySymbol.at(n)
+		if kind == decLogicalCandidate {
+			return s.logicalKind(n, src)
+		}
+		return kind
+	}
+
 	t := n.Type()
 	if s.logical[t] {
-		op := n.ChildByFieldName("operator")
-		if op == nil || !s.ops[nodeText(src, op)] {
-			return DecNone
-		}
-		return DecLogical
+		return s.logicalKind(n, src)
 	}
 	if kind, ok := s.byType[t]; ok {
 		return kind
 	}
 	return DecNone
+}
+
+// logicalKind decides what a candidate for a short-circuit operator is worth:
+// only the operator it carries tells a branch from a bitwise or comparison
+// expression.
+func (s *DecisionSpec) logicalKind(n *sitter.Node, src []byte) DecisionKind {
+	op := n.ChildByFieldName("operator")
+	if op == nil || !s.ops[nodeText(src, op)] {
+		return DecNone
+	}
+	return DecLogical
 }
 
 // LogicalOperator returns the operator carried by a DecLogical node.
