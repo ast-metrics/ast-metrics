@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -458,7 +457,42 @@ func CreateTestFileWithCode(parser Engine, fileContent string) (*pb.File, error)
 	return parser.Parse(f.Name())
 }
 
-var regForNamespacePart = regexp.MustCompile("[^A-Za-z0-9]+")
+// splitNamespaceParts cuts a namespace on its separators, a separator being a
+// run of characters that are neither a letter nor a digit, and returns the first
+// one along with the parts.
+//
+// This is what a "[^A-Za-z0-9]+" regular expression does, written by hand
+// because the aggregation asks it of every namespace of every scope, and the
+// regular expression engine was the longest part of that phase. Bytes are enough
+// to agree with the expression: every byte of a multi-byte character is outside
+// the alphanumeric range, so the two see the same separators at the same places.
+func splitNamespaceParts(namespace string) (separator string, parts []string) {
+	isPart := func(c byte) bool {
+		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+	}
+
+	parts = make([]string, 0, 8)
+	start := 0
+	for i := 0; i < len(namespace); {
+		if isPart(namespace[i]) {
+			i++
+			continue
+		}
+		end := i
+		for end < len(namespace) && !isPart(namespace[end]) {
+			end++
+		}
+		if separator == "" {
+			separator = namespace[i:end]
+		}
+		parts = append(parts, namespace[start:i])
+		start = end
+		i = end
+	}
+	parts = append(parts, namespace[start:])
+
+	return separator, parts
+}
 
 // Keep only n levels in namespace
 func ReduceDepthOfNamespace(namespace string, depth int) string {
@@ -469,8 +503,7 @@ func ReduceDepthOfNamespace(namespace string, depth int) string {
 		depth += 1
 	}
 
-	separator := regForNamespacePart.FindString(namespace)
-	parts := regForNamespacePart.Split(namespace, -1)
+	separator, parts := splitNamespaceParts(namespace)
 
 	if depth >= len(parts) {
 		return strings.Replace(namespace, "githubcom", "github.com", -1)
