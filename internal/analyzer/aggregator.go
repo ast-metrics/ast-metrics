@@ -1,9 +1,11 @@
 package analyzer
 
 import (
+	"maps"
 	"math"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -327,21 +329,9 @@ func (r *Aggregator) executeAggregationOnFiles(files []*pb.File) ProjectAggregat
 		chunks[i] = files[start:end]
 	}
 
-	// for each programming language, we create a separeted result
-	aggregateByLanguageChunk := make(map[string]Aggregated)
-	for _, file := range files {
-		if file.ProgrammingLanguage == "" {
-			continue
-		}
-		if _, ok := aggregateByLanguageChunk[file.ProgrammingLanguage]; !ok {
-			aggregateByLanguageChunk[file.ProgrammingLanguage] = newAggregated()
-		}
-	}
-
 	// for each analyzed path (CLI argument), we create a separated result. Only
 	// when several paths are analyzed: with a single one, the directory view
 	// would be a duplicate of the global view.
-	aggregateByDirectoryChunk := make(map[string]Aggregated)
 	directoryOfFile := make(map[*pb.File]string)
 	if len(r.AnalyzedPaths) > 1 {
 		scopes := buildAnalyzedPathScopes(r.AnalyzedPaths)
@@ -352,134 +342,85 @@ func (r *Aggregator) executeAggregationOnFiles(files []*pb.File) ProjectAggregat
 					continue
 				}
 				directoryOfFile[file] = key
-				if _, exists := aggregateByDirectoryChunk[key]; !exists {
-					aggregateByDirectoryChunk[key] = newAggregated()
-				}
 			}
 		}
 	}
 
-	// Create channels for the results
-	resultsByClass := make(chan *Aggregated, numberOfProcessors)
-	resultsByFile := make(chan *Aggregated, numberOfProcessors)
-	resultsByProgrammingLanguage := make(chan *map[string]Aggregated, numberOfProcessors)
-	resultsByDirectory := make(chan *map[string]Aggregated, numberOfProcessors)
+	// Each worker owns its aggregates and writes them into its own slot: nothing
+	// is shared, so we get to choose the order in which they are merged back.
+	// That choice is what makes the analysis reproducible, since summing floats
+	// in the order the workers happen to finish would make the project totals
+	// wobble in their last bits from one run to the next.
+	partials := make([]chunkAggregates, numberOfProcessors)
 
-	// Deadlock prevention
-	mu := sync.Mutex{}
-
-	// Process each chunk of files
-	// Please ensure that there is no data race here. If needed, use the mutex
-	chunkIndex := 0
 	for i := 0; i < numberOfProcessors; i++ {
 
 		wg.Add(1)
 
 		// Reduce results : we want to get sums, and to count calculated values into a AggregateResult
-		go func(files []*pb.File) {
+		go func(slot int, files []*pb.File) {
 			defer wg.Done()
 
-			if len(files) == 0 {
-				return
-			}
-
-			// Prepare results
-			aggregateByFileChunk := newAggregated()
-			aggregateByClassChunk := newAggregated()
+			partial := newChunkAggregates()
 
 			// the process deal with its own chunk
 			for _, file := range files {
-				localFile := file
-
 				// by file
-				result := r.mapSums(localFile, aggregateByFileChunk)
-				result.ConcernedFiles = append(result.ConcernedFiles, localFile)
-				aggregateByFileChunk = result
+				byFile := r.mapSums(file, partial.byFile)
+				byFile.ConcernedFiles = append(byFile.ConcernedFiles, file)
+				partial.byFile = byFile
 
 				// by class
-				result = r.mapSums(localFile, aggregateByClassChunk)
-				result.ConcernedFiles = append(result.ConcernedFiles, localFile)
-				aggregateByClassChunk = result
+				byClass := r.mapSums(file, partial.byClass)
+				byClass.ConcernedFiles = append(byClass.ConcernedFiles, file)
+				partial.byClass = byClass
 
 				// by language, and by analyzed directory
-				mu.Lock()
-				byLanguage := r.mapSums(localFile, aggregateByLanguageChunk[localFile.ProgrammingLanguage])
-				byLanguage.ConcernedFiles = append(byLanguage.ConcernedFiles, localFile)
-				aggregateByLanguageChunk[localFile.ProgrammingLanguage] = byLanguage
-
-				if directory, ok := directoryOfFile[localFile]; ok {
-					byDirectory := r.mapSums(localFile, aggregateByDirectoryChunk[directory])
-					byDirectory.ConcernedFiles = append(byDirectory.ConcernedFiles, localFile)
-					aggregateByDirectoryChunk[directory] = byDirectory
+				r.addFileToBucket(partial.byLanguage, file.ProgrammingLanguage, file)
+				if directory, ok := directoryOfFile[file]; ok {
+					r.addFileToBucket(partial.byDirectory, directory, file)
 				}
-				mu.Unlock()
 			}
 
-			// Send the result to the channels
-			resultsByClass <- &aggregateByClassChunk
-			resultsByFile <- &aggregateByFileChunk
-			resultsByProgrammingLanguage <- &aggregateByLanguageChunk
-			resultsByDirectory <- &aggregateByDirectoryChunk
+			partials[slot] = partial
 
-		}(chunks[chunkIndex])
-		chunkIndex++
+		}(i, chunks[i])
 	}
 
 	wg.Wait()
-	close(resultsByClass)
-	close(resultsByFile)
-	close(resultsByProgrammingLanguage)
-	close(resultsByDirectory)
 
-	// Now we have chunk of sums. We want to reduce its into a single object
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for chunk := range resultsByClass {
-			r := r.mergeChunks(projectAggregated.ByClass, chunk)
-			projectAggregated.ByClass = r
-		}
-	}()
+	// Now we have chunk of sums. We want to reduce its into a single object,
+	// walking the chunks in index order rather than in completion order.
+	for i := range partials {
+		partial := partials[i]
+		projectAggregated.ByFile = r.mergeChunks(projectAggregated.ByFile, &partial.byFile)
+		projectAggregated.ByClass = r.mergeChunks(projectAggregated.ByClass, &partial.byClass)
+		r.mergeBuckets(projectAggregated.ByProgrammingLanguage, partial.byLanguage)
+		r.mergeBuckets(projectAggregated.ByDirectory, partial.byDirectory)
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for chunk := range resultsByFile {
-			r := r.mergeChunks(projectAggregated.ByFile, chunk)
-			projectAggregated.ByFile = r
-		}
-	}()
+	// Files were appended chunk by chunk. Canonicalize every aggregate before
+	// the coupling and test-quality analyzers consume these lists, since both
+	// index by a key several files can share and keep the last writer.
+	sortFilesByPath(projectAggregated.ByClass.ConcernedFiles)
+	sortFilesByPath(projectAggregated.ByFile.ConcernedFiles)
 
-	wg.Add(1)
-	go func() {
-		mu.Lock()
-		defer wg.Done()
-		defer mu.Unlock()
-
-		for chunk := range resultsByProgrammingLanguage {
-			for k, v := range *chunk {
-				projectAggregated.ByProgrammingLanguage[k] = v
-			}
-		}
-
-		for chunk := range resultsByDirectory {
-			for k, v := range *chunk {
-				projectAggregated.ByDirectory[k] = v
-			}
-		}
-	}()
-
-	wg.Wait()
-
-	// Now  we have sums. We want to reduce metrics and get the averages
+	// Now  we have sums. We want to reduce metrics and get the averages.
+	// mapCoupling writes back into the *pb.File it visits, so the buckets are
+	// walked by sorted key: with Go's map order, the values one bucket reads
+	// would depend on which buckets ran before it.
 	projectAggregated.ByClass = r.reduceMetrics(projectAggregated.ByClass)
 	projectAggregated.ByFile = r.reduceMetrics(projectAggregated.ByFile)
-	for k, v := range projectAggregated.ByProgrammingLanguage {
+	for _, k := range slices.Sorted(maps.Keys(projectAggregated.ByProgrammingLanguage)) {
+		v := projectAggregated.ByProgrammingLanguage[k]
+		sortFilesByPath(v.ConcernedFiles)
 		v = r.reduceMetrics(v)
 		f := r.mapCoupling(&v)
 		projectAggregated.ByProgrammingLanguage[k] = f
 	}
-	for k, v := range projectAggregated.ByDirectory {
+	for _, k := range slices.Sorted(maps.Keys(projectAggregated.ByDirectory)) {
+		v := projectAggregated.ByDirectory[k]
+		sortFilesByPath(v.ConcernedFiles)
 		v = r.reduceMetrics(v)
 		f := r.mapCoupling(&v)
 		projectAggregated.ByDirectory[k] = f
@@ -498,6 +439,62 @@ func (r *Aggregator) executeAggregationOnFiles(files []*pb.File) ProjectAggregat
 	riskAnalyzer.Analyze(projectAggregated)
 
 	return projectAggregated
+}
+
+// chunkAggregates holds the sums computed by a single worker over its own chunk
+// of files. Workers never share these, which is what lets the caller merge them
+// back in a fixed order.
+type chunkAggregates struct {
+	byFile      Aggregated
+	byClass     Aggregated
+	byLanguage  map[string]Aggregated
+	byDirectory map[string]Aggregated
+}
+
+func newChunkAggregates() chunkAggregates {
+	return chunkAggregates{
+		byFile:      newAggregated(),
+		byClass:     newAggregated(),
+		byLanguage:  make(map[string]Aggregated),
+		byDirectory: make(map[string]Aggregated),
+	}
+}
+
+// addFileToBucket sums a file into the named bucket, creating it on first use.
+func (r *Aggregator) addFileToBucket(buckets map[string]Aggregated, key string, file *pb.File) {
+	bucket, ok := buckets[key]
+	if !ok {
+		bucket = newAggregated()
+	}
+	bucket = r.mapSums(file, bucket)
+	bucket.ConcernedFiles = append(bucket.ConcernedFiles, file)
+	buckets[key] = bucket
+}
+
+// mergeBuckets folds one worker's named aggregates into the project ones.
+func (r *Aggregator) mergeBuckets(into map[string]Aggregated, from map[string]Aggregated) {
+	for key, bucket := range from {
+		base, ok := into[key]
+		if !ok {
+			base = newAggregated()
+		}
+		into[key] = r.mergeChunks(base, &bucket)
+	}
+}
+
+func sortFilesByPath(files []*pb.File) {
+	sort.SliceStable(files, func(i, j int) bool {
+		if files[i] == nil {
+			return false
+		}
+		if files[j] == nil {
+			return true
+		}
+		if files[i].Path != files[j].Path {
+			return files[i].Path < files[j].Path
+		}
+		return files[i].ProgrammingLanguage < files[j].ProgrammingLanguage
+	})
 }
 
 // Add an analyzer to the aggregator
@@ -933,7 +930,22 @@ func (r *Aggregator) mapSums(file *pb.File, specificAggregation Aggregated) Aggr
 	return result
 }
 
-// Merge the chunks of files to get the aggregated data (sums)
+// mergeAggregateResults folds a chunk result into an accumulator. Min is stored
+// with 0 meaning "not set yet", which is the convention mapSums uses.
+func mergeAggregateResults(into *AggregateResult, chunk AggregateResult) {
+	into.Sum += chunk.Sum
+	into.Counter += chunk.Counter
+	if into.Min == 0 || (chunk.Min > 0 && chunk.Min < into.Min) {
+		into.Min = chunk.Min
+	}
+	if chunk.Max > into.Max {
+		into.Max = chunk.Max
+	}
+}
+
+// mergeChunks merges the sums of one chunk into an accumulator. It has to cover
+// every field mapSums writes, otherwise the aggregates that go through it lose
+// what the ones built in a single pass keep.
 func (r *Aggregator) mergeChunks(aggregated Aggregated, chunk *Aggregated) Aggregated {
 
 	result := aggregated
@@ -945,95 +957,55 @@ func (r *Aggregator) mergeChunks(aggregated Aggregated, chunk *Aggregated) Aggre
 	result.NbMethods += chunk.NbMethods
 	result.NbFunctions += chunk.NbFunctions
 
-	result.Loc.Sum += chunk.Loc.Sum
-	result.Loc.Counter += chunk.Loc.Counter
-	result.TestLoc.Sum += chunk.TestLoc.Sum
-	result.TestLoc.Counter += chunk.TestLoc.Counter
-	result.Cloc.Sum += chunk.Cloc.Sum
-	result.Cloc.Counter += chunk.Cloc.Counter
-	result.Lloc.Sum += chunk.Lloc.Sum
-	result.Lloc.Counter += chunk.Lloc.Counter
+	mergeAggregateResults(&result.Loc, chunk.Loc)
+	mergeAggregateResults(&result.TestLoc, chunk.TestLoc)
+	mergeAggregateResults(&result.Cloc, chunk.Cloc)
+	mergeAggregateResults(&result.Lloc, chunk.Lloc)
 
-	result.MethodsPerClass.Sum += chunk.MethodsPerClass.Sum
-	result.MethodsPerClass.Counter += chunk.MethodsPerClass.Counter
-	result.LocPerClass.Sum += chunk.LocPerClass.Sum
-	result.LocPerClass.Counter += chunk.LocPerClass.Counter
-	result.LocPerMethod.Sum += chunk.LocPerMethod.Sum
-	result.LocPerMethod.Counter += chunk.LocPerMethod.Counter
-	result.LlocPerMethod.Sum += chunk.LlocPerMethod.Sum
-	result.LlocPerMethod.Counter += chunk.LlocPerMethod.Counter
-	result.ClocPerMethod.Sum += chunk.ClocPerMethod.Sum
-	result.ClocPerMethod.Counter += chunk.ClocPerMethod.Counter
-	result.CyclomaticComplexityPerMethod.Sum += chunk.CyclomaticComplexityPerMethod.Sum
-	result.CyclomaticComplexityPerMethod.Counter += chunk.CyclomaticComplexityPerMethod.Counter
-	if result.CyclomaticComplexityPerMethod.Min == 0 || (chunk.CyclomaticComplexityPerMethod.Min > 0 && chunk.CyclomaticComplexityPerMethod.Min < result.CyclomaticComplexityPerMethod.Min) {
-		result.CyclomaticComplexityPerMethod.Min = chunk.CyclomaticComplexityPerMethod.Min
-	}
-	if chunk.CyclomaticComplexityPerMethod.Max > result.CyclomaticComplexityPerMethod.Max {
-		result.CyclomaticComplexityPerMethod.Max = chunk.CyclomaticComplexityPerMethod.Max
-	}
+	mergeAggregateResults(&result.MethodsPerClass, chunk.MethodsPerClass)
+	mergeAggregateResults(&result.LocPerClass, chunk.LocPerClass)
+	mergeAggregateResults(&result.LocPerMethod, chunk.LocPerMethod)
+	mergeAggregateResults(&result.LlocPerMethod, chunk.LlocPerMethod)
+	mergeAggregateResults(&result.ClocPerMethod, chunk.ClocPerMethod)
 
-	result.CyclomaticComplexityPerClass.Sum += chunk.CyclomaticComplexityPerClass.Sum
-	result.CyclomaticComplexityPerClass.Counter += chunk.CyclomaticComplexityPerClass.Counter
+	mergeAggregateResults(&result.CyclomaticComplexity, chunk.CyclomaticComplexity)
+	mergeAggregateResults(&result.CyclomaticComplexityPerMethod, chunk.CyclomaticComplexityPerMethod)
+	mergeAggregateResults(&result.CyclomaticComplexityPerClass, chunk.CyclomaticComplexityPerClass)
 
-	result.CyclomaticComplexity.Sum += chunk.CyclomaticComplexity.Sum
-	result.CyclomaticComplexity.Counter += chunk.CyclomaticComplexity.Counter
-
-	result.HalsteadDifficulty.Sum += chunk.HalsteadDifficulty.Sum
-	result.HalsteadDifficulty.Counter += chunk.HalsteadDifficulty.Counter
-	result.HalsteadEffort.Sum += chunk.HalsteadEffort.Sum
-	result.HalsteadEffort.Counter += chunk.HalsteadEffort.Counter
-	result.HalsteadVolume.Sum += chunk.HalsteadVolume.Sum
-	result.HalsteadVolume.Counter += chunk.HalsteadVolume.Counter
-	result.HalsteadTime.Sum += chunk.HalsteadTime.Sum
-	result.HalsteadTime.Counter += chunk.HalsteadTime.Counter
-	result.HalsteadBugs.Sum += chunk.HalsteadBugs.Sum
-	result.HalsteadBugs.Counter += chunk.HalsteadBugs.Counter
-	if chunk.HalsteadBugs.Max > result.HalsteadBugs.Max {
-		result.HalsteadBugs.Max = chunk.HalsteadBugs.Max
-	}
+	mergeAggregateResults(&result.HalsteadDifficulty, chunk.HalsteadDifficulty)
+	mergeAggregateResults(&result.HalsteadEffort, chunk.HalsteadEffort)
+	mergeAggregateResults(&result.HalsteadVolume, chunk.HalsteadVolume)
+	mergeAggregateResults(&result.HalsteadTime, chunk.HalsteadTime)
+	mergeAggregateResults(&result.HalsteadBugs, chunk.HalsteadBugs)
 
 	// LCOM
-	result.Lcom4PerClass.Sum += chunk.Lcom4PerClass.Sum
-	result.Lcom4PerClass.Counter += chunk.Lcom4PerClass.Counter
-	if result.Lcom4PerClass.Min == 0 || (chunk.Lcom4PerClass.Min > 0 && chunk.Lcom4PerClass.Min < result.Lcom4PerClass.Min) {
-		result.Lcom4PerClass.Min = chunk.Lcom4PerClass.Min
-	}
-	if chunk.Lcom4PerClass.Max > result.Lcom4PerClass.Max {
-		result.Lcom4PerClass.Max = chunk.Lcom4PerClass.Max
-	}
+	mergeAggregateResults(&result.Lcom4PerClass, chunk.Lcom4PerClass)
 
-	result.MaintainabilityIndex.Sum += chunk.MaintainabilityIndex.Sum
-	result.MaintainabilityIndex.Counter += chunk.MaintainabilityIndex.Counter
-	if result.MaintainabilityIndex.Min == 0 || (chunk.MaintainabilityIndex.Min > 0 && chunk.MaintainabilityIndex.Min < result.MaintainabilityIndex.Min) {
-		result.MaintainabilityIndex.Min = chunk.MaintainabilityIndex.Min
-	}
-	if chunk.MaintainabilityIndex.Max > result.MaintainabilityIndex.Max {
-		result.MaintainabilityIndex.Max = chunk.MaintainabilityIndex.Max
-	}
-	result.MaintainabilityIndexWithoutComments.Sum += chunk.MaintainabilityIndexWithoutComments.Sum
-	result.MaintainabilityIndexWithoutComments.Counter += chunk.MaintainabilityIndexWithoutComments.Counter
-	result.MaintainabilityCommentWeight.Sum += chunk.MaintainabilityCommentWeight.Sum
-	result.MaintainabilityCommentWeight.Counter += chunk.MaintainabilityCommentWeight.Counter
+	mergeAggregateResults(&result.MaintainabilityIndex, chunk.MaintainabilityIndex)
+	mergeAggregateResults(&result.MaintainabilityIndexWithoutComments, chunk.MaintainabilityIndexWithoutComments)
+	mergeAggregateResults(&result.MaintainabilityCommentWeight, chunk.MaintainabilityCommentWeight)
 
-	result.EfferentCoupling.Sum += chunk.EfferentCoupling.Sum
-	result.EfferentCoupling.Counter += chunk.EfferentCoupling.Counter
-	result.AfferentCoupling.Sum += chunk.AfferentCoupling.Sum
-	result.AfferentCoupling.Counter += chunk.AfferentCoupling.Counter
+	mergeAggregateResults(&result.Instability, chunk.Instability)
+	mergeAggregateResults(&result.EfferentCoupling, chunk.EfferentCoupling)
+	mergeAggregateResults(&result.AfferentCoupling, chunk.AfferentCoupling)
 
-	result.MaintainabilityPerMethod.Sum += chunk.MaintainabilityPerMethod.Sum
-	result.MaintainabilityPerMethod.Counter += chunk.MaintainabilityPerMethod.Counter
-	result.MaintainabilityPerMethodWithoutComments.Sum += chunk.MaintainabilityPerMethodWithoutComments.Sum
-	result.MaintainabilityPerMethodWithoutComments.Counter += chunk.MaintainabilityPerMethodWithoutComments.Counter
-	result.MaintainabilityCommentWeightPerMethod.Sum += chunk.MaintainabilityCommentWeightPerMethod.Sum
-	result.MaintainabilityCommentWeightPerMethod.Counter += chunk.MaintainabilityCommentWeightPerMethod.Counter
+	mergeAggregateResults(&result.MaintainabilityPerMethod, chunk.MaintainabilityPerMethod)
+	mergeAggregateResults(&result.MaintainabilityPerMethodWithoutComments, chunk.MaintainabilityPerMethodWithoutComments)
+	mergeAggregateResults(&result.MaintainabilityCommentWeightPerMethod, chunk.MaintainabilityCommentWeightPerMethod)
 
 	result.CommitCountForPeriod += chunk.CommitCountForPeriod
 	result.CommittedFilesCountForPeriod += chunk.CommittedFilesCountForPeriod
 
-	result.PackageRelations = make(map[string]map[string]int)
-	for k, v := range chunk.PackageRelations {
-		result.PackageRelations[k] = v
+	if result.PackageRelations == nil {
+		result.PackageRelations = make(map[string]map[string]int)
+	}
+	for from, targets := range chunk.PackageRelations {
+		if result.PackageRelations[from] == nil {
+			result.PackageRelations[from] = make(map[string]int)
+		}
+		for to, count := range targets {
+			result.PackageRelations[from][to] += count
+		}
 	}
 
 	result.ErroredFiles = append(result.ErroredFiles, chunk.ErroredFiles...)

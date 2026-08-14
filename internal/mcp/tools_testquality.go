@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -44,8 +45,10 @@ func handleGetTestQuality(svc *AnalysisService) func(ctx context.Context, reques
 			IsolationScore float64 `json:"isolation_score"`
 			IsolationLabel string  `json:"isolation_label"`
 		}
+		// Only the head of the lists: the caller is a language model, and a large
+		// project has hundreds of these.
 		var godTests []godTest
-		for _, gt := range tq.GodTests {
+		for _, gt := range analyzer.Top(tq.GodTests) {
 			godTests = append(godTests, godTest{
 				FilePath:       gt.FilePath,
 				FanOut:         gt.SUTFanOut,
@@ -62,7 +65,7 @@ func handleGetTestQuality(svc *AnalysisService) func(ctx context.Context, reques
 			Weight     float64 `json:"weight"`
 		}
 		var orphans []orphan
-		for _, oc := range tq.OrphanClasses {
+		for _, oc := range analyzer.Top(tq.OrphanClasses) {
 			orphans = append(orphans, orphan{
 				ClassName:  oc.ClassName,
 				FilePath:   oc.FilePath,
@@ -73,14 +76,14 @@ func handleGetTestQuality(svc *AnalysisService) func(ctx context.Context, reques
 
 		result := map[string]any{
 			"global_isolation_score": tq.GlobalIsolationScore,
-			"isolation_label":       tq.IsolationLabel,
-			"traceability_pct":      tq.TraceabilityPct,
-			"nb_test_files":         tq.NbTestFiles,
-			"nb_prod_files":         tq.NbProdFiles,
-			"nb_prod_classes":       tq.NbProdClasses,
-			"nb_tested_classes":     tq.NbTestedClasses,
-			"god_tests":             godTests,
-			"orphan_classes":        orphans,
+			"isolation_label":        tq.IsolationLabel,
+			"traceability_pct":       tq.TraceabilityPct,
+			"nb_test_files":          tq.NbTestFiles,
+			"nb_prod_files":          tq.NbProdFiles,
+			"nb_prod_classes":        tq.NbProdClasses,
+			"nb_tested_classes":      tq.NbTestedClasses,
+			"god_tests":              godTests,
+			"orphan_classes":         orphans,
 			"isolation_histogram": map[string]int{
 				"0-19":   tq.IsolationHistogram[0],
 				"20-39":  tq.IsolationHistogram[1],

@@ -272,16 +272,20 @@ func buildProjectContext(pa analyzer.ProjectAggregated) ruleset.ProjectContext {
 	}
 	ctx.TraceabilityPct = tq.TraceabilityPct
 	ctx.GlobalIsolationScore = tq.GlobalIsolationScore
+	// Project rules name the offending file inside their message, and the
+	// baseline recognizes an entry by that message. Paths are made relative
+	// here, at the boundary, so a baseline survives moving between the host, a
+	// container and CI.
 	for _, gt := range tq.GodTests {
 		ctx.GodTests = append(ctx.GodTests, ruleset.GodTestInfo{
-			FilePath: gt.FilePath,
+			FilePath: requirement.RelativeToCwd(gt.FilePath),
 			FanOut:   gt.SUTFanOut,
 		})
 	}
 	for _, oc := range tq.OrphanClasses {
 		ctx.OrphanClasses = append(ctx.OrphanClasses, ruleset.OrphanClassInfo{
 			ClassName: oc.ClassName,
-			FilePath:  oc.FilePath,
+			FilePath:  requirement.RelativeToCwd(oc.FilePath),
 			Weight:    oc.Weight,
 		})
 	}

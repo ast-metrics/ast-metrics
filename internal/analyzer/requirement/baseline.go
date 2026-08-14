@@ -42,10 +42,15 @@ type baselineKey struct {
 // relative `sources:` entry from the configuration file), and keeps the
 // generated baseline file portable across machines and CI runners.
 func newBaselineKey(rule, file, message string) baselineKey {
-	return baselineKey{Rule: rule, File: relativeToCwd(file), Message: message}
+	return baselineKey{Rule: rule, File: RelativeToCwd(file), Message: message}
 }
 
-func relativeToCwd(path string) string {
+// RelativeToCwd shortens an absolute path that lives under the working
+// directory. Everything a baseline records has to go through it: a path is what
+// makes an entry recognizable from one run to the next, and an absolute one ties
+// the file to the machine that produced it, so a baseline generated in a
+// container would match nothing on the host or in CI.
+func RelativeToCwd(path string) string {
 	if path == "" || !filepath.IsAbs(path) {
 		return path
 	}
