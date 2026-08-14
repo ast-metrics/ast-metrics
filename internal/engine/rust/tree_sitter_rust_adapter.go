@@ -261,10 +261,32 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	if n == nil {
 		return nil
 	}
-	if n.Type() != "use_declaration" {
+	switch n.Type() {
+	case "use_declaration":
+		return a.parseUse(n)
+	case "mod_item":
+		return a.parseMod(n)
+	}
+	return nil
+}
+
+// parseMod records a `mod x;` declaration as a dependency on the module it
+// pulls in. It is the other half of the Rust module graph: `use` says which
+// items a file reads, `mod` says which files make up the crate at all. A
+// module written inline (`mod x { ... }`) declares no dependency, since it
+// brings in no other file.
+func (a *TreeSitterAdapter) parseMod(n *sitter.Node) []Treesitter.ImportItem {
+	if n.ChildByFieldName("body") != nil {
 		return nil
 	}
-	return a.parseUse(n)
+	name := a.text(n.ChildByFieldName("name"))
+	if name == "" {
+		return nil
+	}
+	// `self::` marks the path as relative to the declaring module, which is
+	// exactly what `mod` means and what tells the resolver not to read it as
+	// a crate name.
+	return []Treesitter.ImportItem{{Module: "self::" + name}}
 }
 
 func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {

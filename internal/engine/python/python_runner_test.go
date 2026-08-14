@@ -184,11 +184,16 @@ func TestPythonParser_TreeSitter_Imports(t *testing.T) {
 	if !has("typing", "Dict") {
 		t.Fatalf("missing dep: from typing import Dict")
 	}
-	if !has("pkg", "util") {
+	// The specifier is kept as written: ".pkg" is the sibling package of the
+	// importing module, which "pkg" alone would name a different module.
+	if !has(".pkg", "util") {
 		t.Fatalf("missing dep: from .pkg import util")
 	}
-	if !has("pkg", "helpers") {
+	if !has(".pkg", "helpers") {
 		t.Fatalf("missing dep: from .pkg import helpers")
+	}
+	if has("pkg", "util") {
+		t.Fatalf("the leading dot of a relative import must not be dropped")
 	}
 }
 

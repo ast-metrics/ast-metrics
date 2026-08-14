@@ -301,7 +301,11 @@ func importsFromImportFromStatement(a *TreeSitterAdapter, n *sitter.Node) []Tree
 			moduleNode = ch // keep the last one before `import`
 		}
 	}
-	module := strings.TrimLeft(strings.TrimSpace(a.text(moduleNode)), ".") // ".pkg" -> "pkg"
+	// The specifier is kept as written, leading dots included. They are not
+	// decoration: `from ..model import User` and `from model import User` name
+	// two different modules, and dropping the dots makes the two records
+	// identical.
+	module := strings.TrimSpace(a.text(moduleNode))
 
 	// 3) collect names: nodes AFTER cut
 	host := findDescendantOfType(n, "import_list")

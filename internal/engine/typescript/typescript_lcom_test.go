@@ -1,4 +1,4 @@
-package typescript
+package typescript_test
 
 import (
 	"slices"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/typescript"
 )
 
 const sampleTsClass = `class Basket {
@@ -37,7 +38,7 @@ const sampleTsClass = `class Basket {
 `
 
 func Test_Ts_Class_Has_Lack_Of_Cohesion(t *testing.T) {
-	file, err := engine.CreateTestFileWithCode(&TypeScriptRunner{}, sampleTsClass)
+	file, err := engine.CreateTestFileWithCode(&typescript.TypeScriptRunner{}, sampleTsClass)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -60,7 +61,7 @@ func Test_Ts_Class_Has_Lack_Of_Cohesion(t *testing.T) {
 }
 
 func Test_Ts_Attribute_Access_Is_An_Operand_And_Not_A_Call(t *testing.T) {
-	adapter := NewTreeSitterAdapter([]byte(sampleTsClass))
+	adapter := typescript.NewTreeSitterAdapter([]byte(sampleTsClass))
 	src := []byte(sampleTsClass)
 
 	// `rename(label: string): void {` ... on lines 17 to 20
@@ -104,7 +105,7 @@ func Test_Ts_Type_Annotations_Are_Not_Operands(t *testing.T) {
     }
 }
 `)
-	adapter := NewTreeSitterAdapter(src)
+	adapter := typescript.NewTreeSitterAdapter(src)
 	operators, operands := adapter.ExtractOperatorsOperands(src, 1, 8)
 
 	// the types, wherever they stand (parameter, result, declaration, generic
@@ -138,7 +139,7 @@ func Test_Ts_Operands_Keep_Member_Access_Chains(t *testing.T) {
     }
 }
 `)
-	adapter := NewTreeSitterAdapter(src)
+	adapter := typescript.NewTreeSitterAdapter(src)
 	_, operands := adapter.ExtractOperatorsOperands(src, 2, 7)
 
 	for _, expected := range []string{"this.total", "console.log", "message", "size", "this.items"} {

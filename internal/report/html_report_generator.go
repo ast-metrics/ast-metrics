@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"hash/fnv"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,13 +15,13 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/flosch/pongo2/v5"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer/classifier"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer/requirement"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	"github.com/ast-metrics/ast-metrics/internal/ui"
 	pb "github.com/ast-metrics/ast-metrics/pb"
+	"github.com/flosch/pongo2/v5"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -184,7 +183,7 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 			cd.testQualityJSON = analyzer.BuildTestQualityJSON(currentView.TestQuality)
 		}
 
-		cd.fileDepsJSON = buildFileDepsJSON(files, scope.Keep, dict)
+		cd.fileDepsJSON = buildFileDepsJSON(currentView.FileDependencies, dict)
 
 		// Count files for this scope
 		fileCount := 0
@@ -197,7 +196,7 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 		cd.depFileCount = fileCount
 
 		// Build folder-level deps for dependency graph folder view
-		cd.folderDepsJSON = buildFolderDepsJSON(files, scope.Keep, dict)
+		cd.folderDepsJSON = buildFolderDepsJSON(currentView.ConcernedFiles, currentView.FileDependencies, dict)
 
 		cd.dictionaryJSON = dict.ToJSON()
 
@@ -538,107 +537,14 @@ func buildLinterDataJS(eval *requirement.EvaluationResult) string {
 	return js.String()
 }
 
-// buildFileDepsJSON builds a JSON map of file dependency relationships keyed by path hash.
-func buildFileDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictionary) string {
-	// Step 1: Build class qualified name -> file path lookup
-	classToFile := map[string]string{}
-	for _, f := range files {
-		if !keepFile(keep, f) {
-			continue
-		}
-		if f.Stmts == nil {
-			continue
-		}
-		classes := engine.GetClassesInFile(f)
-		for _, c := range classes {
-			if c.Name == nil {
-				continue
-			}
-			if q := c.Name.GetQualified(); q != "" {
-				classToFile[q] = f.Path
-			}
-			if s := c.Name.GetShort(); s != "" {
-				if _, exists := classToFile[s]; !exists {
-					classToFile[s] = f.Path
-				}
-			}
-		}
-	}
-
-	// Step 2: Build efferent map from StmtExternalDependencies
-	type depInfo struct {
-		path  string
-		short string
-	}
-	efferent := map[string]map[string]depInfo{}
-
-	for _, f := range files {
-		if !keepFile(keep, f) {
-			continue
-		}
-		if f.Stmts == nil {
-			continue
-		}
-
-		deps := f.Stmts.GetStmtExternalDependencies()
-		for _, ns := range f.Stmts.GetStmtNamespace() {
-			if ns != nil && ns.Stmts != nil {
-				deps = append(deps, ns.Stmts.GetStmtExternalDependencies()...)
-			}
-		}
-
-		for _, dep := range deps {
-			if dep == nil {
-				continue
-			}
-			targetFile := ""
-			if ns := dep.GetNamespace(); ns != "" {
-				if fp, ok := classToFile[ns]; ok {
-					targetFile = fp
-				}
-			}
-			if targetFile == "" {
-				if cn := dep.GetClassName(); cn != "" {
-					if fp, ok := classToFile[cn]; ok {
-						targetFile = fp
-					}
-				}
-			}
-			if targetFile == "" || targetFile == f.Path {
-				continue
-			}
-			if efferent[f.Path] == nil {
-				efferent[f.Path] = map[string]depInfo{}
-			}
-			short := targetFile
-			if idx := strings.LastIndex(targetFile, "/"); idx >= 0 {
-				short = targetFile[idx+1:]
-			}
-			efferent[f.Path][targetFile] = depInfo{path: targetFile, short: short}
-		}
-	}
-
-	// Step 3: Invert to get afferent
-	afferent := map[string]map[string]depInfo{}
-	for srcFile, targets := range efferent {
-		srcShort := srcFile
-		if idx := strings.LastIndex(srcFile, "/"); idx >= 0 {
-			srcShort = srcFile[idx+1:]
-		}
-		for tgtPath := range targets {
-			if afferent[tgtPath] == nil {
-				afferent[tgtPath] = map[string]depInfo{}
-			}
-			afferent[tgtPath][srcFile] = depInfo{path: srcFile, short: srcShort}
-		}
-	}
-
-	// Step 4: Collect all files that have any dependency
+// buildFileDepsJSON serializes the dependency graph computed by the analyzer.
+// It deliberately contains no language or import-resolution logic.
+func buildFileDepsJSON(graph analyzer.FileDependencyGraph, dict *StringDictionary) string {
 	allFiles := map[string]struct{}{}
-	for k := range efferent {
+	for k := range graph.Efferent {
 		allFiles[k] = struct{}{}
 	}
-	for k := range afferent {
+	for k := range graph.Afferent {
 		allFiles[k] = struct{}{}
 	}
 
@@ -646,26 +552,25 @@ func buildFileDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictionary
 		return "{}"
 	}
 
-	// Step 5: Build struct map keyed by hash
 	result := make(map[string]fileDepsEntry, len(allFiles))
 	for fp := range allFiles {
 		entry := fileDepsEntry{
 			Efferent: make([]depRef, 0),
 			Afferent: make([]depRef, 0),
 		}
-		if eff, ok := efferent[fp]; ok {
-			for _, d := range eff {
+		if eff, ok := graph.Efferent[fp]; ok {
+			for _, target := range sortedStrings(eff) {
 				entry.Efferent = append(entry.Efferent, depRef{
-					Path:  dict.Add(d.path),
-					Short: d.short,
+					Path:  dict.Add(target),
+					Short: filepath.Base(target),
 				})
 			}
 		}
-		if aff, ok := afferent[fp]; ok {
-			for _, d := range aff {
+		if aff, ok := graph.Afferent[fp]; ok {
+			for _, source := range sortedStrings(aff) {
 				entry.Afferent = append(entry.Afferent, depRef{
-					Path:  dict.Add(d.path),
-					Short: d.short,
+					Path:  dict.Add(source),
+					Short: filepath.Base(source),
 				})
 			}
 		}
@@ -679,118 +584,63 @@ func buildFileDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictionary
 	return string(data)
 }
 
-// buildFolderDepsJSON aggregates file-level dependencies to folder-level.
-// Keys are hashed via the dictionary.
-func buildFolderDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictionary) string {
-	classToFile := map[string]string{}
-	for _, f := range files {
-		if !keepFile(keep, f) {
-			continue
-		}
-		if f.Stmts == nil {
-			continue
-		}
-		classes := engine.GetClassesInFile(f)
-		for _, c := range classes {
-			if c.Name == nil {
-				continue
-			}
-			if q := c.Name.GetQualified(); q != "" {
-				classToFile[q] = f.Path
-			}
-			if s := c.Name.GetShort(); s != "" {
-				if _, exists := classToFile[s]; !exists {
-					classToFile[s] = f.Path
-				}
-			}
-		}
-	}
+func sortedStrings(values []string) []string {
+	result := append([]string(nil), values...)
+	sort.Strings(result)
+	return result
+}
 
-	type edge struct {
-		src string
-		dst string
+func sortedMapKeys[V any](values map[string]V) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
 	}
-	var edges []edge
+	sort.Strings(keys)
+	return keys
+}
+
+// buildFolderDepsJSON projects the analyzer's file graph to folders.
+func buildFolderDepsJSON(files []*pb.File, graph analyzer.FileDependencyGraph, dict *StringDictionary) string {
 	filesByFolder := map[string]map[string]struct{}{}
 
 	for _, f := range files {
-		if !keepFile(keep, f) {
+		if f == nil || f.Stmts == nil {
 			continue
 		}
-		if f.Stmts == nil {
-			continue
-		}
-
-		srcDir := path.Dir(f.Path)
+		srcDir := filepath.Dir(f.Path)
 		if filesByFolder[srcDir] == nil {
 			filesByFolder[srcDir] = map[string]struct{}{}
 		}
 		filesByFolder[srcDir][f.Path] = struct{}{}
-
-		deps := f.Stmts.GetStmtExternalDependencies()
-		for _, ns := range f.Stmts.GetStmtNamespace() {
-			if ns != nil && ns.Stmts != nil {
-				deps = append(deps, ns.Stmts.GetStmtExternalDependencies()...)
-			}
-		}
-
-		for _, dep := range deps {
-			if dep == nil {
-				continue
-			}
-			targetFile := ""
-			if ns := dep.GetNamespace(); ns != "" {
-				if fp, ok := classToFile[ns]; ok {
-					targetFile = fp
-				}
-			}
-			if targetFile == "" {
-				if cn := dep.GetClassName(); cn != "" {
-					if fp, ok := classToFile[cn]; ok {
-						targetFile = fp
-					}
-				}
-			}
-			if targetFile == "" || targetFile == f.Path {
-				continue
-			}
-			edges = append(edges, edge{src: f.Path, dst: targetFile})
-		}
 	}
 
 	// Aggregate to folder level
-	type folderEdgeCount struct {
-		count int
-	}
-	folderEfferent := map[string]map[string]*folderEdgeCount{}
-	folderAfferent := map[string]map[string]*folderEdgeCount{}
+	folderEfferent := map[string]map[string]int{}
+	folderAfferent := map[string]map[string]int{}
 	folderFileCount := map[string]int{}
 
 	for dir, fset := range filesByFolder {
 		folderFileCount[dir] = len(fset)
 	}
 
-	for _, e := range edges {
-		srcDir := path.Dir(e.src)
-		dstDir := path.Dir(e.dst)
-		if srcDir == dstDir {
-			continue
-		}
-		if folderEfferent[srcDir] == nil {
-			folderEfferent[srcDir] = map[string]*folderEdgeCount{}
-		}
-		if folderEfferent[srcDir][dstDir] == nil {
-			folderEfferent[srcDir][dstDir] = &folderEdgeCount{}
-		}
-		folderEfferent[srcDir][dstDir].count++
+	for _, source := range sortedMapKeys(graph.Efferent) {
+		targets := graph.Efferent[source]
+		for _, target := range targets {
+			srcDir := filepath.Dir(source)
+			dstDir := filepath.Dir(target)
+			if srcDir == dstDir {
+				continue
+			}
+			if folderEfferent[srcDir] == nil {
+				folderEfferent[srcDir] = map[string]int{}
+			}
+			folderEfferent[srcDir][dstDir]++
 
-		if folderAfferent[dstDir] == nil {
-			folderAfferent[dstDir] = map[string]*folderEdgeCount{}
+			if folderAfferent[dstDir] == nil {
+				folderAfferent[dstDir] = map[string]int{}
+			}
+			folderAfferent[dstDir][srcDir]++
 		}
-		if folderAfferent[dstDir][srcDir] == nil {
-			folderAfferent[dstDir][srcDir] = &folderEdgeCount{}
-		}
-		folderAfferent[dstDir][srcDir].count++
 	}
 
 	allFolders := map[string]struct{}{}
@@ -811,24 +661,24 @@ func buildFolderDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictiona
 		FilesByFolder: make(map[string][]string),
 	}
 
-	for dir := range allFolders {
+	for _, dir := range sortedMapKeys(allFolders) {
 		entry := folderDepsEntry{
 			Efferent: make([]folderDepRef, 0),
 			Afferent: make([]folderDepRef, 0),
 		}
 		if eff, ok := folderEfferent[dir]; ok {
-			for target, fe := range eff {
+			for _, target := range sortedMapKeys(eff) {
 				entry.Efferent = append(entry.Efferent, folderDepRef{
 					Path:  dict.Add(target),
-					Count: fe.count,
+					Count: eff[target],
 				})
 			}
 		}
 		if aff, ok := folderAfferent[dir]; ok {
-			for source, fe := range aff {
+			for _, source := range sortedMapKeys(aff) {
 				entry.Afferent = append(entry.Afferent, folderDepRef{
 					Path:  dict.Add(source),
-					Count: fe.count,
+					Count: aff[source],
 				})
 			}
 		}
@@ -842,7 +692,7 @@ func buildFolderDepsJSON(files []*pb.File, keep fileFilter, dict *StringDictiona
 		// filesByFolder
 		if fset, ok := filesByFolder[dir]; ok && len(fset) > 0 {
 			flist := make([]string, 0, len(fset))
-			for fp := range fset {
+			for _, fp := range sortedMapKeys(fset) {
 				flist = append(flist, dict.Add(fp))
 			}
 			payload.FilesByFolder[dict.Add(dir)] = flist
@@ -1135,6 +985,12 @@ func directoryScopeLabel(directory string) string {
 		}
 	}
 	return filepath.ToSlash(cleaned)
+}
+
+func cloneDependencyWithFrom(dependency *pb.StmtExternalDependency, from string) *pb.StmtExternalDependency {
+	clone := proto.Clone(dependency).(*pb.StmtExternalDependency)
+	clone.From = from
+	return clone
 }
 
 func (v *HtmlReportGenerator) RegisterFilters() {
@@ -1757,9 +1613,7 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 			if targetClass.Stmts != nil {
 				for _, dep := range targetClass.Stmts.StmtExternalDependencies {
 					if dep != nil {
-						depCopy := *dep
-						depCopy.From = className
-						classDeps = append(classDeps, &depCopy)
+						classDeps = append(classDeps, cloneDependencyWithFrom(dep, className))
 					}
 				}
 			}
@@ -1813,9 +1667,7 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 					if method.Stmts != nil {
 						for _, dep := range method.Stmts.StmtExternalDependencies {
 							if dep != nil {
-								depCopy := *dep
-								depCopy.From = className
-								classDeps = append(classDeps, &depCopy)
+								classDeps = append(classDeps, cloneDependencyWithFrom(dep, className))
 							}
 						}
 					}
@@ -1962,9 +1814,7 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 			if targetClass.Stmts != nil {
 				for _, dep := range targetClass.Stmts.StmtExternalDependencies {
 					if dep != nil {
-						depCopy := *dep
-						depCopy.From = className
-						classDeps = append(classDeps, &depCopy)
+						classDeps = append(classDeps, cloneDependencyWithFrom(dep, className))
 					}
 				}
 			}
@@ -2018,9 +1868,7 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 					if method.Stmts != nil {
 						for _, dep := range method.Stmts.StmtExternalDependencies {
 							if dep != nil {
-								depCopy := *dep
-								depCopy.From = className
-								classDeps = append(classDeps, &depCopy)
+								classDeps = append(classDeps, cloneDependencyWithFrom(dep, className))
 							}
 						}
 					}
