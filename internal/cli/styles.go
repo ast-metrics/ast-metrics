@@ -8,20 +8,18 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/charmbracelet/lipgloss"
 	pb "github.com/ast-metrics/ast-metrics/pb"
+	"github.com/charmbracelet/lipgloss"
 	osterm "golang.org/x/term"
 )
 
+// Colours are fixed, never lipgloss.AdaptiveColor: resolving an adaptive colour
+// makes lipgloss ask the terminal for its background colour (OSC 11), and a
+// terminal that does not answer costs termenv.OSCTimeout, five seconds, before
+// the analysis has even started. The palette below assumes a dark background,
+// like the rest of the interface.
 var (
-	subtle  = lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#383838"}
-	special = lipgloss.AdaptiveColor{Light: "#43BF6D", Dark: "#73F59F"}
-
-	divider = lipgloss.NewStyle().
-		SetString("•").
-		Padding(0, 1).
-		Foreground(subtle).
-		String()
+	special = lipgloss.Color("#73F59F")
 
 	titleStyle = lipgloss.NewStyle().
 			Padding(1).
