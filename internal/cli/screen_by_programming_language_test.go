@@ -3,9 +3,9 @@ package cli
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	pb "github.com/ast-metrics/ast-metrics/pb"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestScreenByProgrammingLanguageGetScreenName(t *testing.T) {
@@ -22,6 +22,22 @@ func TestScreenByProgrammingLanguageGetScreenName(t *testing.T) {
 	got := screen.GetScreenName()
 
 	if got != expected {
+		t.Errorf("Expected %s, got %s", expected, got)
+	}
+}
+
+func TestScreenByProgrammingLanguageGetScreenNameCpp(t *testing.T) {
+	screen := ScreenByProgrammingLanguage{
+		programmingLangageName: "C++",
+		files: []*pb.File{
+			{ProgrammingLanguage: "C++"},
+			{ProgrammingLanguage: "C++"},
+			{ProgrammingLanguage: "Golang"},
+		},
+	}
+
+	expected := "🔷 C++ (2 files)"
+	if got := screen.GetScreenName(); got != expected {
 		t.Errorf("Expected %s, got %s", expected, got)
 	}
 }
