@@ -30,6 +30,10 @@ type Configuration struct {
 	// if not empty, compare the current analysis with the one in this branch / commit
 	CompareWith string `yaml:"comparewith,omitempty"`
 
+	// Architecture enables the optional AI-based architecture classification.
+	// It is intentionally CLI-only because loading the classifier is expensive.
+	Architecture bool `yaml:"-"`
+
 	// Extra file extensions per language (e.g. {"php": [".inc", ".module"]})
 	Extensions map[string][]string `yaml:"extensions,omitempty"`
 
@@ -167,6 +171,7 @@ func NewConfiguration() *Configuration {
 		ExcludePatterns:          []string{"/vendor/", "/node_modules/", "/.git/", "/.idea/", "/_ide_helper/", "/var/", "/.claude/", "/.venv/", "/__pycache__/"},
 		Watching:                 false,
 		CompareWith:              "",
+		Architecture:             false,
 		Storage:                  storage.Default(),
 		IsComingFromConfigFile:   false,
 		ModelClassifierDirectory: "ai/training/classifier/build",

@@ -23,25 +23,47 @@ import (
 )
 
 type AnalyzeCommand struct {
-	Configuration   *configuration.Configuration
-	outWriter       *bufio.Writer
-	runners         []engine.Engine
-	isInteractive   bool
-	moonSpinner     *pterm.SpinnerPrinter
-	alreadyExecuted bool
-	currentPage     *cli.ScreenHome
-	FileWatcher     *fsnotify.Watcher
-	gitSummaries    []analyzer.ResultOfGitAnalysis
+	Configuration       *configuration.Configuration
+	outWriter           *bufio.Writer
+	runners             []engine.Engine
+	predictArchitecture func(string, []*pb.File, string) ([]classifier.ClassPrediction, error)
+	isInteractive       bool
+	moonSpinner         *pterm.SpinnerPrinter
+	alreadyExecuted     bool
+	currentPage         *cli.ScreenHome
+	FileWatcher         *fsnotify.Watcher
+	gitSummaries        []analyzer.ResultOfGitAnalysis
 }
 
 func NewAnalyzeCommand(configuration *configuration.Configuration, outWriter *bufio.Writer, runners []engine.Engine, isInteractive bool) *AnalyzeCommand {
 	return &AnalyzeCommand{
-		Configuration:   configuration,
-		outWriter:       outWriter,
-		runners:         runners,
+		Configuration: configuration,
+		outWriter:     outWriter,
+		runners:       runners,
+		predictArchitecture: func(modelDirectory string, files []*pb.File, root string) ([]classifier.ClassPrediction, error) {
+			return classifier.NewPredictor(modelDirectory).Predict(files, root)
+		},
 		isInteractive:   isInteractive,
 		alreadyExecuted: false,
 	}
+}
+
+func (v *AnalyzeCommand) runArchitectureClassification(allResults []*pb.File, projectAggregated *analyzer.ProjectAggregated) {
+	if v.Configuration == nil || !v.Configuration.Architecture || len(v.Configuration.SourcesToAnalyzePath) == 0 {
+		return
+	}
+
+	predictions, err := v.predictArchitecture(
+		v.Configuration.ModelClassifierDirectory,
+		allResults,
+		v.Configuration.SourcesToAnalyzePath[0],
+	)
+	if err != nil {
+		log.Debugf("Classification skipped: %v", err)
+		return
+	}
+
+	projectAggregated.Predictions = predictions
 }
 
 func (v *AnalyzeCommand) Execute() error {
@@ -155,16 +177,9 @@ func (v *AnalyzeCommand) Execute() error {
 		projectAggregated.Evaluation = &evaluation
 	}
 
-	// AI-based architecture classification
-	if len(v.Configuration.SourcesToAnalyzePath) > 0 {
-		predictor := classifier.NewPredictor(v.Configuration.ModelClassifierDirectory)
-		predictions, err := predictor.Predict(allResults, v.Configuration.SourcesToAnalyzePath[0])
-		if err != nil {
-			log.Debugf("Classification skipped: %v", err)
-		} else {
-			projectAggregated.Predictions = predictions
-		}
-	}
+	// AI-based architecture classification is opt-in because loading and running
+	// the local models is significantly more expensive than the static analysis.
+	v.runArchitectureClassification(allResults, &projectAggregated)
 
 	// Generate reports
 	if v.moonSpinner != nil {
