@@ -1184,8 +1184,9 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 			rowsToKeep = param.Integer()
 		}
 
-		// Sort by risk of file
-		files := in.Interface().([]*pb.File)
+		// Sort a copy: the backing array is shared with the other pages,
+		// which are rendered in parallel
+		files := append([]*pb.File(nil), in.Interface().([]*pb.File)...)
 		sort.Slice(files, func(i, j int) bool {
 			if files[i].Stmts == nil && files[j].Stmts == nil || files[i].Stmts == nil || files[j].Stmts == nil || files[i].Stmts.Analyze == nil || files[j].Stmts.Analyze == nil {
 				return false
@@ -1226,8 +1227,9 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 			return pongo2.AsValue([]interface{}{}), nil
 		}
 
-		// Sort by risk of file first (reuse logic)
-		files := in.Interface().([]*pb.File)
+		// Sort a copy: the backing array is shared with the other pages,
+		// which are rendered in parallel
+		files := append([]*pb.File(nil), in.Interface().([]*pb.File)...)
 		sort.Slice(files, func(i, j int) bool {
 			if files[i] == nil || files[j] == nil || files[i].Stmts == nil || files[j].Stmts == nil || files[i].Stmts.Analyze == nil || files[j].Stmts.Analyze == nil {
 				return false
