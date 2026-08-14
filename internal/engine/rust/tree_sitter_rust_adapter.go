@@ -116,14 +116,15 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 // These questions are asked on every node of every walk, so they are answered
 // by symbol id rather than by node type name. See
 // internal/engine/treesitter/symbols.go.
-//
-// Rust has no classes; struct, enum, union and trait are the class-like
-// containers. An `impl` block is not one of them: it declares no type, it holds
-// the methods of a type declared elsewhere, so its methods are bound to that
-// type by ReceiverTypeName below.
 var (
-	rustModules   = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"source_file"}}
-	rustClasses   = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"struct_item", "enum_item", "union_item", "trait_item"}}
+	rustModules = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"source_file"}}
+
+	// Rust has no classes; struct, enum, union and trait are the class-like
+	// containers. An `impl` block is not one of them: it declares no type, it
+	// holds the methods of a type declared elsewhere, so its methods are bound
+	// to that type by ReceiverTypeName below.
+	rustClasses = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"struct_item", "enum_item", "union_item", "trait_item"}}
+
 	rustFunctions = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"function_item", "function_signature_item", "method_item"}}
 )
 

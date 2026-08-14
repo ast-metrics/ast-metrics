@@ -8,9 +8,9 @@ import (
 // LineCache splits a source into its lines once.
 //
 // The extractors that read the text of a scope are called once per function and
-// each of them receives the whole file. Splitting it again for every function
-// copied the file as many times as it holds functions, which is what made a
-// large file cost far more than its size.
+// each of them receives the whole file. Splitting it for every function would
+// copy the file as many times as it holds functions, which is what makes a large
+// file cost far more than its size.
 //
 // An adapter serves one file, so remembering the last source is enough. What is
 // compared is the identity of the slice, not its content: the callers hand over

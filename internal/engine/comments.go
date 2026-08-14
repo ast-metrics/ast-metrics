@@ -321,8 +321,8 @@ func skipString(line string, i int) int {
 // A file is scanned once, from the top: a comment block opened on line 10 makes
 // line 20 documentation, which cannot be decided from line 20 alone. Counting a
 // range is then a subtraction. A parser asks for one range per scope, and a
-// class of twenty methods asks twenty-two times, so scanning the file again for
-// each of them made the cost of a file grow with the number of scopes it holds.
+// class of twenty methods asks twenty-two times, so scanning the file for each
+// of them would make the cost of a file grow with the number of scopes it holds.
 type LineIndex struct {
 	// cloc[i] and ncloc[i] hold the totals over the first i lines, so the count
 	// over [start, end] is the difference at both ends.

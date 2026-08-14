@@ -9,9 +9,9 @@ import (
 // Classifying a node by the name of its type is what every walk does on every
 // node, several times: is it a statement, a decision, a class, a function, a
 // scope boundary. Asking `Node.Type()` is the most expensive way to ask: it
-// crosses into C and copies the name into a fresh Go string, every time, so the
-// walks spent a fifth of the analysis there and fed the garbage collector with
-// strings nobody keeps.
+// crosses into C and copies the name into a fresh Go string, every time, which
+// costs a fifth of an analysis and feeds the garbage collector with strings
+// nobody keeps.
 //
 // The grammar answers the same question with an integer. Every node carries a
 // symbol id, the ids of one language form a small dense range, and

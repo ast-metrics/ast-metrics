@@ -11,11 +11,11 @@ var fs embed.FS
 
 // embedded parses the bundled dictionary once per process.
 //
-// Ten megabytes of vectors are decoded into a map of a hundred thousand
-// entries, and a run builds a Namer for every aggregation scope: the global
-// view, the per-file view, and one per language and per analyzed directory. Each
-// of them used to decode the same dictionary again, for a result none of them
-// modifies afterwards.
+// Ten megabytes of vectors are decoded into a map of a hundred thousand entries,
+// and a run builds a Namer for every aggregation scope: the global view, the
+// per-file view, and one per language and per analyzed directory. They all read
+// the same dictionary and none of them modifies it, so decoding it per Namer
+// would be the same work done again for the same answer.
 var embedded = sync.OnceValues(func() (map[string][]float32, int) {
 	data, err := fs.ReadFile("vectors.w2v")
 	if err != nil {

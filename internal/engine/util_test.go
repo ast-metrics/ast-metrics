@@ -361,10 +361,9 @@ func TestReduceDepthOfNamespace(t *testing.T) {
 	}
 }
 
-// splitNamespaceParts replaced a "[^A-Za-z0-9]+" regular expression, which the
-// aggregation ran on every namespace of every scope. It has to answer exactly
-// what that expression answered, separators included, or namespaces would be
-// grouped differently.
+// splitNamespaceParts has to answer exactly what a "[^A-Za-z0-9]+" regular
+// expression answers, separators included, or namespaces would be grouped
+// differently. The expression itself is the reference.
 func TestSplitNamespaceParts(t *testing.T) {
 	reference := regexp.MustCompile("[^A-Za-z0-9]+")
 

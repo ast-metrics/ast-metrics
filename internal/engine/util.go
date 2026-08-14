@@ -462,10 +462,11 @@ func CreateTestFileWithCode(parser Engine, fileContent string) (*pb.File, error)
 // one along with the parts.
 //
 // This is what a "[^A-Za-z0-9]+" regular expression does, written by hand
-// because the aggregation asks it of every namespace of every scope, and the
-// regular expression engine was the longest part of that phase. Bytes are enough
-// to agree with the expression: every byte of a multi-byte character is outside
-// the alphanumeric range, so the two see the same separators at the same places.
+// because the aggregation asks it of every namespace of every scope, enough for
+// the regular expression engine to be the longest part of that phase. Bytes are
+// enough to agree with the expression: every byte of a multi-byte character is
+// outside the alphanumeric range, so the two see the same separators at the same
+// places.
 func splitNamespaceParts(namespace string) (separator string, parts []string) {
 	isPart := func(c byte) bool {
 		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')

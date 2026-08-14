@@ -48,17 +48,19 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 // These four questions are asked on every node of every walk, so they are
 // answered by symbol id rather than by node type name. See
 // internal/engine/treesitter/symbols.go.
-//
-// Enums, records and annotation types are class-like containers in Java: they
-// hold fields and methods, so they count as classes for metrics. Lambdas are
-// intentionally not named functions: they have no name and would pollute method
-// counts, and their bodies still contribute decisions to the enclosing method
-// through the fallback recursion.
 var (
-	javaModules    = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"program"}}
-	javaClasses    = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"class_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration"}}
+	javaModules = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"program"}}
+
+	// enums, records and annotation types are class-like containers in Java:
+	// they hold fields and methods, so they count as classes for metrics
+	javaClasses = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"class_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration"}}
+
 	javaInterfaces = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"interface_declaration"}}
-	javaFunctions  = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"method_declaration", "constructor_declaration"}}
+
+	// lambdas are intentionally not named functions: they have no name and would
+	// pollute method counts, and their bodies still contribute decisions to the
+	// enclosing method through the fallback recursion
+	javaFunctions = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"method_declaration", "constructor_declaration"}}
 )
 
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return javaModules.Has(n) }

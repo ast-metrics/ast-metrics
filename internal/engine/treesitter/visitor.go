@@ -14,9 +14,10 @@ type Visitor struct {
 	file  *pb.File
 	ns    *pb.StmtNamespace
 	lines []string
-	// joined is the source rebuilt from lines, computed once: the adapters that
-	// extract operators, operands or method calls from the source text all need
-	// it, and rebuilding it per scope copied the whole file for every function.
+	// joined is the source rebuilt from lines. The adapters that extract
+	// operators, operands or method calls from the source text are called once
+	// per scope and all need it, so it is built once: building it per scope
+	// would copy the whole file for every function it holds.
 	joined []byte
 
 	classStk []*pb.StmtClass

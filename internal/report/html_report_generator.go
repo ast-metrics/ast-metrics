@@ -151,7 +151,8 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 	//
 	// A scope reads the files and writes only its own entry, and encoding the
 	// files of a scope to JSON is the longest part of the report, so the scopes
-	// are prepared in parallel and collected in order afterwards.
+	// are prepared in parallel and collected in order afterwards: the order of
+	// the entries must not depend on which scope finishes first.
 	v.langCache = make(map[string]*cachedLangData)
 	prepared := make([]*cachedLangData, len(scopeDefs))
 
@@ -292,8 +293,8 @@ func (v *HtmlReportGenerator) generatePages(baseTemplateDir string, scopeDefs []
 	//
 	// A page reads the aggregates and the cache built above, and writes a file
 	// of its own, so the pages are rendered in parallel: a project with three
-	// scopes renders three dozen of them, and rendering them one after the other
-	// was the second longest phase of an analysis.
+	// scopes renders three dozen of them, enough to make the report the second
+	// longest phase of an analysis when they are rendered one at a time.
 	pageTemplates := []string{
 		"index.html",
 		"risks.html",

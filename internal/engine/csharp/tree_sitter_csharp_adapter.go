@@ -48,18 +48,22 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 // These four questions are asked on every node of every walk, so they are
 // answered by symbol id rather than by node type name. See
 // internal/engine/treesitter/symbols.go.
-//
-// namespace_declaration bodies are reached through the fallback recursion; the
-// namespace name itself comes from ModuleNameFromPath. Structs, records
-// (including record struct) and enums are class-like containers in C#: they hold
-// fields and methods, so they count as classes for metrics. Property accessors
-// (get/set/init) and lambdas are intentionally not named functions; their bodies
-// still contribute decisions through the fallback recursion.
 var (
-	csModules    = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"compilation_unit"}}
-	csClasses    = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"class_declaration", "struct_declaration", "record_declaration", "enum_declaration"}}
+	// namespace_declaration bodies are reached through the fallback recursion;
+	// the namespace name itself comes from ModuleNameFromPath
+	csModules = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"compilation_unit"}}
+
+	// structs, records (including record struct) and enums are class-like
+	// containers in C#: they hold fields and methods, so they count as classes
+	// for metrics
+	csClasses = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"class_declaration", "struct_declaration", "record_declaration", "enum_declaration"}}
+
 	csInterfaces = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"interface_declaration"}}
-	csFunctions  = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"method_declaration", "constructor_declaration", "local_function_statement", "destructor_declaration"}}
+
+	// property accessors (get/set/init) and lambdas are intentionally not named
+	// functions; their bodies still contribute decisions through the fallback
+	// recursion
+	csFunctions = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"method_declaration", "constructor_declaration", "local_function_statement", "destructor_declaration"}}
 )
 
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return csModules.Has(n) }

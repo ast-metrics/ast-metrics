@@ -715,10 +715,10 @@ func foldPhpPipes(pipeLines []int, ops []string, startLine, endLine int) []strin
 // pipeLines returns the lines of the file carrying a mis-parsed "|>", found
 // once for the whole file.
 //
-// Looking for them per function meant walking down from the root for each of
-// them, so a file paid a pass over its top-level declarations once per
-// function. The operator is also rare enough that most files can be answered by
-// looking for the two characters in the source.
+// Looking for them per function would walk down from the root for each of them,
+// so a file would pay a pass over its top-level declarations once per function.
+// The operator is also rare enough that most files are answered by looking for
+// the two characters in the source.
 func (a *TreeSitterAdapter) pipeLines(root *sitter.Node, src []byte) []int {
 	if a.pipesFound {
 		return a.pipes
