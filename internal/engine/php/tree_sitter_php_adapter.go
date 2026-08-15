@@ -1,6 +1,7 @@
 package php
 
 import (
+	"bytes"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -29,6 +30,12 @@ type TreeSitterAdapter struct {
 	aliases  map[string]string
 	computed bool
 	extDeps  []Treesitter.ImportItem
+	// srcLines holds the source split into lines, so that the extractors called
+	// once per function do not split the whole file again for each of them
+	srcLines Treesitter.LineCache
+	// pipes holds the lines carrying a mis-parsed "|>", found once per file
+	pipes      []int
+	pipesFound bool
 }
 
 func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
@@ -37,6 +44,8 @@ func (a *TreeSitterAdapter) SetSource(src []byte) {
 	a.root = nil
 	a.computed = false
 	a.ns = ""
+	a.pipes = nil
+	a.pipesFound = false
 }
 func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root }
 
@@ -62,28 +71,25 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 }
 
 // ---- Structure detection ----
-func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return n.Type() == "program" }
+//
+// These four questions are asked on every node of every walk, so they are
+// answered by symbol id rather than by node type name. See
+// internal/engine/treesitter/symbols.go.
+var (
+	phpModules    = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"program"}}
+	phpClasses    = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"class_declaration", "trait_declaration", "enum_declaration"}}
+	phpInterfaces = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"interface_declaration"}}
+	phpFunctions  = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"function_definition", "method_declaration"}}
+)
 
-func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
-	switch n.Type() {
-	case "class_declaration", "trait_declaration", "enum_declaration":
-		return true
-	}
-	return false
-}
+func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return phpModules.Has(n) }
+
+func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool { return phpClasses.Has(n) }
 
 // Optional interface awareness for Visitor
-func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool {
-	return n != nil && n.Type() == "interface_declaration"
-}
+func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool { return phpInterfaces.Has(n) }
 
-func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
-	switch n.Type() {
-	case "function_definition", "method_declaration":
-		return true
-	}
-	return false
-}
+func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool { return phpFunctions.Has(n) }
 
 // ---- Attributes ----
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
@@ -200,17 +206,18 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // with lizard, phploc and PMD, and with the languages that have no such
 // operator.
 var phpDecisions = &Treesitter.DecisionSpec{
-	If:      []string{"if_statement"},
-	Elif:    []string{"else_if_clause"},
-	Else:    []string{"else_clause"},
-	Loop:    []string{"while_statement", "for_statement", "foreach_statement", "do_statement"},
-	Switch:  []string{"switch_statement", "match_expression"},
-	Case:    []string{"case_statement", "match_conditional_expression"},
-	Default: []string{"default_statement", "match_default_expression"},
-	Catch:   []string{"catch_clause"},
-	Ternary: []string{"conditional_expression"},
-	Logical: []string{"binary_expression"},
-	Ops:     []string{"&&", "||", "and", "or"},
+	Language: tsPhp.GetLanguage,
+	If:       []string{"if_statement"},
+	Elif:     []string{"else_if_clause"},
+	Else:     []string{"else_clause"},
+	Loop:     []string{"while_statement", "for_statement", "foreach_statement", "do_statement"},
+	Switch:   []string{"switch_statement", "match_expression"},
+	Case:     []string{"case_statement", "match_conditional_expression"},
+	Default:  []string{"default_statement", "match_default_expression"},
+	Catch:    []string{"catch_clause"},
+	Ternary:  []string{"conditional_expression"},
+	Logical:  []string{"binary_expression"},
+	Ops:      []string{"&&", "||", "and", "or"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -668,7 +675,7 @@ func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endL
 		return nil, nil
 	}
 	ops, operands := phpOperandSpec.Extract(root, source, startLine, endLine)
-	return foldPhpPipes(root, source, ops, startLine, endLine), operands
+	return foldPhpPipes(a.pipeLines(root, source), ops, startLine, endLine), operands
 }
 
 // foldPhpPipes repairs the PHP 8.5 pipe operator. The bundled grammar predates
@@ -676,8 +683,13 @@ func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endL
 // and whose left side ends with an ERROR node holding a lone "|". Reporting two
 // operators where the source writes one would inflate both the vocabulary and
 // the length, so each such pair is folded back into a single "|>".
-func foldPhpPipes(root *sitter.Node, src []byte, ops []string, startLine, endLine int) []string {
-	pipes := countPhpPipes(root, src, startLine, endLine)
+func foldPhpPipes(pipeLines []int, ops []string, startLine, endLine int) []string {
+	pipes := 0
+	for _, line := range pipeLines {
+		if line >= startLine && line <= endLine {
+			pipes++
+		}
+	}
 	if pipes == 0 {
 		return ops
 	}
@@ -702,23 +714,35 @@ func foldPhpPipes(root *sitter.Node, src []byte, ops []string, startLine, endLin
 	return folded
 }
 
-// countPhpPipes counts the "|>" written between startLine and endLine.
-func countPhpPipes(root *sitter.Node, src []byte, startLine, endLine int) int {
-	count := 0
+// pipeLines returns the lines of the file carrying a mis-parsed "|>", found
+// once for the whole file.
+//
+// Looking for them per function would walk down from the root for each of them,
+// so a file would pay a pass over its top-level declarations once per function.
+// The operator is also rare enough that most files are answered by looking for
+// the two characters in the source.
+func (a *TreeSitterAdapter) pipeLines(root *sitter.Node, src []byte) []int {
+	if a.pipesFound {
+		return a.pipes
+	}
+	a.pipesFound = true
+
+	if !bytes.Contains(src, []byte("|>")) {
+		return nil
+	}
+
 	var walk func(n *sitter.Node)
 	walk = func(n *sitter.Node) {
-		if int(n.EndPoint().Row)+1 < startLine || int(n.StartPoint().Row)+1 > endLine {
-			return
-		}
 		if n.Type() == "binary_expression" && isPhpPipe(n, src) {
-			count++
+			a.pipes = append(a.pipes, int(n.StartPoint().Row)+1)
 		}
 		for i := 0; i < int(n.ChildCount()); i++ {
 			walk(n.Child(i))
 		}
 	}
 	walk(root)
-	return count
+
+	return a.pipes
 }
 
 // isPhpPipe reports whether a binary expression is a mis-parsed "|>".
@@ -749,7 +773,7 @@ func (a *TreeSitterAdapter) ExtractMethodCalls(src []byte, startLine, endLine in
 	if src == nil || startLine <= 0 || endLine <= 0 || endLine < startLine {
 		return nil
 	}
-	lines := strings.Split(string(src), "\n")
+	lines := a.srcLines.Lines(src)
 	res := []string{}
 	add := func(s string) {
 		if s != "" {
@@ -853,6 +877,7 @@ func (a *TreeSitterAdapter) ExtractMethodCalls(src []byte, startLine, endLine in
 // elseif carries a condition of its own, exactly like the `if` it extends,
 // while `else_clause`, `catch_clause` and `finally_clause` are branch headers.
 var phpStatements = &Treesitter.StatementSpec{
+	Language: tsPhp.GetLanguage,
 	Statement: []string{
 		"expression_statement", "echo_statement", "unset_statement",
 		"if_statement", "else_if_clause",

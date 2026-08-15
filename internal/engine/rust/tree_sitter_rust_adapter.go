@@ -113,21 +113,24 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	walk(params)
 }
 
-func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool {
-	return n.Type() == "source_file"
-}
+// These questions are asked on every node of every walk, so they are answered
+// by symbol id rather than by node type name. See
+// internal/engine/treesitter/symbols.go.
+var (
+	rustModules = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"source_file"}}
 
-func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
-	// Rust has no classes; treat struct, enum, union and trait as class-like
+	// Rust has no classes; struct, enum, union and trait are the class-like
 	// containers. An `impl` block is not one of them: it declares no type, it
 	// holds the methods of a type declared elsewhere, so its methods are bound
 	// to that type by ReceiverTypeName below.
-	switch n.Type() {
-	case "struct_item", "enum_item", "union_item", "trait_item":
-		return true
-	}
-	return false
-}
+	rustClasses = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"struct_item", "enum_item", "union_item", "trait_item"}}
+
+	rustFunctions = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"function_item", "function_signature_item", "method_item"}}
+)
+
+func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return rustModules.Has(n) }
+
+func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool { return rustClasses.Has(n) }
 
 // ReceiverTypeName returns the type a method belongs to when it is declared in
 // an `impl` block rather than inside the type itself.
@@ -164,13 +167,7 @@ func lastPathSegment(name string) string {
 	return strings.TrimSpace(name)
 }
 
-func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
-	switch n.Type() {
-	case "function_item", "function_signature_item", "method_item":
-		return true
-	}
-	return false
-}
+func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool { return rustFunctions.Has(n) }
 
 func (a *TreeSitterAdapter) ModuleNameFromPath(path string) string {
 	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
@@ -227,13 +224,14 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // a try_expression, a node distinct from the `?Sized` of a trait bound, so a
 // relaxed bound is never mistaken for a branch.
 var rustDecisions = &Treesitter.DecisionSpec{
-	If:      []string{"if_expression", "if_let_expression", "try_expression"},
-	Else:    []string{"else_clause"},
-	Loop:    []string{"for_expression", "while_expression", "while_let_expression", "loop_expression"},
-	Switch:  []string{"match_expression"},
-	Case:    []string{"match_arm"},
-	Logical: []string{"binary_expression"},
-	Ops:     []string{"&&", "||"},
+	Language: tsRust.GetLanguage,
+	If:       []string{"if_expression", "if_let_expression", "try_expression"},
+	Else:     []string{"else_clause"},
+	Loop:     []string{"for_expression", "while_expression", "while_let_expression", "loop_expression"},
+	Switch:   []string{"match_expression"},
+	Case:     []string{"match_arm"},
+	Logical:  []string{"binary_expression"},
+	Ops:      []string{"&&", "||"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -410,6 +408,7 @@ func dedup(in []Treesitter.ImportItem) []Treesitter.ImportItem {
 // `const_item` and `static_item` are local declarations: at file scope they
 // declare a member of the module, inside a function they are instructions.
 var rustStatements = &Treesitter.StatementSpec{
+	Language: tsRust.GetLanguage,
 	Statement: []string{
 		"expression_statement", "let_declaration",
 		"if_expression",

@@ -8,8 +8,10 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -145,62 +147,27 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 	// programming language, then one per analyzed directory (CLI argument).
 	scopeDefs := buildScopes(files, projectAggregated)
 
-	// Pre-compute JSON data once per scope to avoid redundant work across pages
+	// Pre-compute JSON data once per scope to avoid redundant work across pages.
+	//
+	// A scope reads the files and writes only its own entry, and encoding the
+	// files of a scope to JSON is the longest part of the report, so the scopes
+	// are prepared in parallel and collected in order afterwards: the order of
+	// the entries must not depend on which scope finishes first.
 	v.langCache = make(map[string]*cachedLangData)
-	for _, scope := range scopeDefs {
-		cd := &cachedLangData{}
-		dict := NewStringDictionary()
+	prepared := make([]*cachedLangData, len(scopeDefs))
 
-		cd.filesJSON = buildFilesJSONPruned(files, scope.Keep)
+	var scopeGroup sync.WaitGroup
+	for index, scope := range scopeDefs {
+		scopeGroup.Add(1)
+		go func(index int, scope scopeDef) {
+			defer scopeGroup.Done()
+			prepared[index] = v.prepareScopeData(scope, files)
+		}(index, scope)
+	}
+	scopeGroup.Wait()
 
-		// Build risks
-		cd.risksByPath = map[string][]riskItemForTpl{}
-		ra := analyzer.NewRiskAnalyzer()
-		for _, f := range files {
-			if !scope.keeps(f) {
-				continue
-			}
-			items := ra.DetectFileRisks(f)
-			if len(items) > 0 {
-				converted := make([]riskItemForTpl, 0, len(items))
-				for _, it := range items {
-					converted = append(converted, riskItemForTpl{ID: it.ID, Title: it.Title, Severity: it.Severity, Details: it.Details})
-				}
-				cd.risksByPath[f.Path] = converted
-			}
-		}
-		cd.risksJSON = buildRisksJSON(cd.risksByPath, dict)
-
-		// Community
-		currentView := scope.View
-		cd.nodeToCommunityJSON = "{}"
-		if currentView.Community != nil && len(currentView.Community.NodeToCommunity) > 0 {
-			cd.nodeToCommunityJSON = buildNodeToCommunityJSON(currentView.Community.NodeToCommunity)
-		}
-
-		cd.testQualityJSON = "{}"
-		if currentView.TestQuality != nil {
-			cd.testQualityJSON = analyzer.BuildTestQualityJSON(currentView.TestQuality)
-		}
-
-		cd.fileDepsJSON = buildFileDepsJSON(currentView.FileDependencies, dict)
-
-		// Count files for this scope
-		fileCount := 0
-		for _, f := range files {
-			if !scope.keeps(f) {
-				continue
-			}
-			fileCount++
-		}
-		cd.depFileCount = fileCount
-
-		// Build folder-level deps for dependency graph folder view
-		cd.folderDepsJSON = buildFolderDepsJSON(currentView.ConcernedFiles, currentView.FileDependencies, dict)
-
-		cd.dictionaryJSON = dict.ToJSON()
-
-		v.langCache[scope.DataKey] = cd
+	for index, scope := range scopeDefs {
+		v.langCache[scope.DataKey] = prepared[index]
 	}
 
 	// Write shared data JS files (one per scope) to avoid duplicating JSON in every HTML page
@@ -210,35 +177,7 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 		return nil, err
 	}
 	for dataKey, cd := range v.langCache {
-		var jsBuilder strings.Builder
-		jsBuilder.WriteString("window.__AST_DATA__={")
-		jsBuilder.WriteString("files:")
-		jsBuilder.WriteString(cd.filesJSON)
-		jsBuilder.WriteString(",risks:")
-		jsBuilder.WriteString(cd.risksJSON)
-		jsBuilder.WriteString(",dictionary:")
-		jsBuilder.WriteString(cd.dictionaryJSON)
-		jsBuilder.WriteString(",fileDeps:")
-		if cd.fileDepsJSON == "" || cd.fileDepsJSON == "{}" {
-			jsBuilder.WriteString("{}")
-		} else {
-			jsBuilder.WriteString(cd.fileDepsJSON)
-		}
-		jsBuilder.WriteString(",folderDeps:")
-		if cd.folderDepsJSON == "" {
-			jsBuilder.WriteString("null")
-		} else {
-			jsBuilder.WriteString(cd.folderDepsJSON)
-		}
-		jsBuilder.WriteString(",depFileCount:")
-		jsBuilder.WriteString(fmt.Sprintf("%d", cd.depFileCount))
-		jsBuilder.WriteString(",nodeToCommunity:")
-		jsBuilder.WriteString(cd.nodeToCommunityJSON)
-		jsBuilder.WriteString(",testQuality:")
-		jsBuilder.WriteString(cd.testQualityJSON)
-		jsBuilder.WriteString("};")
-		dataFile := fmt.Sprintf("%s/data_%s.js", dataDir, dataKey)
-		if err := os.WriteFile(dataFile, []byte(jsBuilder.String()), 0644); err != nil {
+		if err := v.writeScopeData(dataDir, dataKey, cd); err != nil {
 			return nil, err
 		}
 	}
@@ -249,8 +188,114 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 		return nil, err
 	}
 
-	// One page per template, for every scope (all / language / directory)
-	for _, template := range []string{
+	return v.generatePages(baseTemplateDir, scopeDefs, files, projectAggregated)
+}
+
+// prepareScopeData builds everything a scope's pages read: its files as JSON,
+// its risks, its communities, its dependencies.
+func (v *HtmlReportGenerator) prepareScopeData(scope scopeDef, files []*pb.File) *cachedLangData {
+	cd := &cachedLangData{}
+	dict := NewStringDictionary()
+
+	cd.filesJSON = buildFilesJSONPruned(files, scope.Keep)
+
+	// Build risks
+	cd.risksByPath = map[string][]riskItemForTpl{}
+	ra := analyzer.NewRiskAnalyzer()
+	for _, f := range files {
+		if !scope.keeps(f) {
+			continue
+		}
+		items := ra.DetectFileRisks(f)
+		if len(items) > 0 {
+			converted := make([]riskItemForTpl, 0, len(items))
+			for _, it := range items {
+				converted = append(converted, riskItemForTpl{ID: it.ID, Title: it.Title, Severity: it.Severity, Details: it.Details})
+			}
+			cd.risksByPath[f.Path] = converted
+		}
+	}
+	cd.risksJSON = buildRisksJSON(cd.risksByPath, dict)
+
+	// Community
+	currentView := scope.View
+	cd.nodeToCommunityJSON = "{}"
+	if currentView.Community != nil && len(currentView.Community.NodeToCommunity) > 0 {
+		cd.nodeToCommunityJSON = buildNodeToCommunityJSON(currentView.Community.NodeToCommunity)
+	}
+
+	cd.testQualityJSON = "{}"
+	if currentView.TestQuality != nil {
+		cd.testQualityJSON = analyzer.BuildTestQualityJSON(currentView.TestQuality)
+	}
+
+	cd.fileDepsJSON = buildFileDepsJSON(currentView.FileDependencies, dict)
+
+	// Count files for this scope
+	fileCount := 0
+	for _, f := range files {
+		if !scope.keeps(f) {
+			continue
+		}
+		fileCount++
+	}
+	cd.depFileCount = fileCount
+
+	// Build folder-level deps for dependency graph folder view
+	cd.folderDepsJSON = buildFolderDepsJSON(currentView.ConcernedFiles, currentView.FileDependencies, dict)
+
+	cd.dictionaryJSON = dict.ToJSON()
+
+	return cd
+}
+
+// writeScopeData writes the data file the pages of one scope load, so that the
+// JSON is not duplicated in every page.
+func (v *HtmlReportGenerator) writeScopeData(dataDir string, dataKey string, cd *cachedLangData) error {
+	var jsBuilder strings.Builder
+	jsBuilder.WriteString("window.__AST_DATA__={")
+	jsBuilder.WriteString("files:")
+	jsBuilder.WriteString(cd.filesJSON)
+	jsBuilder.WriteString(",risks:")
+	jsBuilder.WriteString(cd.risksJSON)
+	jsBuilder.WriteString(",dictionary:")
+	jsBuilder.WriteString(cd.dictionaryJSON)
+	jsBuilder.WriteString(",fileDeps:")
+	if cd.fileDepsJSON == "" || cd.fileDepsJSON == "{}" {
+		jsBuilder.WriteString("{}")
+	} else {
+		jsBuilder.WriteString(cd.fileDepsJSON)
+	}
+	jsBuilder.WriteString(",folderDeps:")
+	if cd.folderDepsJSON == "" {
+		jsBuilder.WriteString("null")
+	} else {
+		jsBuilder.WriteString(cd.folderDepsJSON)
+	}
+	jsBuilder.WriteString(",depFileCount:")
+	jsBuilder.WriteString(fmt.Sprintf("%d", cd.depFileCount))
+	jsBuilder.WriteString(",nodeToCommunity:")
+	jsBuilder.WriteString(cd.nodeToCommunityJSON)
+	jsBuilder.WriteString(",testQuality:")
+	jsBuilder.WriteString(cd.testQualityJSON)
+	jsBuilder.WriteString("};")
+	dataFile := fmt.Sprintf("%s/data_%s.js", dataDir, dataKey)
+	if err := os.WriteFile(dataFile, []byte(jsBuilder.String()), 0644); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// generatePages renders every page of every scope, and copies what they load.
+func (v *HtmlReportGenerator) generatePages(baseTemplateDir string, scopeDefs []scopeDef, files []*pb.File, projectAggregated analyzer.ProjectAggregated) ([]GeneratedReport, error) {
+	// One page per template, for every scope (all / language / directory).
+	//
+	// A page reads the aggregates and the cache built above, and writes a file
+	// of its own, so the pages are rendered in parallel: a project with three
+	// scopes renders three dozen of them, enough to make the report the second
+	// longest phase of an analysis when they are rendered one at a time.
+	pageTemplates := []string{
 		"index.html",
 		"risks.html",
 		"explorer.html",
@@ -263,16 +308,28 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 		"busfactor.html",
 		"testquality.html",
 		"classification.html",
-	} {
-		for _, scope := range scopeDefs {
-			// errors are logged by GenerateScopePage: a single broken page must
-			// not discard the whole report
-			v.GenerateScopePage(template, scope, scopeDefs, files, projectAggregated)
-		}
 	}
 
+	var pages sync.WaitGroup
+	slots := make(chan struct{}, runtime.NumCPU())
+	for _, template := range pageTemplates {
+		for _, scope := range scopeDefs {
+			pages.Add(1)
+			go func(template string, scope scopeDef) {
+				defer pages.Done()
+				slots <- struct{}{}
+				defer func() { <-slots }()
+
+				// errors are logged by GenerateScopePage: a single broken page
+				// must not discard the whole report
+				v.GenerateScopePage(template, scope, scopeDefs, files, projectAggregated)
+			}(template, scope)
+		}
+	}
+	pages.Wait()
+
 	// copy images
-	err = v.EnsureFolder(fmt.Sprintf("%s/images", v.ReportPath))
+	err := v.EnsureFolder(fmt.Sprintf("%s/images", v.ReportPath))
 	if err != nil {
 		return nil, err
 	}
@@ -842,8 +899,10 @@ func countFiles(files []*pb.File, keep fileFilter) int {
 
 func (v *HtmlReportGenerator) GenerateScopePage(template string, scope scopeDef, scopes []scopeDef, files []*pb.File, projectAggregated analyzer.ProjectAggregated) error {
 
-	// Compile the index.html template
-	tpl, err := pongo2.DefaultSet.FromFile(template)
+	// The same template is rendered once per scope, so it is compiled once and
+	// kept: FromCache is thread-safe and caches by filename, FromFile parses the
+	// file and its layout again on every call.
+	tpl, err := pongo2.DefaultSet.FromCache(template)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -1125,8 +1184,9 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 			rowsToKeep = param.Integer()
 		}
 
-		// Sort by risk of file
-		files := in.Interface().([]*pb.File)
+		// Sort a copy: the backing array is shared with the other pages,
+		// which are rendered in parallel
+		files := append([]*pb.File(nil), in.Interface().([]*pb.File)...)
 		sort.Slice(files, func(i, j int) bool {
 			if files[i].Stmts == nil && files[j].Stmts == nil || files[i].Stmts == nil || files[j].Stmts == nil || files[i].Stmts.Analyze == nil || files[j].Stmts.Analyze == nil {
 				return false
@@ -1167,8 +1227,9 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 			return pongo2.AsValue([]interface{}{}), nil
 		}
 
-		// Sort by risk of file first (reuse logic)
-		files := in.Interface().([]*pb.File)
+		// Sort a copy: the backing array is shared with the other pages,
+		// which are rendered in parallel
+		files := append([]*pb.File(nil), in.Interface().([]*pb.File)...)
 		sort.Slice(files, func(i, j int) bool {
 			if files[i] == nil || files[j] == nil || files[i].Stmts == nil || files[j].Stmts == nil || files[i].Stmts.Analyze == nil || files[j].Stmts.Analyze == nil {
 				return false

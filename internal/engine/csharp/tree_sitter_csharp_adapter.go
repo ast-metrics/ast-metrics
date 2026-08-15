@@ -16,6 +16,9 @@ type TreeSitterAdapter struct {
 	// ns caches the declared namespace (parsed lazily from src)
 	ns       string
 	nsParsed bool
+	// srcLines holds the source split into lines, so that the extractors called
+	// once per function do not split the whole file again for each of them
+	srcLines Treesitter.LineCache
 }
 
 func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter   { return &TreeSitterAdapter{src: src} }
@@ -42,37 +45,34 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	return a.root, source
 }
 
-func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool {
+// These four questions are asked on every node of every walk, so they are
+// answered by symbol id rather than by node type name. See
+// internal/engine/treesitter/symbols.go.
+var (
 	// namespace_declaration bodies are reached through the fallback recursion;
 	// the namespace name itself comes from ModuleNameFromPath
-	return n.Type() == "compilation_unit"
-}
+	csModules = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"compilation_unit"}}
 
-func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
-	switch n.Type() {
-	// structs, records (incl. record struct) and enums are class-like
-	// containers in C#: they hold fields and methods, so treat them as
-	// classes for metrics.
-	case "class_declaration", "struct_declaration", "record_declaration", "enum_declaration":
-		return true
-	}
-	return false
-}
+	// structs, records (including record struct) and enums are class-like
+	// containers in C#: they hold fields and methods, so they count as classes
+	// for metrics
+	csClasses = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"class_declaration", "struct_declaration", "record_declaration", "enum_declaration"}}
 
-func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool {
-	return n.Type() == "interface_declaration"
-}
+	csInterfaces = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"interface_declaration"}}
 
-func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
-	// Property accessors (get/set/init) and lambdas are intentionally not
-	// treated as named functions; their bodies still contribute decisions via
-	// the fallback recursion.
-	switch n.Type() {
-	case "method_declaration", "constructor_declaration", "local_function_statement", "destructor_declaration":
-		return true
-	}
-	return false
-}
+	// property accessors (get/set/init) and lambdas are intentionally not named
+	// functions; their bodies still contribute decisions through the fallback
+	// recursion
+	csFunctions = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"method_declaration", "constructor_declaration", "local_function_statement", "destructor_declaration"}}
+)
+
+func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return csModules.Has(n) }
+
+func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool { return csClasses.Has(n) }
+
+func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool { return csInterfaces.Has(n) }
+
+func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool { return csFunctions.Has(n) }
 
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	if a.src == nil || n == nil {
@@ -215,15 +215,16 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // section, which lets a section carrying several labels count each of them.
 // `??` is deliberately not a logical operator here, as in PHP and TypeScript.
 var csDecisions = &Treesitter.DecisionSpec{
-	If:      []string{"if_statement"},
-	Loop:    []string{"for_statement", "foreach_statement", "while_statement", "do_statement"},
-	Switch:  []string{"switch_statement", "switch_expression"},
-	Case:    []string{"case", "switch_expression_arm"},
-	Default: []string{"default"},
-	Catch:   []string{"catch_clause"},
-	Ternary: []string{"conditional_expression"},
-	Logical: []string{"binary_expression"},
-	Ops:     []string{"&&", "||"},
+	Language: tsCSharp.GetLanguage,
+	If:       []string{"if_statement"},
+	Loop:     []string{"for_statement", "foreach_statement", "while_statement", "do_statement"},
+	Switch:   []string{"switch_statement", "switch_expression"},
+	Case:     []string{"case", "switch_expression_arm"},
+	Default:  []string{"default"},
+	Catch:    []string{"catch_clause"},
+	Ternary:  []string{"conditional_expression"},
+	Logical:  []string{"binary_expression"},
+	Ops:      []string{"&&", "||"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -300,6 +301,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 // while a `using` block inside a method does, which is why only
 // `using_statement` is listed.
 var csharpStatements = &Treesitter.StatementSpec{
+	Language: tsCSharp.GetLanguage,
 	Statement: []string{
 		"expression_statement", "local_declaration_statement",
 		"if_statement",
@@ -410,7 +412,7 @@ func (a *TreeSitterAdapter) ExtractMethodCalls(src []byte, startLine, endLine in
 	if src == nil || startLine <= 0 || endLine <= 0 || endLine < startLine {
 		return nil
 	}
-	lines := strings.Split(string(src), "\n")
+	lines := a.srcLines.Lines(src)
 	var calls []string
 	for i := startLine - 1; i < endLine && i < len(lines); i++ {
 		ln := strings.TrimSpace(lines[i])

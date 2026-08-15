@@ -2,6 +2,7 @@ package engine
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -357,6 +358,43 @@ func TestReduceDepthOfNamespace(t *testing.T) {
 	// This should return the full namespace since depth >= parts length
 	if !strings.Contains(result, "github.com") {
 		t.Errorf("ReduceDepthOfNamespace with github.com should preserve github.com, got %q", result)
+	}
+}
+
+// splitNamespaceParts has to answer exactly what a "[^A-Za-z0-9]+" regular
+// expression answers, separators included, or namespaces would be grouped
+// differently. The expression itself is the reference.
+func TestSplitNamespaceParts(t *testing.T) {
+	reference := regexp.MustCompile("[^A-Za-z0-9]+")
+
+	for _, namespace := range []string{
+		"",
+		"simple",
+		"com.example.package",
+		"App\\Component\\Github",
+		"github.com/user/repo",
+		"/leading/separator",
+		"trailing.separator.",
+		"double..separator",
+		"mixed_-.separators",
+		"héllo.wörld",
+		"...",
+		"a1.b2.c3",
+	} {
+		separator, parts := splitNamespaceParts(namespace)
+
+		if expected := reference.FindString(namespace); separator != expected {
+			t.Errorf("splitNamespaceParts(%q) separator = %q, expected %q", namespace, separator, expected)
+		}
+		expectedParts := reference.Split(namespace, -1)
+		if len(parts) != len(expectedParts) {
+			t.Fatalf("splitNamespaceParts(%q) = %q, expected %q", namespace, parts, expectedParts)
+		}
+		for i := range parts {
+			if parts[i] != expectedParts[i] {
+				t.Errorf("splitNamespaceParts(%q) part %d = %q, expected %q", namespace, i, parts[i], expectedParts[i])
+			}
+		}
 	}
 }
 

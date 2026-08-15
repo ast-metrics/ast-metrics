@@ -316,46 +316,73 @@ func skipString(line string, i int) int {
 	return len(line)
 }
 
-// CountLinesOfCode measures the 1-based inclusive line range [start, end] of a
-// file whose lines are given whole, so that a comment block opened before start
-// is still known to be open.
+// LineIndex holds what every physical line of one file holds, as running totals.
 //
-// LogicalLinesOfCode is left at zero: only a parser can fill it, following the
-// model in internal/engine/treesitter/statement.go.
-func CountLinesOfCode(sourceCode []string, start int, end int, syn CommentSyntax) *pb.LinesOfCode {
-	if start < 1 {
-		start = 1
-	}
-	if end > len(sourceCode) {
-		end = len(sourceCode)
-	}
-	if end < start {
-		end = start - 1
+// A file is scanned once, from the top: a comment block opened on line 10 makes
+// line 20 documentation, which cannot be decided from line 20 alone. Counting a
+// range is then a subtraction. A parser asks for one range per scope, and a
+// class of twenty methods asks twenty-two times, so scanning the file for each
+// of them would make the cost of a file grow with the number of scopes it holds.
+type LineIndex struct {
+	// cloc[i] and ncloc[i] hold the totals over the first i lines, so the count
+	// over [start, end] is the difference at both ends.
+	cloc  []int32
+	ncloc []int32
+	lines int
+}
+
+// NewLineIndex scans a file once and returns the index of its lines.
+func NewLineIndex(sourceCode []string, syn CommentSyntax) *LineIndex {
+	idx := &LineIndex{
+		cloc:  make([]int32, len(sourceCode)+1),
+		ncloc: make([]int32, len(sourceCode)+1),
+		lines: len(sourceCode),
 	}
 
 	s := &scanner{syn: syn}
-	var cloc, ncloc int32
-	for i := 0; i < end && i < len(sourceCode); i++ {
-		kind := s.classify(sourceCode[i])
-		if i < start-1 {
-			// scanned only to know whether a block comment is open
-			continue
-		}
-		switch kind {
+	for i, line := range sourceCode {
+		cloc, ncloc := idx.cloc[i], idx.ncloc[i]
+		switch s.classify(line) {
 		case lineComment:
 			cloc++
 		case lineCode:
 			ncloc++
 		}
+		idx.cloc[i+1], idx.ncloc[i+1] = cloc, ncloc
 	}
 
-	loc := int32(0)
-	if end >= start {
-		loc = int32(end - start + 1)
+	return idx
+}
+
+// Count measures the 1-based inclusive line range [start, end].
+//
+// LogicalLinesOfCode is left at zero: only a parser can fill it, following the
+// model in internal/engine/treesitter/statement.go.
+func (idx *LineIndex) Count(start int, end int) *pb.LinesOfCode {
+	if start < 1 {
+		start = 1
 	}
+	if end > idx.lines {
+		end = idx.lines
+	}
+	if end < start {
+		// nothing to measure: an empty range is not one line long
+		return &pb.LinesOfCode{}
+	}
+
 	return &pb.LinesOfCode{
-		LinesOfCode:           loc,
-		CommentLinesOfCode:    cloc,
-		NonCommentLinesOfCode: ncloc,
+		LinesOfCode:           int32(end - start + 1),
+		CommentLinesOfCode:    idx.cloc[end] - idx.cloc[start-1],
+		NonCommentLinesOfCode: idx.ncloc[end] - idx.ncloc[start-1],
 	}
+}
+
+// CountLinesOfCode measures the 1-based inclusive line range [start, end] of a
+// file whose lines are given whole, so that a comment block opened before start
+// is still known to be open.
+//
+// Callers that measure several ranges of the same file should build a LineIndex
+// instead, and pay the scan once.
+func CountLinesOfCode(sourceCode []string, start int, end int, syn CommentSyntax) *pb.LinesOfCode {
+	return NewLineIndex(sourceCode, syn).Count(start, end)
 }

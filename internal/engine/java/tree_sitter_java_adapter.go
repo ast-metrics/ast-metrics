@@ -16,6 +16,9 @@ type TreeSitterAdapter struct {
 	// pkg caches the declared package name (parsed lazily from src)
 	pkg       string
 	pkgParsed bool
+	// srcLines holds the source split into lines, so that the extractors called
+	// once per function do not split the whole file again for each of them
+	srcLines Treesitter.LineCache
 }
 
 func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter   { return &TreeSitterAdapter{src: src} }
@@ -42,32 +45,31 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	return a.root, source
 }
 
-func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return n.Type() == "program" }
+// These four questions are asked on every node of every walk, so they are
+// answered by symbol id rather than by node type name. See
+// internal/engine/treesitter/symbols.go.
+var (
+	javaModules = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"program"}}
 
-func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
-	switch n.Type() {
 	// enums, records and annotation types are class-like containers in Java:
-	// they hold fields and methods, so treat them as classes for metrics.
-	case "class_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration":
-		return true
-	}
-	return false
-}
+	// they hold fields and methods, so they count as classes for metrics
+	javaClasses = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"class_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration"}}
 
-func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool {
-	return n.Type() == "interface_declaration"
-}
+	javaInterfaces = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"interface_declaration"}}
 
-func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
-	// Lambdas are intentionally not treated as named functions: they have no
-	// name and would pollute method counts. Their bodies still contribute
-	// decisions to the enclosing method via the fallback recursion.
-	switch n.Type() {
-	case "method_declaration", "constructor_declaration":
-		return true
-	}
-	return false
-}
+	// lambdas are intentionally not named functions: they have no name and would
+	// pollute method counts, and their bodies still contribute decisions to the
+	// enclosing method through the fallback recursion
+	javaFunctions = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"method_declaration", "constructor_declaration"}}
+)
+
+func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return javaModules.Has(n) }
+
+func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool { return javaClasses.Has(n) }
+
+func (a *TreeSitterAdapter) IsInterface(n *sitter.Node) bool { return javaInterfaces.Has(n) }
+
+func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool { return javaFunctions.Has(n) }
 
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	if a.src == nil || n == nil {
@@ -202,14 +204,15 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // two labels sharing one body (`case 1: case 2:`) count as the two entry
 // points they are. switch_expression covers statements and expressions alike.
 var javaDecisions = &Treesitter.DecisionSpec{
-	If:      []string{"if_statement"},
-	Loop:    []string{"for_statement", "enhanced_for_statement", "while_statement", "do_statement"},
-	Switch:  []string{"switch_expression"},
-	Case:    []string{"switch_label"},
-	Catch:   []string{"catch_clause"},
-	Ternary: []string{"ternary_expression"},
-	Logical: []string{"binary_expression"},
-	Ops:     []string{"&&", "||"},
+	Language: tsJava.GetLanguage,
+	If:       []string{"if_statement"},
+	Loop:     []string{"for_statement", "enhanced_for_statement", "while_statement", "do_statement"},
+	Switch:   []string{"switch_expression"},
+	Case:     []string{"switch_label"},
+	Catch:    []string{"catch_clause"},
+	Ternary:  []string{"ternary_expression"},
+	Logical:  []string{"binary_expression"},
+	Ops:      []string{"&&", "||"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -269,6 +272,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 // `static_initializer`, `method_declaration` and `import_declaration` declare
 // members.
 var javaStatements = &Treesitter.StatementSpec{
+	Language: tsJava.GetLanguage,
 	Statement: []string{
 		"expression_statement", "local_variable_declaration",
 		"if_statement",
@@ -380,7 +384,7 @@ func (a *TreeSitterAdapter) ExtractMethodCalls(src []byte, startLine, endLine in
 	if src == nil || startLine <= 0 || endLine <= 0 || endLine < startLine {
 		return nil
 	}
-	lines := strings.Split(string(src), "\n")
+	lines := a.srcLines.Lines(src)
 	var calls []string
 	for i := startLine - 1; i < endLine && i < len(lines); i++ {
 		ln := strings.TrimSpace(lines[i])

@@ -3,10 +3,30 @@ package namer
 import (
 	"embed"
 	"errors"
+	"sync"
 )
 
 //go:embed vectors.w2v
 var fs embed.FS
+
+// embedded parses the bundled dictionary once per process.
+//
+// Ten megabytes of vectors are decoded into a map of a hundred thousand entries,
+// and a run builds a Namer for every aggregation scope: the global view, the
+// per-file view, and one per language and per analyzed directory. They all read
+// the same dictionary and none of them modifies it, so decoding it per Namer
+// would be the same work done again for the same answer.
+var embedded = sync.OnceValues(func() (map[string][]float32, int) {
+	data, err := fs.ReadFile("vectors.w2v")
+	if err != nil {
+		return nil, 0
+	}
+	vectors, dim, err := loadW2V(data)
+	if err != nil {
+		return nil, 0
+	}
+	return vectors, dim
+})
 
 // Namer derives a short label (1–3 words) for a cluster of class names
 // using token embeddings (word vectors).
@@ -36,14 +56,9 @@ func NewNamer(opts ...Option) (*Namer, error) {
 	}
 
 	if n.vectors == nil {
-		data, err := fs.ReadFile("vectors.w2v")
-		if err != nil {
-			return nil, err
-		}
-
-		vectors, dim, err := loadW2V(data)
-		if err != nil {
-			return nil, err
+		vectors, dim := embedded()
+		if len(vectors) == 0 {
+			return nil, errors.New("namer: cannot read the embedded vectors")
 		}
 
 		n.vectors = vectors

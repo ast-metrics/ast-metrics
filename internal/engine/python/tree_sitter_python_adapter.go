@@ -84,11 +84,18 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 
 func (a *TreeSitterAdapter) Language() *sitter.Language { return tsPython.GetLanguage() }
 
-func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return n.Type() == "module" }
-func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool  { return n.Type() == "class_definition" }
-func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
-	return n.Type() == "function_definition" || n.Type() == "async_function_definition"
-}
+// These questions are asked on every node of every walk, so they are answered
+// by symbol id rather than by node type name. See
+// internal/engine/treesitter/symbols.go.
+var (
+	pythonModules   = &Treesitter.TypeSet{Language: tsPython.GetLanguage, Types: []string{"module"}}
+	pythonClasses   = &Treesitter.TypeSet{Language: tsPython.GetLanguage, Types: []string{"class_definition"}}
+	pythonFunctions = &Treesitter.TypeSet{Language: tsPython.GetLanguage, Types: []string{"function_definition", "async_function_definition"}}
+)
+
+func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool   { return pythonModules.Has(n) }
+func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool    { return pythonClasses.Has(n) }
+func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool { return pythonFunctions.Has(n) }
 
 func (a *TreeSitterAdapter) ModuleNameFromPath(path string) string {
 	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
@@ -162,16 +169,17 @@ func findDescendantOfType(n *sitter.Node, t string) *sitter.Node {
 // `if_clause` count exactly like the statements they abbreviate. `case _:` is
 // a case_clause like any other and is demoted to a Default by Decision below.
 var pythonDecisions = &Treesitter.DecisionSpec{
-	If:      []string{"if_statement", "if_clause"},
-	Elif:    []string{"elif_clause"},
-	Else:    []string{"else_clause"},
-	Loop:    []string{"for_statement", "while_statement", "for_in_clause"},
-	Switch:  []string{"match_statement"},
-	Case:    []string{"case_clause", "case_block"},
-	Catch:   []string{"except_clause", "except_group_clause"},
-	Ternary: []string{"conditional_expression"},
-	Logical: []string{"boolean_operator"},
-	Ops:     []string{"and", "or"},
+	Language: tsPython.GetLanguage,
+	If:       []string{"if_statement", "if_clause"},
+	Elif:     []string{"elif_clause"},
+	Else:     []string{"else_clause"},
+	Loop:     []string{"for_statement", "while_statement", "for_in_clause"},
+	Switch:   []string{"match_statement"},
+	Case:     []string{"case_clause", "case_block"},
+	Catch:    []string{"except_clause", "except_group_clause"},
+	Ternary:  []string{"conditional_expression"},
+	Logical:  []string{"boolean_operator"},
+	Ops:      []string{"and", "or"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -383,6 +391,7 @@ func dedup(in []Treesitter.ImportItem) []Treesitter.ImportItem {
 // any other, and is left out by the enclosing-scope rule of the shared model,
 // not by its type.
 var pythonStatements = &Treesitter.StatementSpec{
+	Language: tsPython.GetLanguage,
 	Statement: []string{
 		"expression_statement", "delete_statement", "assert_statement",
 		"if_statement", "elif_clause",

@@ -14,6 +14,11 @@ type Visitor struct {
 	file  *pb.File
 	ns    *pb.StmtNamespace
 	lines []string
+	// joined is the source rebuilt from lines. The adapters that extract
+	// operators, operands or method calls from the source text are called once
+	// per scope and all need it, so it is built once: building it per scope
+	// would copy the whole file for every function it holds.
+	joined []byte
 
 	classStk []*pb.StmtClass
 	funcStk  []*pb.StmtFunction
@@ -23,10 +28,18 @@ type Visitor struct {
 	// file has been visited, because a method may be declared before its type.
 	receiverMethods []receiverMethod
 
-	// logicalLines holds the 1-based line numbers on which a statement starts.
-	// LLOC at every level (file, class, function) is the number of such lines
-	// in the scope's range.
-	logicalLines map[int]bool
+	// logicalLines tells, for each line of the file, whether a statement starts
+	// on it. LLOC at every level (file, class, function) is the number of such
+	// lines in the scope's range, read from llocTotals.
+	logicalLines []bool
+	// llocTotals holds the running total of logical lines, so that the count
+	// over a scope is a subtraction instead of a walk over the whole file.
+	llocTotals []int32
+	// lineIndex holds LOC, CLOC and NCLOC per line, scanned once for the file.
+	lineIndex *engine.LineIndex
+	// collected tells that the file-wide passes have run: they belong to the
+	// first Visit call, the one receiving the root node.
+	collected bool
 }
 
 // receiverMethod is a method waiting to be attached to the class of its
@@ -58,7 +71,9 @@ func (v *Visitor) collectLogicalLines(node *sitter.Node) {
 			counts = inFunction
 		}
 		if counts {
-			v.logicalLines[int(n.StartPoint().Row)+1] = true
+			if line := int(n.StartPoint().Row); line < len(v.logicalLines) {
+				v.logicalLines[line] = true
+			}
 		}
 
 		childInClass, childInFunction := inClass, inFunction
@@ -82,13 +97,32 @@ func (v *Visitor) collectLogicalLines(node *sitter.Node) {
 // countLogicalLines returns the number of logical lines within the 1-based
 // inclusive line range.
 func (v *Visitor) countLogicalLines(start, end int) int {
-	cnt := 0
-	for line := range v.logicalLines {
-		if line >= start && line <= end {
-			cnt++
-		}
+	if len(v.llocTotals) == 0 {
+		return 0
 	}
-	return cnt
+	if start < 1 {
+		start = 1
+	}
+	if end > len(v.logicalLines) {
+		end = len(v.logicalLines)
+	}
+	if end < start {
+		return 0
+	}
+	return int(v.llocTotals[end] - v.llocTotals[start-1])
+}
+
+// indexLogicalLines turns the lines carrying a statement into running totals,
+// once the whole tree has been walked.
+func (v *Visitor) indexLogicalLines() {
+	v.llocTotals = make([]int32, len(v.logicalLines)+1)
+	for i, carries := range v.logicalLines {
+		total := v.llocTotals[i]
+		if carries {
+			total++
+		}
+		v.llocTotals[i+1] = total
+	}
 }
 
 // locationOf converts a tree-sitter node position into a 1-based file
@@ -120,12 +154,16 @@ func NewVisitor(ad LangAdapter, path string, src []byte) *Visitor {
 	lines := engine.SplitSourceLines(src)
 	mod := ad.ModuleNameFromPath(filepath.Base(path))
 
-	return &Visitor{
-		ad:    ad,
-		file:  &pb.File{Path: path, ProgrammingLanguage: "", Stmts: engine.FactoryStmts(), LinesOfCode: &pb.LinesOfCode{LinesOfCode: int32(len(lines))}},
-		ns:    &pb.StmtNamespace{Name: &pb.Name{Short: mod, Qualified: mod}, Stmts: engine.FactoryStmts(), LinesOfCode: &pb.LinesOfCode{}},
-		lines: lines,
+	v := &Visitor{
+		ad:     ad,
+		file:   &pb.File{Path: path, ProgrammingLanguage: "", Stmts: engine.FactoryStmts(), LinesOfCode: &pb.LinesOfCode{LinesOfCode: int32(len(lines))}},
+		ns:     &pb.StmtNamespace{Name: &pb.Name{Short: mod, Qualified: mod}, Stmts: engine.FactoryStmts(), LinesOfCode: &pb.LinesOfCode{}},
+		lines:  lines,
+		joined: []byte(strings.Join(lines, "\n")),
 	}
+	v.lineIndex = engine.NewLineIndex(lines, v.commentSyntax())
+
+	return v
 }
 
 // commentSyntax returns the comment syntax declared by the adapter, or a
@@ -141,7 +179,7 @@ func (v *Visitor) commentSyntax() engine.CommentSyntax {
 // physical size, how many of those lines are comments, how many hold code, and
 // how many carry a statement.
 func (v *Visitor) linesOfCodeIn(start, end int) *pb.LinesOfCode {
-	loc := engine.CountLinesOfCode(v.lines, start, end, v.commentSyntax())
+	loc := v.lineIndex.Count(start, end)
 	loc.LogicalLinesOfCode = int32(v.countLogicalLines(start, end))
 	return loc
 }
@@ -311,9 +349,11 @@ func (v *Visitor) Visit(node *sitter.Node) {
 	// The first call receives the root node: collect logical lines and the
 	// file-level decisions (a script can branch outside of any function) for
 	// the whole file before descending.
-	if v.logicalLines == nil {
-		v.logicalLines = map[int]bool{}
+	if !v.collected {
+		v.collected = true
+		v.logicalLines = make([]bool, len(v.lines))
 		v.collectLogicalLines(node)
+		v.indexLogicalLines()
 		v.collectDecisions(node, v.file.Stmts)
 	}
 
@@ -471,7 +511,7 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		if va, ok := v.ad.(interface {
 			ExtractOperatorsOperands(src []byte, startLine, endLine int) (ops []string, operands []string)
 		}); ok {
-			ops, opr := va.ExtractOperatorsOperands([]byte(strings.Join(v.lines, "\n")), nodeStart, nodeEnd)
+			ops, opr := va.ExtractOperatorsOperands(v.joined, nodeStart, nodeEnd)
 			for _, o := range ops {
 				fn.Operators = append(fn.Operators, &pb.StmtOperator{Name: o})
 			}
@@ -483,7 +523,7 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		if mc, ok := v.ad.(interface {
 			ExtractMethodCalls(src []byte, startLine, endLine int) []string
 		}); ok {
-			calls := mc.ExtractMethodCalls([]byte(strings.Join(v.lines, "\n")), nodeStart, nodeEnd)
+			calls := mc.ExtractMethodCalls(v.joined, nodeStart, nodeEnd)
 			for _, m := range calls {
 				fn.MethodCalls = append(fn.MethodCalls, &pb.StmtMethodCall{Name: m})
 			}
