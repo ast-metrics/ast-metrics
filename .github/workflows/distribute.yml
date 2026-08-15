@@ -1,5 +1,5 @@
 # Post-release distribution: Homebrew tap, Docker image (ghcr.io), .deb/.rpm
-# packages, and the language bridges (Composer, npm).
+# packages, and the language bridges (Composer, npm, PyPI).
 # Runs automatically when the "release" workflow succeeds, or manually
 # (workflow_dispatch) to replay an existing release.
 name: distribute
@@ -310,13 +310,73 @@ jobs:
           git push origin HEAD:main
           git push origin "refs/tags/${TAG}"
 
+  # And the pip package (ast-metrics on PyPI), on the same model as npm: the
+  # analyzer version is pinned in the package and is the package version, so
+  # that `pip install ast-metrics==X.Y.Z` is a promise about the analyzer. Two
+  # places to rewrite, then a tag: the bridge publishes to PyPI from its own
+  # workflow.
+  python-bridge:
+    needs: resolve
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pin the new version and tag the bridge
+        env:
+          BRIDGE_TOKEN: ${{ secrets.PUSH_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          git clone --quiet \
+            "https://x-access-token:${BRIDGE_TOKEN}@github.com/ast-metrics/ast-metrics-bridge-python.git" bridge
+          cd bridge
+
+          PINNED="src/ast_metrics/version.py"
+          if [ ! -f "$PINNED" ] || [ ! -f pyproject.toml ]; then
+            echo "::error::$PINNED or pyproject.toml not found. The bridge layout changed: update this job." >&2
+            exit 1
+          fi
+
+          # Rewrite the pinned tag, then check the result rather than trusting
+          # sed: a silent no-match would publish a bridge that still downloads
+          # the previous analyzer.
+          sed -i -E "s|^(PINNED_VERSION = \")[^\"]*(\")|\1${TAG}\2|" "$PINNED"
+          if ! grep -q "^PINNED_VERSION = \"${TAG}\"" "$PINNED"; then
+            echo "::error::Could not pin ${TAG} in $PINNED. The constant was renamed or reformatted." >&2
+            exit 1
+          fi
+
+          # The package version is written in pyproject.toml, on the only line
+          # of the [project] table that starts with `version =`.
+          sed -i -E "s|^(version = \")[^\"]*(\")|\1${VERSION}\2|" pyproject.toml
+          if ! grep -q "^version = \"${VERSION}\"" pyproject.toml; then
+            echo "::error::Could not set the package version to ${VERSION} in pyproject.toml." >&2
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists on the bridge, nothing to do."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$PINNED" pyproject.toml
+          git diff --cached --quiet || git commit -m "Pin AST Metrics ${VERSION}"
+
+          # The tag triggers the publish workflow of the bridge, which checks
+          # that every release asset exists before pushing to PyPI.
+          git tag -a "${TAG}" -m "AST Metrics ${VERSION}"
+          git push origin HEAD:main
+          git push origin "refs/tags/${TAG}"
+
   # Releases are created as prereleases so that nobody installs them before
   # their assets exist. Once every channel is published, promote the release:
   # drop the prerelease flag and mark it as latest, so that self-update and
   # the releases/latest API serve it. Genuine preversions (v1.2.3-rc1, -beta...)
   # are left untouched.
   finalize:
-    needs: [resolve, linux-packages, docker, homebrew, php-bridge, js-bridge]
+    needs: [resolve, linux-packages, docker, homebrew, php-bridge, js-bridge, python-bridge]
     runs-on: ubuntu-latest
     steps:
       - name: Promote the release to latest
