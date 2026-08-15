@@ -13,12 +13,15 @@ import (
 type TreeSitterAdapter struct {
 	src  []byte
 	root *sitter.Node
+	// docStringLines holds the 1-based lines on which a bare string
+	// expression begins, computed once from the tree on first use.
+	docStringLines map[int]bool
 }
 
 func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
 
 func (a *TreeSitterAdapter) SetSource(src []byte)          { a.src = src }
-func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root }
+func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root; a.docStringLines = nil }
 
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	if a.src == nil || n == nil {
@@ -417,15 +420,58 @@ func (a *TreeSitterAdapter) Statement(n *sitter.Node) Treesitter.StatementKind {
 
 // CommentSyntax declares Python comment tokens: "#" starts a comment, "//" is
 // the floor division operator and "/* */" does not exist. A triple-quoted
-// string is the docstring of what follows it, so it is documentation, exactly
-// like a docblock in the other languages.
+// string written as a statement of its own is the docstring of what follows
+// it, so it is documentation, exactly like a docblock in the other languages.
+// The same string written as a value (a fixture in a tuple, a query passed to
+// a call) is code, and only the tree tells the two apart, black having taught
+// everyone to write `(` on one line and `"""` alone on the next.
 func (a *TreeSitterAdapter) CommentSyntax() engine.CommentSyntax {
 	return engine.CommentSyntax{
-		Line:      []string{"#"},
-		DocString: []string{`"""`, `'''`},
-		Quote:     []rune{'"', '\''},
+		Line:        []string{"#"},
+		DocString:   []string{`"""`, `'''`},
+		Quote:       []rune{'"', '\''},
+		IsDocString: a.isDocStringLine,
 		// a docstring may be raw or formatted: r"""...""", f"""..."""
 		LetterPrefixedStrings: true,
+	}
+}
+
+// isDocStringLine reports whether the string opening at the start of the given
+// 1-based line is a bare string expression: the docstring of a module, class or
+// function, or a string dropped as a statement anywhere else, which the LLOC
+// model leaves out for the same reason. Without a tree to ask, every
+// triple-quoted string standing alone on its line is documentation, as before.
+func (a *TreeSitterAdapter) isDocStringLine(line int) bool {
+	if a.docStringLines == nil {
+		root := a.root
+		if root == nil {
+			if a.src == nil {
+				return true
+			}
+			parser := sitter.NewParser()
+			parser.SetLanguage(a.Language())
+			root = parser.Parse(nil, a.src).RootNode()
+		}
+		a.docStringLines = map[int]bool{}
+		collectDocStringLines(root, a.docStringLines)
+	}
+	return a.docStringLines[line]
+}
+
+// collectDocStringLines records the starting line of every expression_statement
+// made of a single string.
+func collectDocStringLines(n *sitter.Node, lines map[int]bool) {
+	if n == nil {
+		return
+	}
+	if n.Type() == "expression_statement" {
+		if Treesitter.IsStringExpression(n, "string", "concatenated_string") {
+			lines[int(n.StartPoint().Row)+1] = true
+		}
+		return
+	}
+	for i := 0; i < int(n.NamedChildCount()); i++ {
+		collectDocStringLines(n.NamedChild(i), lines)
 	}
 }
 
