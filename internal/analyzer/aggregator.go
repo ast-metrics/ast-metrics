@@ -910,7 +910,8 @@ func (r *Aggregator) mapSums(file *pb.File, specificAggregation Aggregated) Aggr
 			}
 		}
 
-		// Add dependencies to file
+		// Add dependencies to file. The coupling of the file itself is left to
+		// mapCoupling, which runs after this: nothing is coupled yet.
 		if file.Stmts.Analyze.Coupling == nil {
 			file.Stmts.Analyze.Coupling = &pb.Coupling{
 				Efferent: 0,
@@ -920,16 +921,7 @@ func (r *Aggregator) mapSums(file *pb.File, specificAggregation Aggregated) Aggr
 		if file.Stmts.StmtExternalDependencies == nil {
 			file.Stmts.StmtExternalDependencies = make([]*pb.StmtExternalDependency, 0)
 		}
-
-		file.Stmts.Analyze.Coupling.Efferent += class.Stmts.Analyze.Coupling.Efferent
-		file.Stmts.Analyze.Coupling.Afferent += class.Stmts.Analyze.Coupling.Afferent
 		file.Stmts.StmtExternalDependencies = append(file.Stmts.StmtExternalDependencies, class.Stmts.StmtExternalDependencies...)
-	}
-
-	// consolidate coupling for file
-	if len(classes) > 0 && file.Stmts.Analyze.Coupling != nil {
-		file.Stmts.Analyze.Coupling.Efferent = file.Stmts.Analyze.Coupling.Efferent / int32(len(classes))
-		file.Stmts.Analyze.Coupling.Afferent = file.Stmts.Analyze.Coupling.Afferent / int32(len(classes))
 	}
 
 	return result
@@ -1165,30 +1157,31 @@ func fileLevelDependencies(file *pb.File) []*pb.StmtExternalDependency {
 func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 	result := *aggregated
 
-	// Create the hashmaps of files, by Path then by class name.
-	files := make(map[string]*pb.File)
+	// The classes of the project, by qualified name. Test files are skipped:
+	// they are not production code, so they must neither contribute to the
+	// coupling sums nor be reachable as a coupling source.
+	//
+	// The coupling is written on the classes and files themselves, which are
+	// shared by every aggregate this runs on: per language, per directory, then
+	// on the whole project. Each run therefore starts from zero, so that a class
+	// is not counted once more per aggregate, and the last run, the one over the
+	// whole project, is the one that stays.
 	classesMap := make(map[string]*pb.StmtClass)
-	// Populate the 'files' map with namespace keys.
-	// Test files are skipped: they are not production code, so they must neither
-	// contribute to the coupling sums nor be reachable as a coupling source.
-	for _, fileItem := range aggregated.ConcernedFiles {
-		if fileItem == nil || fileItem.GetIsTest() {
-			continue
-		}
-		namespace := engine.ReduceDepthOfNamespace(fileItem.Path, 2)
-		files[namespace] = fileItem
-	}
-
-	// populate the classmap
 	for _, file := range aggregated.ConcernedFiles {
 		if file == nil || file.Stmts == nil || file.GetIsTest() {
 			continue
+		}
+		if file.Stmts.Analyze != nil {
+			file.Stmts.Analyze.Coupling = &pb.Coupling{}
 		}
 		for _, class := range engine.GetClassesInFile(file) {
 			if class == nil || class.Name == nil || class.Name.Qualified == "" {
 				continue
 			}
 			classesMap[class.Name.Qualified] = class
+			if class.Stmts != nil && class.Stmts.Analyze != nil {
+				class.Stmts.Analyze.Coupling = &pb.Coupling{}
+			}
 		}
 	}
 
@@ -1214,35 +1207,31 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 			continue
 		}
 
-		// dependencies of file
-		dependencies := file.Stmts.StmtExternalDependencies
+		// The dependencies of the file, each counted once whatever the number of
+		// scopes it was attached to. A dependency is what it points at: two
+		// scopes of the file using the same class make one dependency, two
+		// classes used from the same scope make two.
 		uniqueDependencies := make(map[string]*pb.StmtExternalDependency)
-
-		// make it unique
-		for _, dependency := range dependencies {
-			name := dependency.From
-			uniqueDependencies[name] = dependency
-		}
-
-		for _, dependency := range uniqueDependencies {
-
+		for _, dependency := range file.Stmts.StmtExternalDependencies {
 			if dependency == nil {
 				continue
 			}
+			uniqueDependencies[dependency.Namespace+"|"+dependency.ClassName] = dependency
+		}
+		if file.Stmts.Analyze != nil {
+			file.Stmts.Analyze.Coupling.Efferent = int32(len(uniqueDependencies))
+		}
+
+		// The relations are walked in a fixed order, so that a run cannot count
+		// them differently than the previous one.
+		for _, key := range slices.Sorted(maps.Keys(uniqueDependencies)) {
+			dependency := uniqueDependencies[key]
 
 			namespaceTo := reducers.Reduce(file.GetProgrammingLanguage(), dependency.Namespace)
 			namespaceFrom := reducers.Reduce(file.GetProgrammingLanguage(), dependency.From)
 
 			if namespaceFrom == "" || namespaceTo == "" {
 				continue
-			}
-
-			// Increment the afferent coupling of the fromFile
-			fromFile := files[namespaceFrom]
-			if fromFile != nil {
-				// This code cannot work in a no-oop context
-				// => we cannot use afferent coupling of file itself, only the coupling of the class
-				fromFile.Stmts.Analyze.Coupling.Afferent++
 			}
 
 			// create the map if not exists
@@ -1327,16 +1316,24 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 		}
 	}
 
-	// Now iterate again on each file, then on each class, in order to update the afferent coupling of the class itself
-	for _, file := range files {
-
-		if file.Stmts == nil || file.Stmts.Analyze == nil || file.Stmts.Analyze.Coupling == nil {
+	// The afferent coupling of a file is the one of the classes it declares,
+	// which is only known once every file has been walked. A file declaring no
+	// class, as in a language without classes, has nothing to be depended on
+	// by name and keeps an afferent coupling of zero.
+	for _, file := range aggregated.ConcernedFiles {
+		if file == nil || file.Stmts == nil || file.Stmts.Analyze == nil || file.Stmts.Analyze.Coupling == nil || file.GetIsTest() {
 			continue
 		}
-
-		// instability
-		if file.Stmts.Analyze.Coupling.Afferent > 0 && file.Stmts.Analyze.Coupling.Efferent > 0 {
-			file.Stmts.Analyze.Coupling.Instability = float64(file.Stmts.Analyze.Coupling.Afferent) / float64(file.Stmts.Analyze.Coupling.Afferent+file.Stmts.Analyze.Coupling.Efferent)
+		coupling := file.Stmts.Analyze.Coupling
+		for _, class := range engine.GetClassesInFile(file) {
+			if class == nil || class.Stmts == nil || class.Stmts.Analyze == nil || class.Stmts.Analyze.Coupling == nil {
+				continue
+			}
+			coupling.Afferent += class.Stmts.Analyze.Coupling.Afferent
+		}
+		// instability, Ce / (Ce + Ca)
+		if coupling.Afferent > 0 && coupling.Efferent > 0 {
+			coupling.Instability = float64(coupling.Efferent) / float64(coupling.Efferent+coupling.Afferent)
 		}
 	}
 	for _, class := range classesMap {
