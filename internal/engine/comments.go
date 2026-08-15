@@ -49,6 +49,14 @@ type CommentSyntax struct {
 	// and C#'s `"""` text block. Its lines are code, and a comment marker
 	// written inside it is part of the value, not a comment.
 	RawString []string
+	// IsDocString, when set, decides whether the DocString delimiter opening
+	// at the start of the given 1-based line is documentation. A triple-quoted
+	// string alone on its line is not always a docstring: black formats a
+	// multi-line argument or tuple member as `(` on one line and `"""` on the
+	// next, and a test fixture or SQL query written that way is a value the
+	// program carries. Only a parser knows which one it is, so the adapter
+	// answers from the AST; when nil, the delimiter is taken as documentation.
+	IsDocString func(line int) bool
 	// LetterPrefixedStrings tells that a string literal may carry a prefix of
 	// letters, as Python writes r"", b"", f"" and their combinations. Without
 	// it, a raw docstring `r"""..."""` would not be recognised as one.
@@ -126,6 +134,8 @@ type scanner struct {
 	openComment string
 	// openString holds the token that closes the multi-line string in progress.
 	openString string
+	// line is the 1-based number of the line being classified.
+	line int
 }
 
 // classify returns what the line holds, and advances the scanner state.
@@ -186,6 +196,11 @@ func (s *scanner) opensComment(line string) bool {
 	// a raw string standing at the start of a line is a value, not
 	// documentation: only a comment block and a documentation string are
 	if kind != delimiterComment && kind != delimiterDoc {
+		return false
+	}
+	if kind == delimiterDoc && s.syn.IsDocString != nil && !s.syn.IsDocString(s.line) {
+		// the parser says this string is a value, not the documentation of
+		// what follows: the line is code, and so is the rest of the string
 		return false
 	}
 
@@ -341,6 +356,7 @@ func NewLineIndex(sourceCode []string, syn CommentSyntax) *LineIndex {
 
 	s := &scanner{syn: syn}
 	for i, line := range sourceCode {
+		s.line = i + 1
 		cloc, ncloc := idx.cloc[i], idx.ncloc[i]
 		switch s.classify(line) {
 		case lineComment:

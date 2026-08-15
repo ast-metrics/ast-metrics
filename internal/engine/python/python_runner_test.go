@@ -297,3 +297,48 @@ func TestPythonFloorDivisionIsNotAComment(t *testing.T) {
 		t.Errorf("expected 5 logical lines, got %d", fn.LinesOfCode.LogicalLinesOfCode)
 	}
 }
+
+// A triple-quoted string standing alone on its line is not always a docstring:
+// black writes a multi-line argument or tuple member as `(` on one line and
+// `"""` alone on the next. Only the string written as a statement of its own
+// documents something; the others are values, hence code.
+func TestPythonTripleQuotedValueIsNotAComment(t *testing.T) {
+	src := `"""Module docstring."""
+
+CASES = [
+    (
+        '''
+        if a: pass
+        ''',
+        2,
+    ),
+]
+
+def f(a):
+    """Doc of f."""
+    q = textwrap.dedent(
+        """
+        SELECT 1
+        FROM t
+        """
+    )
+    return q
+`
+	r := &PythonRunner{}
+	file, err := enginePkg.CreateTestFileWithCode(r, src)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	// the module docstring and the docstring of f, nothing else
+	if got := file.LinesOfCode.CommentLinesOfCode; got != 2 {
+		t.Errorf("expected 2 comment lines in the file, got %d", got)
+	}
+	fn := file.Stmts.StmtNamespace[0].Stmts.StmtFunction[0]
+	if got := fn.LinesOfCode.CommentLinesOfCode; got != 1 {
+		t.Errorf("expected 1 comment line in f, got %d", got)
+	}
+	// the assignment and the return; the query is part of the assignment
+	if got := fn.LinesOfCode.LogicalLinesOfCode; got != 2 {
+		t.Errorf("expected 2 logical lines in f, got %d", got)
+	}
+}
