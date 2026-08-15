@@ -1,11 +1,11 @@
 package deps
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/ast-metrics/ast-metrics/internal/engine/dependency"
+	"github.com/ast-metrics/ast-metrics/internal/engine/python/module"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
@@ -36,18 +36,18 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 	suffixes := dependency.NewIndex()
 	moduleOfFile := make(map[string]string)
 
-	packages := newPackageCache()
+	packages := module.NewCache()
 	for _, file := range files {
 		path := file.GetPath()
 		if file == nil || path == "" || file.GetProgrammingLanguage() != Language {
 			continue
 		}
-		module := packages.moduleOf(path)
-		if module == "" {
+		modulePath := packages.ModuleOf(path)
+		if modulePath == "" {
 			continue
 		}
-		moduleOfFile[path] = module
-		modules.Add(module, path)
+		moduleOfFile[path] = modulePath
+		modules.Add(modulePath, path)
 		// Indexed from the file path rather than from the module path: when
 		// the package walk stopped early, the module path is exactly what is
 		// missing its head, and the directories above it are what supply it.
@@ -112,42 +112,17 @@ func (r *scopedFileDependencyResolver) lookup(module string) []string {
 	return r.suffixes.GetUnambiguous(module)
 }
 
-// rebase turns an import specifier into an absolute module path. A specifier
-// with no leading dot is already absolute; each leading dot climbs one package
-// from the one holding the importing file.
+// rebase turns an import specifier into an absolute module path, from the
+// module of the importing file.
 func (r *scopedFileDependencyResolver) rebase(sourcePath, specifier string) (string, bool) {
-	level := len(specifier) - len(strings.TrimLeft(specifier, "."))
-	if level == 0 {
+	if !strings.HasPrefix(specifier, ".") {
 		return specifier, true
 	}
-
-	module, located := r.moduleOfFile[sourcePath]
+	modulePath, located := r.moduleOfFile[sourcePath]
 	if !located {
 		return "", false
 	}
-	segments := strings.Split(module, ".")
-	// The package holding the file is its module path minus the file itself,
-	// except for an __init__.py, which is the package.
-	if filepath.Base(sourcePath) != "__init__.py" {
-		segments = segments[:len(segments)-1]
-	}
-	// One dot means the current package, so only the dots beyond the first
-	// climb. A specifier that climbs past the top of the tree names something
-	// outside the analyzed sources.
-	if level-1 > len(segments) {
-		return "", false
-	}
-	segments = segments[:len(segments)-(level-1)]
-
-	base := strings.Join(segments, ".")
-	relative := strings.TrimLeft(specifier, ".")
-	if relative == "" {
-		return base, true
-	}
-	if base == "" {
-		return relative, true
-	}
-	return base + "." + relative, true
+	return module.Rebase(modulePath, filepath.Base(sourcePath) == "__init__.py", specifier)
 }
 
 // dottedPathSuffixes reads a file path as a module path and lists its trailing
@@ -171,47 +146,4 @@ func dottedPathSuffixes(path string) []string {
 		suffixes = append(suffixes, strings.Join(segments[i:], "."))
 	}
 	return suffixes
-}
-
-// packageCache maps a file to its dotted module path, remembering which
-// directories are packages so the __init__.py chain is only walked once.
-type packageCache struct {
-	isPackage map[string]bool
-}
-
-func newPackageCache() *packageCache {
-	return &packageCache{isPackage: make(map[string]bool)}
-}
-
-func (c *packageCache) moduleOf(path string) string {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		absolute = filepath.Clean(path)
-	}
-
-	segments := []string{}
-	// An __init__.py is the package holding it, not a module of its own:
-	// `import pkg` loads pkg/__init__.py.
-	if base := strings.TrimSuffix(filepath.Base(absolute), filepath.Ext(absolute)); base != "__init__" {
-		segments = append(segments, base)
-	}
-	for current := filepath.Dir(absolute); c.packageAt(current); {
-		segments = append([]string{filepath.Base(current)}, segments...)
-		parent := filepath.Dir(current)
-		if parent == current {
-			break
-		}
-		current = parent
-	}
-	return strings.Join(segments, ".")
-}
-
-func (c *packageCache) packageAt(directory string) bool {
-	if known, cached := c.isPackage[directory]; cached {
-		return known
-	}
-	_, err := os.Stat(filepath.Join(directory, "__init__.py"))
-	isPackage := err == nil
-	c.isPackage[directory] = isPackage
-	return isPackage
 }
