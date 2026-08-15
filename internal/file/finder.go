@@ -66,6 +66,49 @@ func (r Finder) resolveProjectRoot() string {
 	return wd
 }
 
+// scopes returns the analyzed sources paired with the configuration that
+// governs them, without the duplicates a configuration is free to declare. A
+// Finder whose configuration has no resolved scope falls back to the root
+// configuration governing every source, which is what a single project needs.
+func (r Finder) scopes() []configuration.Scope {
+	declared := r.Configuration.Scopes
+	if len(declared) == 0 {
+		declared = make([]configuration.Scope, 0, len(r.Configuration.SourcesToAnalyzePath))
+		for _, path := range r.Configuration.SourcesToAnalyzePath {
+			declared = append(declared, configuration.Scope{Path: path, Configuration: &r.Configuration})
+		}
+	}
+
+	seen := make(map[string]bool, len(declared))
+	scopes := make([]configuration.Scope, 0, len(declared))
+	for _, scope := range declared {
+		key, err := filepath.Abs(strings.TrimRight(scope.Path, "/"))
+		if err != nil {
+			continue
+		}
+		key = filepath.Clean(key)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		scopes = append(scopes, scope)
+	}
+
+	return scopes
+}
+
+// excludesOf returns the compiled exclude patterns of a scope, and the
+// directory they are written against: the scope itself when it holds its own
+// configuration file, the working directory otherwise.
+func (r Finder) excludesOf(scope configuration.Scope) (excludeMatcher, string) {
+	root := scope.Root
+	if root == "" {
+		root = r.resolveProjectRoot()
+	}
+
+	return compileExcludes(scope.Configuration.ExcludePatterns), root
+}
+
 func (r Finder) Search(fileExtension string) FileList {
 
 	// Ensur extension starts with a dot
@@ -84,14 +127,21 @@ func (r Finder) Search(fileExtension string) FileList {
 	result.FilesByDirectory = make(map[string][]string)
 	result.Files = []string{}
 
-	excludes := compileExcludes(r.Configuration.ExcludePatterns)
-
-	projectRoot := r.resolveProjectRoot()
+	scopes := r.scopes()
 
 	// Search for files in each directory
-	for _, path := range r.Configuration.SourcesToAnalyzePath {
+	for _, scope := range scopes {
 
-		path := strings.TrimRight(path, "/")
+		// The extension may belong to another scope, which declared it for its
+		// own files.
+		if foreignExtensions(scopes, scope)[fileExtension] {
+			continue
+		}
+
+		path := strings.TrimRight(scope.Path, "/")
+		excludes, projectRoot := r.excludesOf(scope)
+		nested := nestedScopes(scopes, path)
+
 		var matches []string
 		if strings.HasSuffix(path, fileExtension) {
 			matches = append(matches, path)
@@ -102,6 +152,9 @@ func (r Finder) Search(fileExtension string) FileList {
 		// deal with excluded files
 		for _, file := range matches {
 			if isExcluded(file, projectRoot, path, excludes) {
+				continue
+			}
+			if inNestedScope(nested, file) {
 				continue
 			}
 
@@ -137,12 +190,17 @@ func (r Finder) SearchMultiple(extensions []string) map[string]FileList {
 		}
 	}
 
-	excludes := compileExcludes(r.Configuration.ExcludePatterns)
+	scopes := r.scopes()
 
-	projectRoot := r.resolveProjectRoot()
+	for _, scope := range scopes {
+		srcPath := strings.TrimRight(scope.Path, "/")
+		excludes, projectRoot := r.excludesOf(scope)
+		nested := nestedScopes(scopes, srcPath)
 
-	for _, srcPath := range r.Configuration.SourcesToAnalyzePath {
-		srcPath = strings.TrimRight(srcPath, "/")
+		// The walk looks for the union of the extensions declared across
+		// scopes, so that a scope adding one does not have the others pick it
+		// up too.
+		foreign := foreignExtensions(scopes, scope)
 
 		// If the source path itself is a file, check its extension
 		info, err := os.Stat(srcPath)
@@ -151,7 +209,7 @@ func (r Finder) SearchMultiple(extensions []string) map[string]FileList {
 		}
 		if !info.IsDir() {
 			ext := filepath.Ext(srcPath)
-			if extSet[ext] {
+			if extSet[ext] && !foreign[ext] {
 				if !isExcluded(srcPath, projectRoot, srcPath, excludes) {
 					fl := results[ext]
 					fl.Files = append(fl.Files, srcPath)
@@ -168,6 +226,13 @@ func (r Finder) SearchMultiple(extensions []string) map[string]FileList {
 				return nil
 			}
 			if d.IsDir() {
+				// A directory that is itself an analyzed source is walked by
+				// its own scope, with its own configuration. Stopping here is
+				// what makes the most specific source own its files, and what
+				// keeps them from being discovered twice.
+				if path != srcPath && nested[path] {
+					return filepath.SkipDir
+				}
 				// An excluded directory is not descended into: reading a
 				// vendor tree, a build cache or a .git directory only to
 				// discard every file it holds is the most expensive part of
@@ -178,7 +243,7 @@ func (r Finder) SearchMultiple(extensions []string) map[string]FileList {
 				return nil
 			}
 			ext := filepath.Ext(path)
-			if !extSet[ext] {
+			if !extSet[ext] || foreign[ext] {
 				return nil
 			}
 			if isExcluded(path, projectRoot, srcPath, excludes) {
@@ -196,6 +261,83 @@ func (r Finder) SearchMultiple(extensions []string) map[string]FileList {
 	}
 
 	return results
+}
+
+// foreignExtensions returns the extra extensions another scope declared for its
+// own files, and this one did not. The discovery walks once for the union of
+// the extensions declared across scopes, so a scope has to leave out the ones
+// that are none of its business. Built-in extensions are never foreign: every
+// scope analyzes the languages the tool supports out of the box.
+func foreignExtensions(scopes []configuration.Scope, current configuration.Scope) map[string]bool {
+	var own map[string]bool
+	for _, ext := range current.Configuration.DeclaredExtensions() {
+		if own == nil {
+			own = make(map[string]bool)
+		}
+		own[ext] = true
+	}
+
+	var foreign map[string]bool
+	for _, scope := range scopes {
+		if scope.Configuration == current.Configuration {
+			continue
+		}
+		for _, ext := range scope.Configuration.DeclaredExtensions() {
+			if own[ext] {
+				continue
+			}
+			if foreign == nil {
+				foreign = make(map[string]bool)
+			}
+			foreign[ext] = true
+		}
+	}
+
+	return foreign
+}
+
+// nestedScopes returns the analyzed sources lying strictly inside root, spelled
+// the way the walk of root will spell them.
+func nestedScopes(scopes []configuration.Scope, root string) map[string]bool {
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return nil
+	}
+	rootAbs = filepath.Clean(rootAbs)
+
+	var nested map[string]bool
+	for _, scope := range scopes {
+		abs, err := filepath.Abs(strings.TrimRight(scope.Path, "/"))
+		if err != nil {
+			continue
+		}
+		abs = filepath.Clean(abs)
+		if abs == rootAbs {
+			continue
+		}
+		rel, ok := relativeTo(rootAbs, abs)
+		if !ok {
+			continue
+		}
+		if nested == nil {
+			nested = make(map[string]bool)
+		}
+		nested[filepath.Join(root, filepath.FromSlash(strings.TrimPrefix(rel, "/")))] = true
+	}
+
+	return nested
+}
+
+// inNestedScope reports whether a file lies under a more specific analyzed
+// source, which discovers it on its own.
+func inNestedScope(nested map[string]bool, file string) bool {
+	for dir := range nested {
+		if strings.HasPrefix(file, dir+string(filepath.Separator)) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func MergeFileLists(lists ...FileList) FileList {

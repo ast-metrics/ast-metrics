@@ -42,6 +42,14 @@ type Configuration struct {
 
 	IsComingFromConfigFile bool `yaml:"-"`
 
+	// ConfigurationFilePath is the absolute path of the file this configuration
+	// was read from. Empty when no configuration file was found.
+	ConfigurationFilePath string `yaml:"-"`
+
+	// Scopes binds every analyzed source to the configuration that governs it.
+	// Built by ResolveScopes, which SetSourcesToAnalyzePath calls.
+	Scopes []Scope `yaml:"-"`
+
 	// FileDiscovery holds a pre-computed file discovery cache (type *file.FileDiscovery).
 	// Stored as interface{} to avoid import cycles.
 	FileDiscovery FileDiscoveryCache `yaml:"-"`
@@ -165,10 +173,17 @@ type ConfigurationDefaultRule struct {
 	ExcludePatterns []string `yaml:"exclude"`
 }
 
+// defaultExcludePatterns returns the directories left out of every analysis
+// unless a configuration file says otherwise. A fresh slice is returned, so
+// that a configuration keeping the defaults cannot alter another one.
+func defaultExcludePatterns() []string {
+	return []string{"/vendor/", "/node_modules/", "/.git/", "/.idea/", "/_ide_helper/", "/var/", "/.claude/", "/.venv/", "/__pycache__/"}
+}
+
 func NewConfiguration() *Configuration {
 	return &Configuration{
 		SourcesToAnalyzePath:     []string{},
-		ExcludePatterns:          []string{"/vendor/", "/node_modules/", "/.git/", "/.idea/", "/_ide_helper/", "/var/", "/.claude/", "/.venv/", "/__pycache__/"},
+		ExcludePatterns:          defaultExcludePatterns(),
 		Watching:                 false,
 		CompareWith:              "",
 		Architecture:             false,
@@ -221,7 +236,10 @@ func (c *Configuration) SetSourcesToAnalyzePath(paths []string) error {
 
 	(*c).SourcesToAnalyzePath = paths
 
-	return nil
+	// Sources are also the scopes: a source directory holding its own
+	// configuration file is governed by it. Resolving here keeps the two in
+	// step, since this is the one place sources are set.
+	return c.ResolveScopes()
 }
 
 func (c *Configuration) SetExcludePatterns(patterns []string) {
@@ -235,17 +253,47 @@ var defaultExtensions = map[string]string{
 	"java": ".java", "csharp": ".cs",
 }
 
+// GetExtensionsForLanguage returns every extension a file of lang can carry:
+// the built-in one, plus the extra ones declared by this configuration and by
+// any scope. The union is what has to be looked for during the discovery;
+// which files a scope actually owns is decided there, against the extensions
+// that scope itself declares.
 func (c *Configuration) GetExtensionsForLanguage(lang string) []string {
 	base := []string{defaultExtensions[lang]}
-	if c.Extensions != nil {
-		for _, ext := range c.Extensions[lang] {
-			if !strings.HasPrefix(ext, ".") {
-				ext = "." + ext
-			}
-			base = append(base, ext)
+	base = append(base, normalizeExtensions(c.Extensions[lang])...)
+	for _, scope := range c.Scopes {
+		if scope.Configuration == nil || scope.Configuration == c {
+			continue
 		}
+		base = append(base, normalizeExtensions(scope.Configuration.Extensions[lang])...)
 	}
+
 	return uniqueStrings(base)
+}
+
+// DeclaredExtensions returns the extra extensions this configuration maps to a
+// language, on top of the built-in ones.
+func (c *Configuration) DeclaredExtensions() []string {
+	var declared []string
+	for _, extensions := range c.Extensions {
+		declared = append(declared, normalizeExtensions(extensions)...)
+	}
+
+	return declared
+}
+
+// normalizeExtensions makes every extension start with a dot, so that a
+// configuration can write "inc" as well as ".inc".
+func normalizeExtensions(extensions []string) []string {
+	normalized := make([]string, 0, len(extensions))
+	for _, ext := range extensions {
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		normalized = append(normalized, ext)
+	}
+
+	return normalized
 }
 
 func uniqueStrings(s []string) []string {

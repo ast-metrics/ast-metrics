@@ -94,6 +94,9 @@ func (c *LintCommand) Execute() error {
 
 	// Aggregate to get project-level metrics (TestQuality etc.)
 	aggregator := analyzer.NewAggregator(allResults, nil)
+	// One aggregate per analyzed source, so that a project holding its own
+	// requirements is judged on its own metrics.
+	aggregator.WithAnalyzedPaths(c.Configuration.SourcesToAnalyzePath)
 	projectAggregated := aggregator.Aggregates()
 
 	if spinner != nil {
@@ -105,7 +108,7 @@ func (c *LintCommand) Execute() error {
 		cli.PrintInfo("No requirements configured. Nothing to lint.")
 		return nil
 	}
-	reqEval := requirement.NewRequirementsEvaluator(*c.Configuration.Requirements)
+	reqEval := requirement.NewScopedRequirementsEvaluator(c.Configuration)
 	baselinePath := requirement.ResolveBaselinePath(c.Configuration.Requirements.Baseline)
 	if baselinePath != "" {
 		baseline, err := requirement.LoadBaseline(baselinePath)
@@ -115,7 +118,10 @@ func (c *LintCommand) Execute() error {
 		reqEval.Baseline = baseline
 	}
 	projectCtx := buildProjectContext(projectAggregated)
-	evaluation := reqEval.Evaluate(allResults, requirement.ProjectAggregated{ProjectCtx: projectCtx})
+	evaluation := reqEval.Evaluate(allResults, requirement.ProjectAggregated{
+		ProjectCtx: projectCtx,
+		ByScope:    buildProjectContexts(projectAggregated),
+	})
 	if evaluation.Baselined > 0 {
 		cli.PrintInfo(fmt.Sprintf("%d violation(s) ignored via baseline (%s)", evaluation.Baselined, baselinePath))
 	}

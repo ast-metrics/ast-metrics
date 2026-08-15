@@ -4,10 +4,20 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
+
+// configurationFilenames are the names a configuration file can take, from the
+// most specific to the most generic one.
+var configurationFilenames = []string{
+	".ast-metrics.yaml",
+	".ast-metrics.yml",
+	".ast-metrics.dist.yaml",
+	".ast-metrics.dist.yml",
+}
 
 type ConfigurationLoader struct {
 	FilenameToChecks []string
@@ -15,12 +25,7 @@ type ConfigurationLoader struct {
 
 func NewConfigurationLoader() *ConfigurationLoader {
 	return &ConfigurationLoader{
-		FilenameToChecks: []string{
-			".ast-metrics.yaml",
-			".ast-metrics.yml",
-			".ast-metrics.dist.yaml",
-			".ast-metrics.dist.yml",
-		},
+		FilenameToChecks: append([]string{}, configurationFilenames...),
 	}
 }
 
@@ -39,17 +44,7 @@ func (c *ConfigurationLoader) Loads(cfg *Configuration) (*Configuration, error) 
 				return cfg, err
 			}
 
-			// Strict pass: detect unknown fields and warn instead of silently
-			// ignoring them, so typos or outdated field names are surfaced.
-			strict := yaml.NewDecoder(bytes.NewReader(data))
-			strict.KnownFields(true)
-			var probe Configuration
-			if derr := strict.Decode(&probe); derr != nil {
-				logrus.Warnf("configuration file %s contains unexpected content and some settings may be ignored: %v", filename, derr)
-			}
-
-			// Authoritative pass: decode leniently into the running configuration.
-			if err := yaml.Unmarshal(data, &cfg); err != nil {
+			if err := decode(data, filename, cfg); err != nil {
 				return cfg, err
 			}
 
@@ -61,9 +56,67 @@ func (c *ConfigurationLoader) Loads(cfg *Configuration) (*Configuration, error) 
 			}
 
 			cfg.IsComingFromConfigFile = true
+			// Scope resolution compares against this path to recognize the
+			// configuration it has already loaded.
+			if absolute, err := filepath.Abs(filename); err == nil {
+				cfg.ConfigurationFilePath = absolute
+			}
 			return cfg, nil
 		}
 	}
+
+	return cfg, nil
+}
+
+// decode reads a configuration file into cfg. Unknown fields are reported but
+// not fatal: a typo or an outdated field name must be surfaced, without
+// stopping an analysis the rest of the file describes correctly.
+func decode(data []byte, filename string, cfg *Configuration) error {
+	strict := yaml.NewDecoder(bytes.NewReader(data))
+	strict.KnownFields(true)
+	var probe Configuration
+	if err := strict.Decode(&probe); err != nil {
+		logrus.Warnf("configuration file %s contains unexpected content and some settings may be ignored: %v", filename, err)
+	}
+
+	return yaml.Unmarshal(data, cfg)
+}
+
+// findConfigurationFile returns the configuration file held by directory, or an
+// empty string when it holds none.
+func findConfigurationFile(directory string) string {
+	for _, filename := range configurationFilenames {
+		path := filepath.Join(directory, filename)
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	return ""
+}
+
+// loadScopeConfiguration reads the configuration governing a single scope. It
+// starts from the built-in defaults rather than from the root configuration:
+// the closest configuration file wins whole, so that it describes the same
+// analysis whether its project is analyzed inside the monorepository or alone.
+func loadScopeConfiguration(filename string) (*Configuration, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := &Configuration{ExcludePatterns: defaultExcludePatterns()}
+	if err := decode(data, filename, cfg); err != nil {
+		return nil, err
+	}
+
+	if len(cfg.ExcludePatterns) == 0 {
+		cfg.ExcludePatterns = defaultExcludePatterns()
+	}
+
+	cfg.IsComingFromConfigFile = true
+	cfg.ConfigurationFilePath = filename
+	cfg.scopeOnly()
 
 	return cfg, nil
 }
