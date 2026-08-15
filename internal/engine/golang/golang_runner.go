@@ -1,27 +1,28 @@
 package golang
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	engine "github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/golang/module"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
 	File "github.com/ast-metrics/ast-metrics/internal/file"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/pterm/pterm"
-	"golang.org/x/mod/modfile"
 
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
 type GolangRunner struct {
-	progressbar      *pterm.SpinnerPrinter
-	Configuration    *configuration.Configuration
-	foundFiles       File.FileList
-	currentGoModFile *modfile.File
-	currentGoModPath string
+	progressbar   *pterm.SpinnerPrinter
+	Configuration *configuration.Configuration
+	foundFiles    File.FileList
+	// modules names the package a file belongs to. Files are parsed in
+	// parallel, and the cache is shared by every one of them.
+	modules *module.Cache
 }
 
 // IsRequired returns true if at least one Go file is found
@@ -55,6 +56,9 @@ func (r GolangRunner) Finish() error {
 
 // DumpAST parses Go files and returns in-memory AST objects
 func (r GolangRunner) DumpAST() []*pb.File {
+	// One cache for the whole run: every file of a directory, and every
+	// directory of a module, otherwise reads the same go.mod again.
+	r.modules = module.NewCache()
 	return engine.DumpFiles(
 		r.getFileList().Files,
 		r.progressbar,
@@ -67,43 +71,12 @@ func (r GolangRunner) Name() string {
 	return "Golang"
 }
 
-func (r *GolangRunner) SearchModfile(path string) (*modfile.File, error) {
-
-	// Avoid duplicate search
-	if r.currentGoModFile != nil {
-		// if directory is a subdirectory of the current mod file, return it
-		if strings.Contains(path, r.currentGoModPath) {
-			return r.currentGoModFile, nil
-		}
-	}
-
-	goModFile := path + string(os.PathSeparator) + "go.mod"
-
-	if _, err := os.Stat(goModFile); err == nil {
-
-		fileBytes, err := os.ReadFile(goModFile)
-		if err != nil {
-			return nil, err
-		}
-		f, err := modfile.Parse("go.mod", fileBytes, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		r.currentGoModFile = f
-		r.currentGoModPath = path
-
-		return f, nil
-	}
-
-	// Search in parent directory
-	parts := strings.Split(path, string(os.PathSeparator))
-	if len(parts) <= 2 {
-		return nil, fmt.Errorf("go.mod file not found")
-	}
-	parts = parts[:len(parts)-1]
-	parentDirectory := strings.Join(parts, string(os.PathSeparator))
-	return r.SearchModfile(parentDirectory)
+// nameThePackageAfterItsImportPath spells the namespace of a parsed file the
+// way an import statement spells it: "example.com/demo/internal/analyzer"
+// where the file says "analyzer". A file outside of any module keeps the bare
+// name, which is all it has.
+func (r *GolangRunner) nameThePackageAfterItsImportPath(file *pb.File, path string) {
+	engine.RenameNamespace(file, r.modules.ImportPathOf(filepath.Dir(path)))
 }
 
 func (r *GolangRunner) Parse(path string) (*pb.File, error) {
@@ -126,6 +99,7 @@ func (r *GolangRunner) Parse(path string) (*pb.File, error) {
 	if root.HasError() {
 		file.Errors = append(file.Errors, "Parse error")
 	}
+	r.nameThePackageAfterItsImportPath(file, path)
 
 	// Detect if file is a test file
 	file.IsTest = r.isTestFile(path, file)

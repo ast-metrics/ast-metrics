@@ -458,10 +458,15 @@ func CreateTestFileWithCode(parser Engine, fileContent string) (*pb.File, error)
 }
 
 // splitNamespaceParts cuts a namespace on its separators, a separator being a
-// run of characters that are neither a letter nor a digit, and returns the first
-// one along with the parts.
+// run of characters that spell no name, and returns the first one along with
+// the parts.
 //
-// This is what a "[^A-Za-z0-9]+" regular expression does, written by hand
+// A dash and an underscore spell a name rather than separate two: no language
+// separates namespaces with them, whereas ast-metrics, my_module and
+// snake_case_dir all read as one level. Everything else that is neither a
+// letter nor a digit separates.
+//
+// This is what a "[^A-Za-z0-9_-]+" regular expression does, written by hand
 // because the aggregation asks it of every namespace of every scope, enough for
 // the regular expression engine to be the longest part of that phase. Bytes are
 // enough to agree with the expression: every byte of a multi-byte character is
@@ -469,7 +474,8 @@ func CreateTestFileWithCode(parser Engine, fileContent string) (*pb.File, error)
 // places.
 func splitNamespaceParts(namespace string) (separator string, parts []string) {
 	isPart := func(c byte) bool {
-		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '_' || c == '-'
 	}
 
 	parts = make([]string, 0, 8)
@@ -498,31 +504,58 @@ func splitNamespaceParts(namespace string) (separator string, parts []string) {
 // Keep only n levels in namespace
 func ReduceDepthOfNamespace(namespace string, depth int) string {
 
-	// if namespace starts with github.com, avoid using the dot separator
-	if strings.HasPrefix(namespace, "github.com") {
-		namespace = strings.Replace(namespace, "github.com", "githubcom", -1)
-		depth += 1
+	// The host of an import path is one level and not one per dot: cut inside
+	// github.com, or inside golang.org, and what is left names nothing. It is
+	// flattened while the namespace is cut, and spelled back afterwards.
+	host := hostOfNamespace(namespace)
+	flattened := strings.ReplaceAll(host, ".", "")
+	if host != "" {
+		namespace = flattened + namespace[len(host):]
+		depth += strings.Count(host, ".")
+	}
+	spellHostBack := func(reduced string) string {
+		if host == "" {
+			return reduced
+		}
+		return strings.Replace(reduced, flattened, host, 1)
 	}
 
 	separator, parts := splitNamespaceParts(namespace)
 
 	if depth >= len(parts) {
-		return strings.Replace(namespace, "githubcom", "github.com", -1)
+		return spellHostBack(namespace)
 	}
 
 	result := ""
 	for i := 0; i < depth; i++ {
-		if i <= len(parts) {
-			result += parts[i] + separator
-		}
+		result += parts[i] + separator
 	}
 
-	// revert the github.com replacement
-	if strings.HasPrefix(namespace, "githubcom") {
-		result = strings.Replace(result, "githubcom", "github.com", -1)
-	}
+	return spellHostBack(strings.Trim(result, separator))
+}
 
-	return strings.Trim(result, separator)
+// IsImportPath reports whether a namespace is an import path, the way Go and
+// the languages fetching their modules over the network name a package:
+// github.com/owner/repo/internal/analyzer.
+func IsImportPath(namespace string) bool {
+	return hostOfNamespace(namespace) != ""
+}
+
+// hostOfNamespace returns the host an import path begins with, as the
+// github.com of github.com/owner/repo, and an empty string for a namespace that
+// begins with no host: a host stands before the first slash, and holds a dot.
+func hostOfNamespace(namespace string) string {
+	slash := strings.Index(namespace, "/")
+	if slash <= 0 {
+		return ""
+	}
+	host := namespace[:slash]
+	// A dot at either end spells a relative directory, "." or "..", and not a
+	// host: file paths go through this too.
+	if !strings.Contains(host, ".") || strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") {
+		return ""
+	}
+	return host
 }
 
 func SearchFilesByExtension(dirs []string, ext string) ([]string, error) {

@@ -1,11 +1,11 @@
 package deps
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/ast-metrics/ast-metrics/internal/engine/dependency"
+	"github.com/ast-metrics/ast-metrics/internal/engine/golang/module"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
@@ -35,14 +35,14 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 	// reach. A suffix is only trusted when it designates a single package.
 	suffixes := dependency.NewIndex()
 
-	modules := newModuleCache()
+	modules := module.NewCache()
 	for _, file := range files {
 		path := file.GetPath()
 		if file == nil || path == "" || file.GetProgrammingLanguage() != Language {
 			continue
 		}
 		directory := filepath.Dir(path)
-		if importPath := modules.importPathOf(directory); importPath != "" {
+		if importPath := modules.ImportPathOf(directory); importPath != "" {
 			packages.Add(importPath, path)
 		}
 		for _, suffix := range directorySuffixes(directory) {
@@ -104,71 +104,4 @@ func pathSuffixes(path string) []string {
 // package can be found by the tail of its import path.
 func directorySuffixes(directory string) []string {
 	return pathSuffixes(filepath.Clean(directory))
-}
-
-// moduleCache resolves a directory to the import path of the package it holds,
-// remembering the go.mod files found on the way up. One repository can hold
-// several modules, so the lookup stops at the nearest go.mod rather than at a
-// single project-wide root.
-type moduleCache struct {
-	// modulePathByRoot maps the directory holding a go.mod to its module path,
-	// with an empty value marking a directory known to hold no readable go.mod.
-	modulePathByRoot map[string]string
-}
-
-func newModuleCache() *moduleCache {
-	return &moduleCache{modulePathByRoot: make(map[string]string)}
-}
-
-func (c *moduleCache) importPathOf(directory string) string {
-	absolute, err := filepath.Abs(directory)
-	if err != nil {
-		absolute = filepath.Clean(directory)
-	}
-
-	for current := absolute; ; {
-		if modulePath := c.modulePathAt(current); modulePath != "" {
-			relative, err := filepath.Rel(current, absolute)
-			if err != nil {
-				return ""
-			}
-			relative = filepath.ToSlash(relative)
-			if relative == "." {
-				return modulePath
-			}
-			return modulePath + "/" + relative
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return ""
-		}
-		current = parent
-	}
-}
-
-func (c *moduleCache) modulePathAt(directory string) string {
-	if modulePath, known := c.modulePathByRoot[directory]; known {
-		return modulePath
-	}
-	modulePath := ""
-	if content, err := os.ReadFile(filepath.Join(directory, "go.mod")); err == nil {
-		modulePath = modulePathIn(string(content))
-	}
-	c.modulePathByRoot[directory] = modulePath
-	return modulePath
-}
-
-// modulePathIn reads the module path out of a go.mod. Only the module
-// directive is needed, so the file is scanned rather than parsed.
-func modulePathIn(content string) string {
-	for _, line := range strings.Split(content, "\n") {
-		// Splitting on spaces keeps "modules" from passing for "module" and
-		// drops any trailing comment along the way.
-		fields := strings.Fields(line)
-		if len(fields) < 2 || fields[0] != "module" {
-			continue
-		}
-		return strings.Trim(fields[1], `"`)
-	}
-	return ""
 }

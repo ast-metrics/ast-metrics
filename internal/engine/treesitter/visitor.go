@@ -19,6 +19,8 @@ type Visitor struct {
 	// per scope and all need it, so it is built once: building it per scope
 	// would copy the whole file for every function it holds.
 	joined []byte
+	// src is the source as parsed, the one the positions of the nodes refer to.
+	src []byte
 
 	classStk []*pb.StmtClass
 	funcStk  []*pb.StmtFunction
@@ -47,6 +49,9 @@ type Visitor struct {
 type receiverMethod struct {
 	fn       *pb.StmtFunction
 	receiver string
+	// node is the declaration of the method, searched for the imports it uses
+	// once the class is known.
+	node *sitter.Node
 }
 
 // collectLogicalLines walks the whole tree once and records the lines on which
@@ -160,6 +165,7 @@ func NewVisitor(ad LangAdapter, path string, src []byte) *Visitor {
 		ns:     &pb.StmtNamespace{Name: &pb.Name{Short: mod, Qualified: mod}, Stmts: engine.FactoryStmts(), LinesOfCode: &pb.LinesOfCode{}},
 		lines:  lines,
 		joined: []byte(strings.Join(lines, "\n")),
+		src:    src,
 	}
 	v.lineIndex = engine.NewLineIndex(lines, v.commentSyntax())
 
@@ -304,6 +310,8 @@ func (v *Visitor) bindReceiverMethods() {
 			rm.fn.Name.Qualified = v.ad.AttachQualified(class.Name.Qualified, rm.fn.Name.Short)
 		}
 		addLinesOfCode(class.LinesOfCode, rm.fn.LinesOfCode)
+		// what the method uses, the class uses
+		v.attachImportsUsedBy(class, rm.node)
 	}
 	v.receiverMethods = nil
 }
@@ -467,6 +475,7 @@ func (v *Visitor) Visit(node *sitter.Node) {
 
 		v.pushClass(c)
 		v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
+		v.attachImportsUsedBy(c, node)
 		v.popClass()
 		return
 
@@ -498,7 +507,7 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		v.attachFunction(fn)
 		if ra, ok := v.ad.(ReceiverAware); ok && v.curClass() == nil {
 			if receiver := ra.ReceiverTypeName(node); receiver != "" {
-				v.receiverMethods = append(v.receiverMethods, receiverMethod{fn: fn, receiver: receiver})
+				v.receiverMethods = append(v.receiverMethods, receiverMethod{fn: fn, receiver: receiver, node: node})
 			}
 		}
 		// the whole declaration is scanned, not only the body: a default
@@ -691,5 +700,88 @@ func (v *Visitor) recordDecision(n *sitter.Node, target *pb.Stmts) {
 			&pb.StmtDecisionLogical{Stmts: engine.FactoryStmts(), Location: loc, Operator: op})
 	case DecDefault:
 		// the fallback branch of a switch opens no new path
+	}
+}
+
+// attachImportsUsedBy couples a class to the imports of its file that it
+// names in its body.
+//
+// Most languages import at the top of the file and use from within the
+// classes: the import says what the file depends on, and only the body says
+// which class does. A class is therefore given every import of the file whose
+// name is written somewhere in its declaration, so that its coupling is
+// measured the same way as in a language whose imports sit inside the class.
+// A nameless import, as a wildcard or a namespace-wide directive, cannot be
+// looked for and stays on the file.
+//
+// The classes declared inside the class are left out of the search: they are
+// coupled on their own, and what they use is not what the enclosing class uses.
+func (v *Visitor) attachImportsUsedBy(c *pb.StmtClass, node *sitter.Node) {
+	if c == nil || c.Stmts == nil || v.ns == nil || v.ns.Stmts == nil || v.src == nil {
+		return
+	}
+	fileScope := ""
+	if v.ns.Name != nil {
+		fileScope = v.ns.Name.Qualified
+	}
+	imports := make([]*pb.StmtExternalDependency, 0)
+	for _, dep := range v.ns.Stmts.StmtExternalDependencies {
+		if dep != nil && dep.ClassName != "" && dep.From == fileScope {
+			imports = append(imports, dep)
+		}
+	}
+	if len(imports) == 0 {
+		return
+	}
+
+	named := make(map[string]struct{})
+	var walk func(n *sitter.Node)
+	walk = func(n *sitter.Node) {
+		if n == nil {
+			return
+		}
+		if n != node && v.ad.IsClass(n) {
+			return
+		}
+		if n.ChildCount() == 0 {
+			if n.IsNamed() {
+				named[n.Content(v.src)] = struct{}{}
+			}
+			return
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			walk(n.Child(i))
+		}
+	}
+	walk(node)
+
+	already := make(map[string]struct{}, len(c.Stmts.StmtExternalDependencies))
+	for _, dep := range c.Stmts.StmtExternalDependencies {
+		if dep != nil {
+			already[dep.Namespace+"|"+dep.ClassName] = struct{}{}
+		}
+	}
+	from := ""
+	if c.Name != nil {
+		from = c.Name.Qualified
+		if from == "" {
+			from = c.Name.Short
+		}
+	}
+	for _, dep := range imports {
+		key := dep.Namespace + "|" + dep.ClassName
+		if _, used := named[dep.ClassName]; !used {
+			continue
+		}
+		if _, done := already[key]; done {
+			continue
+		}
+		already[key] = struct{}{}
+		c.Stmts.StmtExternalDependencies = append(c.Stmts.StmtExternalDependencies, &pb.StmtExternalDependency{
+			ClassName:    dep.ClassName,
+			FunctionName: dep.FunctionName,
+			Namespace:    dep.Namespace,
+			From:         from,
+		})
 	}
 }

@@ -62,20 +62,40 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 	// Prepare weighted package edges (package-only projection)
 	edgesCount := make(map[string]map[string]int)
 
+	// The dependencies are gathered before any of them is reduced: the depth a
+	// namespace is cut at depends on the root the whole project shares, which is
+	// only known once every source has been seen. They are kept rather than read
+	// twice, as reading them means stating every file again.
+	dependenciesOf := make(map[*pb.File][]*pb.StmtExternalDependency, len(aggregate.ConcernedFiles))
 	for _, file := range aggregate.ConcernedFiles {
 		// Skip empty files
 		if file == nil || file.Stmts == nil {
 			continue
 		}
 		// Gather dependencies at file level
-		deps := engine.GetDependenciesInFile(file)
-		for _, dep := range deps {
+		dependenciesOf[file] = engine.GetDependenciesInFile(file)
+	}
+
+	// The root is looked for among the sources of the dependencies, and among
+	// them only: they are the nodes the graph has to keep apart, whereas a target
+	// may well belong to a framework, and a class that depends on nothing is
+	// never drawn.
+	scopes := namespacesOfScopes(aggregate.ConcernedFiles)
+	aggregate.NamespaceReducers = engine.NewNamespaceReducers(
+		sourcesOfDependencies(aggregate.ConcernedFiles, func(file *pb.File) []*pb.StmtExternalDependency {
+			return dependenciesOf[file]
+		}, scopes),
+		engine.DefaultNamespaceDepth)
+
+	for _, file := range aggregate.ConcernedFiles {
+		for _, dep := range dependenciesOf[file] {
 			if dep == nil {
 				continue
 			}
-			// Use a moderate namespace depth to aggregate weights and keep meaningful edges
-			fromNs := engine.ReduceDepthOfNamespace(dep.From, 3)
-			toNs := engine.ReduceDepthOfNamespace(dep.Namespace, 3)
+			// Reduce the namespaces to keep the nodes at the scale of a module
+			// rather than of a class, and the edges meaningful
+			fromNs := aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), scopes.sourceOf(dep))
+			toNs := aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), dep.Namespace)
 			if fromNs == "" || toNs == "" || fromNs == toNs {
 				continue
 			}

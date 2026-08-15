@@ -13,32 +13,22 @@ func NewCommunitySubMetricsCalculator() *CommunitySubMetricsCalculator {
 
 func (c *CommunitySubMetricsCalculator) Calculate(aggregate *Aggregated) {
 
-	// communities := aggregate.Community.Communities
 	files := aggregate.ConcernedFiles
-
-	// on a engine.ReduceDepthOfNamespace(<name>, 3) pour recuper le nom de la communaute depuis un noeud
-	// On recupere les metrics des fichiers, on les stocke dans une structure pour chaque communauté, puis on aggrège tout ça
-	// communityMetrics := make(map[string]*Aggregated)
 
 	aggregate.Community.TopCommittersPerCommunity = make(map[string]map[string]int)
 	aggregate.Community.BusFactorPerCommunity = make(map[string]int)
 
 	for _, file := range files {
 
-		// commits := file.Commits.Commits
-
-		// Get the package namespace from the file path, similar to how graph nodes are created
-		// Graph nodes use ReduceDepthOfNamespace on dependency namespaces at depth 3
-		// We need to find which graph node this file belongs to
-
-		// Try to find the namespace from the file's first namespace statement
+		// Find the graph node this file belongs to, by reducing its namespace the
+		// way the graph reduced the namespaces it was built from.
 		var namespace string
 		if file.Stmts != nil && len(file.Stmts.StmtNamespace) > 0 && file.Stmts.StmtNamespace[0].Name != nil {
 			namespace = file.Stmts.StmtNamespace[0].Name.Qualified
 			if namespace == "" {
 				namespace = file.Stmts.StmtNamespace[0].Name.Short
 			}
-			namespace = engine.ReduceDepthOfNamespace(namespace, 3)
+			namespace = aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), namespace)
 		}
 
 		// If no namespace found, try using the file path

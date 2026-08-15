@@ -1,11 +1,10 @@
 package deps
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/ast-metrics/ast-metrics/internal/engine/dependency"
+	"github.com/ast-metrics/ast-metrics/internal/engine/rust/module"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
@@ -41,20 +40,21 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 	locations := make(map[string]crateModule)
 	crateNames := make(map[string]string)
 
-	crates := newCrateCache()
+	crates := module.NewCache()
 	for _, file := range files {
 		path := file.GetPath()
 		if file == nil || path == "" || file.GetProgrammingLanguage() != Language {
 			continue
 		}
-		location, found := crates.locate(path)
+		located, found := crates.Locate(path)
 		if !found {
 			continue
 		}
+		location := crateModule{crate: located.Crate, module: located.Module}
 		locations[path] = location
 		modules.Add(moduleKey(location.crate, location.module), path)
-		if name := crates.nameOf(location.crate); name != "" {
-			crateNames[name] = location.crate
+		if located.Name != "" {
+			crateNames[located.Name] = location.crate
 		}
 	}
 	return &scopedFileDependencyResolver{
@@ -144,8 +144,10 @@ func (r *scopedFileDependencyResolver) rebase(from crateModule, path string) (st
 		return from.crate, append(append([]string{}, current...), rest...), true
 	}
 
-	// A sibling crate of the workspace, named as its Cargo.toml declares it.
-	if crate, found := r.crateNames[segments[0]]; found && crate != from.crate {
+	// A crate of the workspace, named as its Cargo.toml declares it: a sibling
+	// crate, or the importing crate itself, which is how the engine spells a
+	// `crate::` path once it has read it.
+	if crate, found := r.crateNames[segments[0]]; found {
 		return crate, segments[1:], true
 	}
 	// Otherwise the path is read from the crate root, which is how the 2015
@@ -154,113 +156,4 @@ func (r *scopedFileDependencyResolver) rebase(from crateModule, path string) (st
 	return from.crate, segments, true
 }
 
-func splitPath(path string) []string {
-	segments := make([]string, 0, 4)
-	for _, segment := range strings.Split(path, "::") {
-		if segment = strings.TrimSpace(segment); segment != "" {
-			segments = append(segments, segment)
-		}
-	}
-	return segments
-}
-
-// crateCache maps a file to its place in the module tree, remembering the
-// Cargo.toml files found while walking up. A workspace holds several crates,
-// so the search stops at the nearest manifest rather than at a single root.
-type crateCache struct {
-	// nameByRoot maps a crate root directory to the package name declared in
-	// its Cargo.toml, with an empty value marking a directory known to hold no
-	// readable manifest.
-	nameByRoot map[string]string
-}
-
-func newCrateCache() *crateCache {
-	return &crateCache{nameByRoot: make(map[string]string)}
-}
-
-func (c *crateCache) locate(path string) (crateModule, bool) {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		absolute = filepath.Clean(path)
-	}
-	// The source directory of the crate, which the module paths are relative
-	// to. Anything outside a src/ directory is not part of a crate laid out
-	// the way cargo expects.
-	sourceRoot := sourceRootOf(absolute)
-	if sourceRoot == "" {
-		return crateModule{}, false
-	}
-	crate := filepath.Dir(sourceRoot)
-	c.nameOf(crate)
-	return crateModule{crate: crate, module: moduleOf(sourceRoot, absolute)}, true
-}
-
-func (c *crateCache) nameOf(crate string) string {
-	if name, known := c.nameByRoot[crate]; known {
-		return name
-	}
-	name := ""
-	if content, err := os.ReadFile(filepath.Join(crate, "Cargo.toml")); err == nil {
-		name = packageNameIn(string(content))
-	}
-	c.nameByRoot[crate] = name
-	return name
-}
-
-// sourceRootOf returns the innermost "src" directory above a file, which is
-// where a crate's module tree starts.
-func sourceRootOf(path string) string {
-	for current := filepath.Dir(path); ; {
-		if filepath.Base(current) == "src" {
-			return current
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return ""
-		}
-		current = parent
-	}
-}
-
-// moduleOf reads the module path a file implements from its place under the
-// source root: lib.rs and main.rs are the crate root, a/mod.rs and a.rs are
-// both the module `a`.
-func moduleOf(sourceRoot, path string) string {
-	relative, err := filepath.Rel(sourceRoot, path)
-	if err != nil {
-		return ""
-	}
-	segments := strings.Split(filepath.ToSlash(relative), "/")
-	last := len(segments) - 1
-	switch strings.TrimSuffix(segments[last], ".rs") {
-	case "lib", "main", "mod":
-		segments = segments[:last]
-	default:
-		segments[last] = strings.TrimSuffix(segments[last], ".rs")
-	}
-	return strings.Join(segments, "::")
-}
-
-// packageNameIn reads the package name out of a Cargo.toml. Only the name of
-// the [package] section is needed, so the file is scanned rather than parsed.
-// Cargo lets a crate be named with dashes and referred to with underscores.
-func packageNameIn(content string) string {
-	inPackage := false
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "[") {
-			inPackage = line == "[package]"
-			continue
-		}
-		if !inPackage {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		// The key is compared whole, so that "names" does not pass for "name".
-		if !found || strings.TrimSpace(key) != "name" {
-			continue
-		}
-		return strings.ReplaceAll(strings.Trim(strings.TrimSpace(value), `"'`), "-", "_")
-	}
-	return ""
-}
+func splitPath(path string) []string { return module.SplitPath(path) }

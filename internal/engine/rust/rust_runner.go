@@ -6,6 +6,7 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/rust/module"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
 	"github.com/ast-metrics/ast-metrics/internal/file"
 	pb "github.com/ast-metrics/ast-metrics/pb"
@@ -18,6 +19,9 @@ type RustRunner struct {
 	progressbar   *pterm.SpinnerPrinter
 	Configuration *configuration.Configuration
 	foundFiles    file.FileList
+	// crates locates the files in the module tree of their crate. Files are
+	// parsed in parallel, and the cache is shared by every one of them.
+	crates *module.Cache
 }
 
 func (r RustRunner) Name() string                                     { return "Rust" }
@@ -27,6 +31,9 @@ func (r *RustRunner) SetProgressbar(p *pterm.SpinnerPrinter)          { r.progre
 func (r *RustRunner) SetConfiguration(c *configuration.Configuration) { r.Configuration = c }
 
 func (r RustRunner) DumpAST() []*pb.File {
+	// One cache for the whole run: every file of a crate otherwise reads the
+	// same Cargo.toml again.
+	r.crates = module.NewCache()
 	return engine.DumpFiles(
 		r.getFileList().Files,
 		r.progressbar,
@@ -61,11 +68,31 @@ func (r RustRunner) Parse(path string) (*pb.File, error) {
 
 	file := v.Result()
 	file.ProgrammingLanguage = "Rust"
+	r.nameTheModuleAfterItsPath(file, path)
 
 	// Detect if file is a test file
 	file.IsTest = r.isTestFile(path, src)
 
 	return file, nil
+}
+
+// nameTheModuleAfterItsPath spells the namespace of a parsed file the way a
+// use statement spells it from outside, "demo::artifact" where the file is
+// src/artifact/mod.rs of the crate demo, and anchors the use paths of the file
+// the same way: `use crate::clearing::Clearing` depends on demo::clearing, and
+// `use super::shared` on the module beside the importing one. A file outside
+// of any crate keeps its bare name, which is all it has.
+func (r RustRunner) nameTheModuleAfterItsPath(file *pb.File, path string) {
+	location, found := r.crates.Locate(path)
+	if !found {
+		return
+	}
+	engine.RenameNamespace(file, location.Path())
+	for _, dependency := range engine.DependenciesAtEveryScope(file) {
+		if dependency != nil && dependency.Namespace != "" {
+			dependency.Namespace = module.Anchor(location, dependency.Namespace)
+		}
+	}
 }
 
 func (r *RustRunner) getFileList() file.FileList {
