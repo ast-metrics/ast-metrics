@@ -3,6 +3,7 @@ package golang
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	enginePkg "github.com/ast-metrics/ast-metrics/internal/engine"
@@ -60,13 +61,18 @@ func TestParseNamesThePackageAfterItsImportPath(t *testing.T) {
 	if short != "analyzer" {
 		t.Errorf("namespace short name = %q, expected %q", short, "analyzer")
 	}
-	for _, from := range froms {
-		if expected := "example.com/demo/internal/analyzer"; from != expected {
-			t.Errorf("dependency comes from %q, expected %q", from, expected)
-		}
-	}
+	// The import is read once at the top of the file, coming from the package,
+	// and once more from the struct using it, coming from the struct.
 	if len(froms) == 0 {
 		t.Error("expected the import to be read as a dependency")
+	}
+	for _, from := range froms {
+		if from != "example.com/demo/internal/analyzer" && from != `analyzer\Aggregator` {
+			t.Errorf("dependency comes from %q, expected the import path or the struct", from)
+		}
+	}
+	if !slices.Contains(froms, "example.com/demo/internal/analyzer") {
+		t.Errorf("expected a dependency coming from the package, got %q", froms)
 	}
 }
 
@@ -89,8 +95,8 @@ func TestParseKeepsTheBareNameOutsideOfAnyModule(t *testing.T) {
 		t.Errorf("namespace = %q/%q, expected the bare name on both", short, qualified)
 	}
 	for _, from := range froms {
-		if from != "analyzer" {
-			t.Errorf("dependency comes from %q, expected %q", from, "analyzer")
+		if from != "analyzer" && from != `analyzer\Aggregator` {
+			t.Errorf("dependency comes from %q, expected the bare name or the struct", from)
 		}
 	}
 }
