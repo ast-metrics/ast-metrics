@@ -8,6 +8,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
+	"github.com/ast-metrics/ast-metrics/internal/engine/typescript/module"
 	"github.com/ast-metrics/ast-metrics/internal/file"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 
@@ -20,6 +21,9 @@ type TypeScriptRunner struct {
 	progressbar   *pterm.SpinnerPrinter
 	Configuration *configuration.Configuration
 	foundFiles    file.FileList
+	// packages locates the files in their package. Files are parsed in
+	// parallel, and the cache is shared by every one of them.
+	packages *module.Cache
 }
 
 func (r TypeScriptRunner) IsRequired() bool {
@@ -29,6 +33,9 @@ func (r TypeScriptRunner) IsRequired() bool {
 func (r *TypeScriptRunner) Ensure() error { return nil }
 
 func (r TypeScriptRunner) DumpAST() []*pb.File {
+	// One cache for the whole run: every file of a directory otherwise looks
+	// for the same manifest again.
+	r.packages = module.NewCache()
 	return engine.DumpFiles(
 		r.getFileList().Files,
 		r.progressbar,
@@ -73,10 +80,29 @@ func (r TypeScriptRunner) Parse(path string) (*pb.File, error) {
 	v.Visit(root)
 	file := v.Result()
 	file.ProgrammingLanguage = "TypeScript"
+	r.nameTheModuleAfterItsPath(file, path)
 
 	file.IsTest = r.isTestFile(path)
 
 	return file, nil
+}
+
+// nameTheModuleAfterItsPath spells the namespace of a parsed file by its path
+// from the root of its package, "src/artifact/entrypoint" where the file says
+// "entrypoint", and spells the relative imports of the file the same way:
+// "../clearing/clearing" written there depends on src/clearing/clearing. A
+// file under no package keeps its bare name, which is all it has.
+func (r TypeScriptRunner) nameTheModuleAfterItsPath(file *pb.File, path string) {
+	location, found := r.packages.Locate(path)
+	if !found {
+		return
+	}
+	engine.RenameNamespace(file, location.Module)
+	for _, dependency := range engine.DependenciesAtEveryScope(file) {
+		if dependency != nil && dependency.Namespace != "" {
+			dependency.Namespace = module.Anchor(location, dependency.Namespace)
+		}
+	}
 }
 
 func (r *TypeScriptRunner) getFileList() file.FileList {
