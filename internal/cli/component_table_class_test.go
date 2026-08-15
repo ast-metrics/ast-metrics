@@ -5,6 +5,7 @@ import (
 
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewComponentTableClass(t *testing.T) {
@@ -84,6 +85,32 @@ func TestComponentTableClass_Render(t *testing.T) {
 
 	assert.Contains(t, rendered, "Use arrows to navigate and esc to quit", "Help is present")
 	assert.Contains(t, rendered, "ClassA", "ClassA is present")
+}
+
+func TestComponentTableClassHandlesMissingClassMetrics(t *testing.T) {
+	files := []*pb.File{{
+		Path: "forward.hpp",
+		Stmts: &pb.Stmts{
+			StmtClass: []*pb.StmtClass{{
+				Name:  &pb.Name{Qualified: "Forward", Short: "Forward"},
+				Stmts: &pb.Stmts{Analyze: &pb.Analyze{}},
+			}},
+			StmtNamespace: []*pb.StmtNamespace{{
+				Stmts: &pb.Stmts{StmtClass: []*pb.StmtClass{{
+					Name:  &pb.Name{Qualified: "Forward", Short: "Forward"},
+					Stmts: &pb.Stmts{Analyze: &pb.Analyze{}},
+				}}},
+			}},
+		},
+	}}
+
+	component := NewComponentTableClass(false, files)
+	require.Len(t, component.table.Rows(), 1, "namespace and file views of a class must not be duplicated")
+	row := component.table.Rows()[0]
+	require.Len(t, row, 9)
+	assert.Equal(t, "Forward", row[0])
+	assert.Equal(t, "0", row[4])
+	assert.Equal(t, "0.00", row[7])
 }
 
 func TestComponentTableClass_Sort(t *testing.T) {

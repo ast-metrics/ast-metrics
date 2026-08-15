@@ -1123,6 +1123,8 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 	// Create the hashmaps of files, by Path then by class name.
 	files := make(map[string]*pb.File)
 	classesMap := make(map[string]*pb.StmtClass)
+	classesByShort := make(map[string]*pb.StmtClass)
+	ambiguousShort := make(map[string]bool)
 	// Populate the 'files' map with namespace keys.
 	// Test files are skipped: they are not production code, so they must neither
 	// contribute to the coupling sums nor be reachable as a coupling source.
@@ -1144,7 +1146,15 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 				continue
 			}
 			classesMap[class.Name.Qualified] = class
+			if previous, exists := classesByShort[class.Name.Short]; exists && previous != class {
+				ambiguousShort[class.Name.Short] = true
+			} else {
+				classesByShort[class.Name.Short] = class
+			}
 		}
+	}
+	for short := range ambiguousShort {
+		delete(classesByShort, short)
 	}
 
 	for _, file := range aggregated.ConcernedFiles {
@@ -1241,6 +1251,12 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 
 				// Use the qualified namespace to find the target class in the classesMap
 				fromClass := classesMap[dependency.Namespace]
+				if fromClass == nil {
+					// Syntax-only engines may know the referenced class name but
+					// not its file-qualified name. Resolve an unambiguous short
+					// name across the analyzed project; collisions remain unresolved.
+					fromClass = classesByShort[dependency.ClassName]
+				}
 				if fromClass != nil {
 
 					if fromClass.Stmts == nil {

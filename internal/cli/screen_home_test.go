@@ -3,9 +3,9 @@ package cli
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	pb "github.com/ast-metrics/ast-metrics/pb"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -45,5 +45,27 @@ func TestInit(t *testing.T) {
 
 	if cmd != nil {
 		t.Errorf("Expected cmd to be nil, but got %v", cmd)
+	}
+}
+
+func TestFillInScreensSortsProgrammingLanguages(t *testing.T) {
+	project := analyzer.ProjectAggregated{ByProgrammingLanguage: map[string]analyzer.Aggregated{
+		"Python": {},
+		"C++":    {},
+		"Golang": {},
+	}}
+
+	for range 20 {
+		model := modelChoices{projectAggregated: project}
+		fillInScreens(&model)
+		assert.Len(t, model.screens, 6)
+		languages := make([]string, 0, 3)
+		for _, screen := range model.screens[3:] {
+			languageScreen, ok := screen.(*ScreenByProgrammingLanguage)
+			if assert.True(t, ok) {
+				languages = append(languages, languageScreen.programmingLangageName)
+			}
+		}
+		assert.Equal(t, []string{"C++", "Golang", "Python"}, languages)
 	}
 }
