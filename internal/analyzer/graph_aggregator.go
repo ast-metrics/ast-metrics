@@ -62,6 +62,12 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 	// Prepare weighted package edges (package-only projection)
 	edgesCount := make(map[string]map[string]int)
 
+	// The dependencies are gathered before any of them is reduced: the depth a
+	// namespace is cut at depends on the root the whole project shares, which is
+	// only known once every source has been seen. They are kept rather than read
+	// twice, as reading them means stating every file again.
+	dependenciesPerFile := make([][]*pb.StmtExternalDependency, 0, len(aggregate.ConcernedFiles))
+	sources := make(map[string]struct{})
 	for _, file := range aggregate.ConcernedFiles {
 		// Skip empty files
 		if file == nil || file.Stmts == nil {
@@ -69,13 +75,32 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 		}
 		// Gather dependencies at file level
 		deps := engine.GetDependenciesInFile(file)
+		dependenciesPerFile = append(dependenciesPerFile, deps)
+		for _, dep := range deps {
+			if dep == nil || dep.From == "" {
+				continue
+			}
+			// The root is looked for among the sources of the dependencies, and
+			// among them only: they are the nodes the graph has to keep apart,
+			// whereas a target may well belong to a framework, and a class that
+			// depends on nothing is never drawn.
+			sources[dep.From] = struct{}{}
+		}
+	}
+
+	// The namespaces are sorted so that a run cannot end up with another root,
+	// and another graph, than the previous one.
+	aggregate.NamespaceReducer = engine.NewNamespaceReducer(slices.Sorted(maps.Keys(sources)), engine.DefaultNamespaceDepth)
+
+	for _, deps := range dependenciesPerFile {
 		for _, dep := range deps {
 			if dep == nil {
 				continue
 			}
-			// Use a moderate namespace depth to aggregate weights and keep meaningful edges
-			fromNs := engine.ReduceDepthOfNamespace(dep.From, 3)
-			toNs := engine.ReduceDepthOfNamespace(dep.Namespace, 3)
+			// Reduce the namespaces to keep the nodes at the scale of a module
+			// rather than of a class, and the edges meaningful
+			fromNs := aggregate.NamespaceReducer.Reduce(dep.From)
+			toNs := aggregate.NamespaceReducer.Reduce(dep.Namespace)
 			if fromNs == "" || toNs == "" || fromNs == toNs {
 				continue
 			}

@@ -99,3 +99,39 @@ class B {
 		t.Fatalf("expected at least one package relation entry")
 	}
 }
+
+// Under a root deeper than the two levels the package relations are named by,
+// every package used to be named after the project itself, and the relations
+// then read as the project depending on nothing but itself.
+func Test_PackageRelations_KeepThePackagesApartUnderADeepRoot(t *testing.T) {
+	root := `Company\Project\SubProject`
+	aggregated := graphOf(t,
+		phpModule(root+`\Artifact`, root+`\Clearing`),
+		phpModule(root+`\Clearing`, root+`\Import`),
+		phpModule(root+`\Import`, root+`\Artifact`),
+	)
+
+	for _, expected := range []struct{ from, to string }{
+		{root + `\Artifact`, root + `\Clearing`},
+		{root + `\Clearing`, root + `\Import`},
+		{root + `\Import`, root + `\Artifact`},
+	} {
+		if aggregated.PackageRelations[expected.from][expected.to] == 0 {
+			t.Errorf("expected a relation from %q to %q, got %v",
+				expected.from, expected.to, aggregated.PackageRelations)
+		}
+	}
+}
+
+// A project rooted near the top keeps the two levels its packages have always
+// been named by.
+func Test_PackageRelations_KeepTheirDepthUnderAShallowRoot(t *testing.T) {
+	aggregated := graphOf(t,
+		phpModule(`App\Service\Mailer`, `App\Http\Router`),
+		phpModule(`App\Http\Router`, `App\Service\Mailer`),
+	)
+
+	if aggregated.PackageRelations[`App\Service`][`App\Http`] == 0 {
+		t.Errorf("expected a relation from App\\Service to App\\Http, got %v", aggregated.PackageRelations)
+	}
+}

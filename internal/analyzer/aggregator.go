@@ -109,11 +109,16 @@ type Aggregated struct {
 	PackageRelations                        map[string]map[string]int // counter of dependencies. Ex: A -> B -> 2
 	FileDependencies                        FileDependencyGraph
 	Graph                                   *pb.Graph
-	ExternalNodes                           map[string]bool // node IDs that are external (not from project source)
-	Community                               *CommunityMetrics
-	TestQuality                             *TestQualityMetrics
-	Suggestions                             []Suggestion
-	Architecture                            *ArchitectureMetrics
+	// NamespaceReducer maps a namespace to the node of Graph it belongs to. It
+	// is built along with the graph, and is what anything looking a node up has
+	// to go through: the depth a namespace is cut at depends on the project, so
+	// reducing it by hand somewhere else gives a node that does not exist.
+	NamespaceReducer *engine.NamespaceReducer
+	ExternalNodes    map[string]bool // node IDs that are external (not from project source)
+	Community        *CommunityMetrics
+	TestQuality      *TestQualityMetrics
+	Suggestions      []Suggestion
+	Architecture     *ArchitectureMetrics
 }
 
 type ProjectComparaison struct {
@@ -1116,6 +1121,30 @@ func (r *Aggregator) reduceMetrics(aggregated Aggregated) Aggregated {
 	return result
 }
 
+// packageRelationsDepth is the number of levels a namespace keeps in the
+// package relations. They are named more coarsely than the nodes of the graph,
+// which the JSON report and the MCP tools have always read them as.
+const packageRelationsDepth = 2
+
+// sourcesOfDependencies lists the namespaces the project depends from, sorted so
+// that a run cannot name its packages differently than the previous one. Test
+// files are left out, as they are everywhere else a dependency is read.
+func sourcesOfDependencies(aggregated *Aggregated) []string {
+	sources := make(map[string]struct{})
+	for _, file := range aggregated.ConcernedFiles {
+		if file == nil || file.Stmts == nil || file.GetIsTest() {
+			continue
+		}
+		for _, dependency := range file.Stmts.StmtExternalDependencies {
+			if dependency == nil || dependency.From == "" {
+				continue
+			}
+			sources[dependency.From] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(sources))
+}
+
 // Map the coupling to get the package relations and the afferent coupling
 func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 	result := *aggregated
@@ -1147,6 +1176,13 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 		}
 	}
 
+	// The package relations name their packages after the root the project
+	// shares, for the same reason the graph does: two levels of a project rooted
+	// at Company\Project\SubProject name the project itself, and every relation
+	// then reads as the project depending on itself. A project rooted higher
+	// keeps the two levels it has always been named by.
+	reducer := engine.NewNamespaceReducer(sourcesOfDependencies(aggregated), packageRelationsDepth)
+
 	for _, file := range aggregated.ConcernedFiles {
 
 		if file == nil || file.Stmts == nil || file.Stmts.StmtExternalDependencies == nil {
@@ -1177,8 +1213,8 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 				continue
 			}
 
-			namespaceTo := engine.ReduceDepthOfNamespace(dependency.Namespace, 2)
-			namespaceFrom := engine.ReduceDepthOfNamespace(dependency.From, 2)
+			namespaceTo := reducer.Reduce(dependency.Namespace)
+			namespaceFrom := reducer.Reduce(dependency.From)
 
 			if namespaceFrom == "" || namespaceTo == "" {
 				continue

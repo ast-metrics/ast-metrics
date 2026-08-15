@@ -1,27 +1,28 @@
 package golang
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	engine "github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/golang/module"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
 	File "github.com/ast-metrics/ast-metrics/internal/file"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/pterm/pterm"
-	"golang.org/x/mod/modfile"
 
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
 type GolangRunner struct {
-	progressbar      *pterm.SpinnerPrinter
-	Configuration    *configuration.Configuration
-	foundFiles       File.FileList
-	currentGoModFile *modfile.File
-	currentGoModPath string
+	progressbar   *pterm.SpinnerPrinter
+	Configuration *configuration.Configuration
+	foundFiles    File.FileList
+	// modules names the package a file belongs to. Files are parsed in
+	// parallel, and the cache is shared by every one of them.
+	modules *module.Cache
 }
 
 // IsRequired returns true if at least one Go file is found
@@ -55,6 +56,9 @@ func (r GolangRunner) Finish() error {
 
 // DumpAST parses Go files and returns in-memory AST objects
 func (r GolangRunner) DumpAST() []*pb.File {
+	// One cache for the whole run: every file of a directory, and every
+	// directory of a module, otherwise reads the same go.mod again.
+	r.modules = module.NewCache()
 	return engine.DumpFiles(
 		r.getFileList().Files,
 		r.progressbar,
@@ -67,43 +71,58 @@ func (r GolangRunner) Name() string {
 	return "Golang"
 }
 
-func (r *GolangRunner) SearchModfile(path string) (*modfile.File, error) {
-
-	// Avoid duplicate search
-	if r.currentGoModFile != nil {
-		// if directory is a subdirectory of the current mod file, return it
-		if strings.Contains(path, r.currentGoModPath) {
-			return r.currentGoModFile, nil
-		}
+// nameThePackageAfterItsImportPath spells the namespace of a parsed file the
+// way an import statement spells it.
+//
+// A Go file names its package with a bare word, "analyzer", where every file
+// importing it names it by its import path, "example.com/demo/internal/
+// analyzer". Left as they are, the two ends of a dependency are not written in
+// the same language: nothing links a package to the packages using it, and two
+// directories that happen to hold a package of the same name are one and the
+// same. The short name is kept: it is how the package reads in the report.
+//
+// A file outside of any module keeps the bare name, which is all it has.
+func (r *GolangRunner) nameThePackageAfterItsImportPath(file *pb.File, path string) {
+	if file == nil || file.Stmts == nil || len(file.Stmts.StmtNamespace) == 0 {
+		return
+	}
+	namespace := file.Stmts.StmtNamespace[0]
+	if namespace == nil || namespace.Name == nil {
+		return
 	}
 
-	goModFile := path + string(os.PathSeparator) + "go.mod"
-
-	if _, err := os.Stat(goModFile); err == nil {
-
-		fileBytes, err := os.ReadFile(goModFile)
-		if err != nil {
-			return nil, err
-		}
-		f, err := modfile.Parse("go.mod", fileBytes, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		r.currentGoModFile = f
-		r.currentGoModPath = path
-
-		return f, nil
+	importPath := r.modules.ImportPathOf(filepath.Dir(path))
+	if importPath == "" {
+		return
 	}
 
-	// Search in parent directory
-	parts := strings.Split(path, string(os.PathSeparator))
-	if len(parts) <= 2 {
-		return nil, fmt.Errorf("go.mod file not found")
+	packageName := namespace.Name.Qualified
+	namespace.Name.Qualified = importPath
+	// The dependencies were named after the package while it was being read, so
+	// they carry the bare name and have to be spelled again.
+	for _, dependency := range dependenciesIn(file) {
+		if dependency != nil && dependency.From == packageName {
+			dependency.From = importPath
+		}
 	}
-	parts = parts[:len(parts)-1]
-	parentDirectory := strings.Join(parts, string(os.PathSeparator))
-	return r.SearchModfile(parentDirectory)
+}
+
+// dependenciesIn lists the dependencies held by a file, at every scope they can
+// be attached to. The visitor attaches one dependency to several scopes at
+// once, so the same one can be listed more than once.
+func dependenciesIn(file *pb.File) []*pb.StmtExternalDependency {
+	dependencies := file.Stmts.StmtExternalDependencies
+	for _, namespace := range file.Stmts.StmtNamespace {
+		if namespace != nil && namespace.Stmts != nil {
+			dependencies = append(dependencies, namespace.Stmts.StmtExternalDependencies...)
+		}
+	}
+	for _, class := range engine.GetClassesInFile(file) {
+		if class != nil && class.Stmts != nil {
+			dependencies = append(dependencies, class.Stmts.StmtExternalDependencies...)
+		}
+	}
+	return dependencies
 }
 
 func (r *GolangRunner) Parse(path string) (*pb.File, error) {
@@ -126,6 +145,7 @@ func (r *GolangRunner) Parse(path string) (*pb.File, error) {
 	if root.HasError() {
 		file.Errors = append(file.Errors, "Parse error")
 	}
+	r.nameThePackageAfterItsImportPath(file, path)
 
 	// Detect if file is a test file
 	file.IsTest = r.isTestFile(path, file)

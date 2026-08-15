@@ -25,7 +25,6 @@ require (
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli/v2 v2.27.1
 	github.com/yargevad/filepathx v1.0.0
-	golang.org/x/mod v0.35.0
 	golang.org/x/term v0.43.0
 	google.golang.org/protobuf v1.33.0
 	gopkg.in/yaml.v3 v3.0.1

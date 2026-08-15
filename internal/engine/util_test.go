@@ -352,6 +352,41 @@ func TestReduceDepthOfNamespace(t *testing.T) {
 		}
 	}
 
+	// A namespace is cut on what separates names, and a dash or an underscore
+	// separates nothing: they belong to the name they are written in.
+	for _, test := range []struct {
+		namespace string
+		depth     int
+		expected  string
+	}{
+		{"github.com/ast-metrics/ast-metrics/internal/analyzer", 2, "github.com/ast-metrics/ast-metrics"},
+		{"github.com/ast-metrics/ast-metrics/internal/analyzer", 4, "github.com/ast-metrics/ast-metrics/internal/analyzer"},
+		{"my_module.sub_module.deep", 2, "my_module.sub_module"},
+		{"snake_case_dir/other", 1, "snake_case_dir"},
+	} {
+		if got := ReduceDepthOfNamespace(test.namespace, test.depth); got != test.expected {
+			t.Errorf("ReduceDepthOfNamespace(%q, %d) = %q, expected %q",
+				test.namespace, test.depth, got, test.expected)
+		}
+	}
+
+	// The host of an import path counts as a single level, whichever host it is:
+	// cutting inside it names nothing.
+	for _, test := range []struct {
+		namespace string
+		depth     int
+		expected  string
+	}{
+		{"golang.org/x/tools/go/packages", 2, "golang.org/x/tools"},
+		{"gopkg.in/yaml.v3/internal", 1, "gopkg.in/yaml"},
+		{"github.com/owner/repo/internal/engine", 2, "github.com/owner/repo"},
+	} {
+		if got := ReduceDepthOfNamespace(test.namespace, test.depth); got != test.expected {
+			t.Errorf("ReduceDepthOfNamespace(%q, %d) = %q, expected %q",
+				test.namespace, test.depth, got, test.expected)
+		}
+	}
+
 	// Test github.com special case separately
 	result := ReduceDepthOfNamespace("github.com/user/repo", 2)
 	// github.com case adds 1 to depth, so depth=2 becomes depth=3
@@ -361,11 +396,11 @@ func TestReduceDepthOfNamespace(t *testing.T) {
 	}
 }
 
-// splitNamespaceParts has to answer exactly what a "[^A-Za-z0-9]+" regular
+// splitNamespaceParts has to answer exactly what a "[^A-Za-z0-9_-]+" regular
 // expression answers, separators included, or namespaces would be grouped
 // differently. The expression itself is the reference.
 func TestSplitNamespaceParts(t *testing.T) {
-	reference := regexp.MustCompile("[^A-Za-z0-9]+")
+	reference := regexp.MustCompile("[^A-Za-z0-9_-]+")
 
 	for _, namespace := range []string{
 		"",
