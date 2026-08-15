@@ -5,9 +5,11 @@
 <p align="center" style="text-align:center">
 <b>No server. No account. One binary.</b>
 <br />
-AST Metrics analyzes your codebase (complexity, architecture, coupling, bus factor...) and runs anywhere.
+Code is written faster than it can be reviewed. AST Metrics measures your codebase
+(complexity, architecture, coupling, bus factor, test quality) and, on every pull request,
+flags only what got worse.
 <br />
-Drop it in any CI. Works offline: no data leaves your machine.
+Deterministic: same code, same verdict. Works offline: no data leaves your machine.
 <br />
 Fast: 20,000+ lines of code analyzed per second, on a laptop.
 <br />
@@ -63,12 +65,23 @@ ast-metrics analyze /path/to/your/code
 
 You get a summary right in your terminal: maintainability, estimated bug probability, coupling, and the hotspots worth refactoring first. Add `--report-html=<dir>` when you want a full report, or `--tui` to explore the results in a full-screen dashboard. Nothing is written to disk unless you ask for it.
 
-> Docker image, `.deb`/`.rpm` packages and manual downloads: see the [installation instructions](https://ast-metrics.dev/getting-started/install/).
+> Docker image, npm, pip, Composer, `.deb`/`.rpm` packages and manual downloads: see the [installation instructions](https://ast-metrics.dev/getting-started/install/).
+
+## Review a pull request, without the noise
+
+```console
+ast-metrics review
+```
+
+It compares your branch with its base and reports only new or worsened findings: a new overly complex function, a coupling regression, a class that lost maintainability. Legacy code stays quiet. Unlike AI code reviewers, it is deterministic and free: same code, same verdict, no per-seat pricing. Add `--fail-on=high` when you want it to block the merge.
+
+➡️ [Reviewing your changes](https://ast-metrics.dev/getting-started/review-changes/)
 
 ## What you get
 
 | | |
 |---|---|
+| **PR review** | `ast-metrics review` flags only what got worse against the base branch |
 | **Architectural analysis** | Coupling, instability, community detection: catch design drift early |
 | **Code metrics** | Cyclomatic complexity, maintainability index, lines of code |
 | **Activity metrics** | Commit history and bus factor: know who owns what |
