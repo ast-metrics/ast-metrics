@@ -41,9 +41,17 @@ func attachTestSymbolRefs(file *pb.File, adapter *TreeSitterAdapter, root *sitte
 		return
 	}
 
-	pkg := ""
+	// pkg is the bare name of the package, the one a production struct is
+	// qualified with, so that a reference to it reads the same as the struct.
+	// The package itself is named by its import path, as every dependency of
+	// the file is: the graph links the two ends of an edge by that name.
+	pkg, importPath := "", ""
 	if len(file.Stmts.StmtNamespace) > 0 && file.Stmts.StmtNamespace[0].Name != nil {
 		pkg = file.Stmts.StmtNamespace[0].Name.GetShort()
+		importPath = file.Stmts.StmtNamespace[0].Name.GetQualified()
+	}
+	if importPath == "" {
+		importPath = pkg
 	}
 
 	// imports maps the local name of an import ("assert") to its module path.
@@ -83,7 +91,7 @@ func attachTestSymbolRefs(file *pb.File, adapter *TreeSitterAdapter, root *sitte
 		file.Stmts.StmtExternalDependencies = append(file.Stmts.StmtExternalDependencies, &pb.StmtExternalDependency{
 			ClassName: className,
 			Namespace: namespace,
-			From:      pkg,
+			From:      importPath,
 		})
 	}
 
@@ -110,7 +118,7 @@ func attachTestSymbolRefs(file *pb.File, adapter *TreeSitterAdapter, root *sitte
 		case "type_identifier":
 			name := text(src, n)
 			if pkg != "" && !goBuiltinTypes[name] && !declared[name] {
-				addRef(pkg+"\\"+name, pkg)
+				addRef(pkg+"\\"+name, importPath)
 			}
 			return
 		case "call_expression":
@@ -119,7 +127,7 @@ func attachTestSymbolRefs(file *pb.File, adapter *TreeSitterAdapter, root *sitte
 				case "identifier":
 					name := text(src, fn)
 					if !goBuiltinFuncs[name] && !goBuiltinTypes[name] && !declared[name] {
-						addRef(name, pkg)
+						addRef(name, importPath)
 					}
 				case "selector_expression":
 					op := fn.ChildByFieldName("operand")

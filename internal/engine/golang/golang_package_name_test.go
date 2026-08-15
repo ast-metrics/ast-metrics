@@ -94,3 +94,43 @@ func TestParseKeepsTheBareNameOutsideOfAnyModule(t *testing.T) {
 		}
 	}
 }
+
+// A test file refers to the structs of its own package as well, and those
+// references are dependencies like the others: their source has to be the
+// import path too, or the test files draw a second node named after the bare
+// package beside the one the production files draw.
+func TestParseNamesTheTestFileAfterItsImportPath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(root, "internal", "analyzer")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "source_test.go")
+	source := "package analyzer\n\nimport \"testing\"\n\nfunc TestAggregator(t *testing.T) { _ = Aggregator{} }\n"
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	file, err := (&GolangRunner{}).Parse(path)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !file.GetIsTest() {
+		t.Fatal("expected the file to be read as a test file")
+	}
+	dependencies := enginePkg.GetDependenciesInFile(file)
+	if len(dependencies) == 0 {
+		t.Fatal("expected the references of the test to be read as dependencies")
+	}
+	for _, dependency := range dependencies {
+		if dependency.From != "example.com/demo/internal/analyzer" {
+			t.Errorf("dependency %q comes from %q, expected the import path", dependency.ClassName, dependency.From)
+		}
+		if dependency.Namespace == "analyzer" {
+			t.Errorf("dependency %q points at the bare package name, expected the import path", dependency.ClassName)
+		}
+	}
+}
