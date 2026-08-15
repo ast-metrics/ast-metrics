@@ -72,57 +72,11 @@ func (r GolangRunner) Name() string {
 }
 
 // nameThePackageAfterItsImportPath spells the namespace of a parsed file the
-// way an import statement spells it.
-//
-// A Go file names its package with a bare word, "analyzer", where every file
-// importing it names it by its import path, "example.com/demo/internal/
-// analyzer". Left as they are, the two ends of a dependency are not written in
-// the same language: nothing links a package to the packages using it, and two
-// directories that happen to hold a package of the same name are one and the
-// same. The short name is kept: it is how the package reads in the report.
-//
-// A file outside of any module keeps the bare name, which is all it has.
+// way an import statement spells it: "example.com/demo/internal/analyzer"
+// where the file says "analyzer". A file outside of any module keeps the bare
+// name, which is all it has.
 func (r *GolangRunner) nameThePackageAfterItsImportPath(file *pb.File, path string) {
-	if file == nil || file.Stmts == nil || len(file.Stmts.StmtNamespace) == 0 {
-		return
-	}
-	namespace := file.Stmts.StmtNamespace[0]
-	if namespace == nil || namespace.Name == nil {
-		return
-	}
-
-	importPath := r.modules.ImportPathOf(filepath.Dir(path))
-	if importPath == "" {
-		return
-	}
-
-	packageName := namespace.Name.Qualified
-	namespace.Name.Qualified = importPath
-	// The dependencies were named after the package while it was being read, so
-	// they carry the bare name and have to be spelled again.
-	for _, dependency := range dependenciesIn(file) {
-		if dependency != nil && dependency.From == packageName {
-			dependency.From = importPath
-		}
-	}
-}
-
-// dependenciesIn lists the dependencies held by a file, at every scope they can
-// be attached to. The visitor attaches one dependency to several scopes at
-// once, so the same one can be listed more than once.
-func dependenciesIn(file *pb.File) []*pb.StmtExternalDependency {
-	dependencies := file.Stmts.StmtExternalDependencies
-	for _, namespace := range file.Stmts.StmtNamespace {
-		if namespace != nil && namespace.Stmts != nil {
-			dependencies = append(dependencies, namespace.Stmts.StmtExternalDependencies...)
-		}
-	}
-	for _, class := range engine.GetClassesInFile(file) {
-		if class != nil && class.Stmts != nil {
-			dependencies = append(dependencies, class.Stmts.StmtExternalDependencies...)
-		}
-	}
-	return dependencies
+	engine.RenameNamespace(file, r.modules.ImportPathOf(filepath.Dir(path)))
 }
 
 func (r *GolangRunner) Parse(path string) (*pb.File, error) {
