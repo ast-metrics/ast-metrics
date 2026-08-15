@@ -1118,12 +1118,57 @@ func (r *Aggregator) reduceMetrics(aggregated Aggregated) Aggregated {
 // which the JSON report and the MCP tools have always read them as.
 const packageRelationsDepth = 2
 
+// scopeNamespaces maps the qualified name of every class and function of the
+// project onto the namespace of the file declaring it.
+//
+// A dependency is attached to the scope using it, and names that scope as its
+// source: the namespace when the import sits at the top of the file, the class
+// or the function when it sits, or is used, inside one. The packages and the
+// graph are about namespaces, so a source that is a class or a function is
+// brought back to the namespace it lives in. A PHP class is named below its
+// namespace and would be cut down to it anyway, but a Go struct is named
+// "analyzer\Aggregator" where its package is an import path, and nothing but
+// this lookup relates the two.
+type scopeNamespaces map[string]string
+
+func namespacesOfScopes(files []*pb.File) scopeNamespaces {
+	scopes := make(scopeNamespaces)
+	for _, file := range files {
+		if file == nil || file.Stmts == nil {
+			continue
+		}
+		namespace := namespaceOfFile(file)
+		if namespace == "" {
+			continue
+		}
+		for _, class := range engine.GetClassesInFile(file) {
+			if class != nil && class.Name != nil && class.Name.Qualified != "" {
+				scopes[class.Name.Qualified] = namespace
+			}
+		}
+		for _, function := range engine.GetFunctionsInFile(file) {
+			if function != nil && function.Name != nil && function.Name.Qualified != "" {
+				scopes[function.Name.Qualified] = namespace
+			}
+		}
+	}
+	return scopes
+}
+
+// sourceOf returns the namespace a dependency comes from.
+func (scopes scopeNamespaces) sourceOf(dependency *pb.StmtExternalDependency) string {
+	if namespace, isScope := scopes[dependency.From]; isScope {
+		return namespace
+	}
+	return dependency.From
+}
+
 // sourcesOfDependencies lists, per programming language, the namespaces the
 // dependencies of the project come from, sorted so that a run cannot name its
 // packages differently than the previous one. Test files are left out: the root
 // of a project is what its production code shares, and a Tests namespace
 // standing beside that code would hide it.
-func sourcesOfDependencies(files []*pb.File, dependenciesOf func(*pb.File) []*pb.StmtExternalDependency) map[string][]string {
+func sourcesOfDependencies(files []*pb.File, dependenciesOf func(*pb.File) []*pb.StmtExternalDependency, scopes scopeNamespaces) map[string][]string {
 	sources := make(map[string]map[string]struct{})
 	for _, file := range files {
 		if file == nil || file.Stmts == nil || file.GetIsTest() {
@@ -1137,7 +1182,7 @@ func sourcesOfDependencies(files []*pb.File, dependenciesOf func(*pb.File) []*pb
 			if sources[language] == nil {
 				sources[language] = make(map[string]struct{})
 			}
-			sources[language][dependency.From] = struct{}{}
+			sources[language][scopes.sourceOf(dependency)] = struct{}{}
 		}
 	}
 	sorted := make(map[string][]string, len(sources))
@@ -1145,6 +1190,22 @@ func sourcesOfDependencies(files []*pb.File, dependenciesOf func(*pb.File) []*pb
 		sorted[language] = slices.Sorted(maps.Keys(owned))
 	}
 	return sorted
+}
+
+// namespaceOfFile returns the qualified name of the namespace, package or
+// module a file declares, and an empty string when it declares none.
+func namespaceOfFile(file *pb.File) string {
+	if file == nil || file.Stmts == nil || len(file.Stmts.StmtNamespace) == 0 {
+		return ""
+	}
+	namespace := file.Stmts.StmtNamespace[0]
+	if namespace == nil || namespace.Name == nil {
+		return ""
+	}
+	if namespace.Name.Qualified != "" {
+		return namespace.Name.Qualified
+	}
+	return namespace.Name.Short
 }
 
 // fileLevelDependencies lists the dependencies attached to the file itself, the
@@ -1167,6 +1228,13 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 	// is not counted once more per aggregate, and the last run, the one over the
 	// whole project, is the one that stays.
 	classesMap := make(map[string]*pb.StmtClass)
+	// A dependency names its target the way the language does: PHP writes the
+	// qualified name of the class, Java the package and the class apart, Go and
+	// C# the package or namespace alone. The targets are indexed every one of
+	// those ways, so that a class or a file is found whichever way it is named.
+	classesByNamespaceAndShort := make(map[string]*pb.StmtClass)
+	fileOfClass := make(map[*pb.StmtClass]*pb.File)
+	filesByNamespace := make(map[string][]*pb.File)
 	for _, file := range aggregated.ConcernedFiles {
 		if file == nil || file.Stmts == nil || file.GetIsTest() {
 			continue
@@ -1174,24 +1242,52 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 		if file.Stmts.Analyze != nil {
 			file.Stmts.Analyze.Coupling = &pb.Coupling{}
 		}
+		namespace := namespaceOfFile(file)
+		if namespace != "" {
+			filesByNamespace[namespace] = append(filesByNamespace[namespace], file)
+		}
 		for _, class := range engine.GetClassesInFile(file) {
 			if class == nil || class.Name == nil || class.Name.Qualified == "" {
 				continue
 			}
 			classesMap[class.Name.Qualified] = class
+			classesByNamespaceAndShort[namespace+"|"+class.Name.Short] = class
+			fileOfClass[class] = file
 			if class.Stmts != nil && class.Stmts.Analyze != nil {
 				class.Stmts.Analyze.Coupling = &pb.Coupling{}
 			}
 		}
 	}
+	// targetClassOf returns the class of the project a dependency points at, if
+	// it points at one, and nil for a package, a namespace or a foreign class.
+	targetClassOf := func(dependency *pb.StmtExternalDependency) *pb.StmtClass {
+		if class := classesMap[dependency.Namespace]; class != nil {
+			return class
+		}
+		if dependency.ClassName == "" {
+			return nil
+		}
+		return classesByNamespaceAndShort[dependency.Namespace+"|"+dependency.ClassName]
+	}
+	// targetFilesOf returns the files of the project a dependency points at:
+	// the one declaring the class, or every file of the package or namespace.
+	targetFilesOf := func(dependency *pb.StmtExternalDependency) []*pb.File {
+		if class := targetClassOf(dependency); class != nil {
+			return []*pb.File{fileOfClass[class]}
+		}
+		return filesByNamespace[dependency.Namespace]
+	}
+	// dependentFiles holds, for each file, the files depending on it.
+	dependentFiles := make(map[*pb.File]map[*pb.File]struct{})
 
 	// The package relations name their packages after the root the project
 	// shares, for the same reason the graph does: two levels of a project rooted
 	// at Company\Project\SubProject name the project itself, and every relation
 	// then reads as the project depending on itself. A project rooted higher
 	// keeps the two levels it has always been named by.
+	scopes := namespacesOfScopes(aggregated.ConcernedFiles)
 	reducers := engine.NewNamespaceReducers(
-		sourcesOfDependencies(aggregated.ConcernedFiles, fileLevelDependencies), packageRelationsDepth)
+		sourcesOfDependencies(aggregated.ConcernedFiles, fileLevelDependencies, scopes), packageRelationsDepth)
 
 	for _, file := range aggregated.ConcernedFiles {
 
@@ -1221,6 +1317,17 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 		if file.Stmts.Analyze != nil {
 			file.Stmts.Analyze.Coupling.Efferent = int32(len(uniqueDependencies))
 		}
+		for _, dependency := range uniqueDependencies {
+			for _, target := range targetFilesOf(dependency) {
+				if target == nil || target == file {
+					continue
+				}
+				if dependentFiles[target] == nil {
+					dependentFiles[target] = make(map[*pb.File]struct{})
+				}
+				dependentFiles[target][file] = struct{}{}
+			}
+		}
 
 		// The relations are walked in a fixed order, so that a run cannot count
 		// them differently than the previous one.
@@ -1228,7 +1335,7 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 			dependency := uniqueDependencies[key]
 
 			namespaceTo := reducers.Reduce(file.GetProgrammingLanguage(), dependency.Namespace)
-			namespaceFrom := reducers.Reduce(file.GetProgrammingLanguage(), dependency.From)
+			namespaceFrom := reducers.Reduce(file.GetProgrammingLanguage(), scopes.sourceOf(dependency))
 
 			if namespaceFrom == "" || namespaceTo == "" {
 				continue
@@ -1266,8 +1373,9 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 					continue
 				}
 
-				if _, ok := uniqueClassDependencies[dependency.Namespace]; !ok {
-					uniqueClassDependencies[dependency.Namespace] = dependency
+				key := dependency.Namespace + "|" + dependency.ClassName
+				if _, ok := uniqueClassDependencies[key]; !ok {
+					uniqueClassDependencies[key] = dependency
 				}
 			}
 
@@ -1281,9 +1389,8 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 
 				result.ClassesAfferentCoupling[dependencyName]++
 
-				// Use the qualified namespace to find the target class in the classesMap
-				fromClass := classesMap[dependency.Namespace]
-				if fromClass != nil {
+				fromClass := targetClassOf(dependency)
+				if fromClass != nil && fromClass != class {
 
 					if fromClass.Stmts == nil {
 						fromClass.Stmts = &pb.Stmts{}
@@ -1316,21 +1423,15 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 		}
 	}
 
-	// The afferent coupling of a file is the one of the classes it declares,
-	// which is only known once every file has been walked. A file declaring no
-	// class, as in a language without classes, has nothing to be depended on
-	// by name and keeps an afferent coupling of zero.
+	// The afferent coupling of a file is the number of files depending on it,
+	// through one of its classes or through its package, which is only known
+	// once every file has been walked.
 	for _, file := range aggregated.ConcernedFiles {
 		if file == nil || file.Stmts == nil || file.Stmts.Analyze == nil || file.Stmts.Analyze.Coupling == nil || file.GetIsTest() {
 			continue
 		}
 		coupling := file.Stmts.Analyze.Coupling
-		for _, class := range engine.GetClassesInFile(file) {
-			if class == nil || class.Stmts == nil || class.Stmts.Analyze == nil || class.Stmts.Analyze.Coupling == nil {
-				continue
-			}
-			coupling.Afferent += class.Stmts.Analyze.Coupling.Afferent
-		}
+		coupling.Afferent = int32(len(dependentFiles[file]))
 		// instability, Ce / (Ce + Ca)
 		if coupling.Afferent > 0 && coupling.Efferent > 0 {
 			coupling.Instability = float64(coupling.Efferent) / float64(coupling.Efferent+coupling.Afferent)

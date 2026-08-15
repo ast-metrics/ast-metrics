@@ -80,10 +80,11 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 	// them only: they are the nodes the graph has to keep apart, whereas a target
 	// may well belong to a framework, and a class that depends on nothing is
 	// never drawn.
+	scopes := namespacesOfScopes(aggregate.ConcernedFiles)
 	aggregate.NamespaceReducers = engine.NewNamespaceReducers(
 		sourcesOfDependencies(aggregate.ConcernedFiles, func(file *pb.File) []*pb.StmtExternalDependency {
 			return dependenciesOf[file]
-		}),
+		}, scopes),
 		engine.DefaultNamespaceDepth)
 
 	for _, file := range aggregate.ConcernedFiles {
@@ -93,7 +94,7 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 			}
 			// Reduce the namespaces to keep the nodes at the scale of a module
 			// rather than of a class, and the edges meaningful
-			fromNs := aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), dep.From)
+			fromNs := aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), scopes.sourceOf(dep))
 			toNs := aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), dep.Namespace)
 			if fromNs == "" || toNs == "" || fromNs == toNs {
 				continue
