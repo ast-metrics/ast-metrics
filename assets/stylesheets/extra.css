@@ -1,0 +1,1415 @@
+/* Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* Material declares its own tokens on `:root, [data-md-color-scheme=default]` and
+   on `[data-md-color-primary=...]`, both of which land on <body>. A plain `:root`
+   rule here would lose: <body> is a closer ancestor than <html>, and proximity
+   beats source order for inherited custom properties. Hence the body selector. */
+:root,
+body[data-md-color-scheme] {
+  /* Typography */
+  --md-text-font: "Plus Jakarta Sans", sans-serif;
+  --md-code-font: "JetBrains Mono", monospace;
+
+  /* Colors - Light Mode Only */
+  --md-default-fg-color: #1a1b26;
+  --md-default-fg-color--light: #4b5563;
+  --md-default-fg-color--lighter: #9ca3af;
+  --md-default-bg-color: #ffffff;
+  --md-primary-fg-color: #2563eb;
+  /* Blue 600 */
+  --md-primary-fg-color--light: #3b82f6;
+  /* Blue 500 */
+  --md-primary-fg-color--dark: #1d4ed8;
+  /* Blue 700 */
+  --md-accent-fg-color: #2563eb;
+  --md-typeset-a-color: #2563eb;
+
+  /* Custom Variables */
+  --glass-bg: rgba(252, 250, 245, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.4);
+  --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+
+  /* Landing page: warm paper with pixel-art accents */
+  --lp-paper: #faf7f0;
+  --lp-paper-deep: #f3eee1;
+  --lp-border: #e8e1d1;
+  --lp-serif: 'Instrument Serif', Georgia, serif;
+
+  /* Design tokens shared by the landing page and the documentation pages */
+  --am-ink: #111827;
+  --am-body: #374151;
+  --am-muted: #6b7280;
+  --am-border: #e9ebf0;
+  --am-border-strong: #dfe3ea;
+  --am-surface: #f9fafb;
+  --am-surface-alt: #f3f4f6;
+  --am-page-bg: #f8f5ee;
+  --am-blue: #2563eb;
+  --am-blue-dark: #1d4ed8;
+  --am-blue-soft: #eff6ff;
+  --am-radius-lg: 24px;
+  --am-radius: 16px;
+  --am-radius-sm: 10px;
+  --am-shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.04);
+  --am-shadow: 0 4px 6px -1px rgba(17, 24, 39, 0.05);
+  --am-shadow-lg: 0 20px 40px -14px rgba(17, 24, 39, 0.16);
+
+  /* Code blocks: same palette as the landing hero terminal */
+  --am-code-bg: #1e1e2e;
+  --am-code-fg: #c0caf5;
+  --md-code-bg-color: #1e1e2e;
+  --md-code-fg-color: #c0caf5;
+  --md-code-hl-color: rgba(122, 162, 247, 0.16);
+  --md-code-hl-comment-color: #565f89;
+  --md-code-hl-keyword-color: #bb9af7;
+  --md-code-hl-string-color: #9ece6a;
+  --md-code-hl-number-color: #ff9e64;
+  --md-code-hl-constant-color: #ff9e64;
+  --md-code-hl-function-color: #7aa2f7;
+  --md-code-hl-name-color: #c0caf5;
+  --md-code-hl-operator-color: #89ddff;
+  --md-code-hl-punctuation-color: #a9b1d6;
+  --md-code-hl-special-color: #f7768e;
+  --md-code-hl-variable-color: #e0af68;
+  --md-code-hl-generic-color: #565f89;
+
+  /* Footer: light, aligned with the landing page instead of the default dark slab */
+  --md-footer-bg-color: #f8f5ee;
+  --md-footer-bg-color--dark: #f3eee1;
+  --md-footer-fg-color: #111827;
+  --md-footer-fg-color--light: #4b5563;
+  --md-footer-fg-color--lighter: #9ca3af;
+}
+
+/* Base Layout Overrides */
+.md-header {
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: none;
+}
+
+.md-header__button.md-logo {}
+
+.md-header__button.md-logo img {
+  height: 2.5rem;
+}
+
+/* Fix Search Hover */
+.md-search__input {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+  border-radius: 99px;
+}
+
+.md-search__input:hover {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+  opacity: 1 !important;
+}
+
+.md-search__form {
+  background-color: transparent !important;
+}
+
+.md-search__form,
+.md-search__form * {
+  color: #333 !important;
+}
+
+.md-search__input::placeholder {
+  color: #6b7280 !important;
+  opacity: 1;
+}
+
+.md-tabs {
+  background-color: transparent;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.md-main__inner {
+  margin-top: 0;
+}
+
+/* Typography Enhancements */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #111827;
+}
+
+/* ==========================================================================
+   LANDING PAGE
+   Warm paper background, editorial serif headlines, pixel-art accents.
+   All landing links opt out of the documentation underline (see the
+   `.md-typeset .landing-page a` reset in the docs zone below).
+   ========================================================================== */
+
+/* The landing breaks out of Material's centered grid: full-bleed paper
+   background, sections manage their own max-width. `overflow-x: clip` on the
+   ancestor swallows the scrollbar-width excess of the 100vw stretch. */
+.md-main:has(.landing-page) {
+  background: var(--lp-paper);
+  overflow-x: clip;
+}
+
+.md-content__inner:has(.landing-page) {
+  margin: 0;
+  padding: 0;
+}
+
+.md-content__inner:has(.landing-page)::before {
+  display: none;
+}
+
+.landing-page {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  overflow-x: hidden;
+  background: var(--lp-paper);
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+}
+
+.lp-container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.lp-narrow {
+  max-width: 800px;
+  text-align: center;
+}
+
+.landing-page .lp-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--am-blue);
+  margin: 0 0 1.1rem;
+}
+
+/* --- Hero --- */
+.lp-hero {
+  padding: 5.5rem 1.5rem 3.5rem;
+  text-align: center;
+}
+
+.lp-hero-inner {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.landing-page .lp-title {
+  font-family: var(--lp-serif);
+  font-weight: 400;
+  font-size: 3.9rem;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--am-ink);
+  margin: 0 0 1.6rem;
+}
+
+.landing-page .lp-title em,
+.landing-page .lp-h2 em {
+  font-style: italic;
+  color: var(--am-blue);
+}
+
+.landing-page .lp-lead {
+  font-size: 1.18rem;
+  line-height: 1.65;
+  color: #4b5563;
+  max-width: 690px;
+  margin: 0 auto 1.6rem;
+}
+
+.landing-page ul.lp-pills {
+  list-style: none;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 2.2rem;
+  padding: 0;
+}
+
+.landing-page .lp-pills li {
+  display: flex;
+  align-items: center;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4b5563;
+  background: #fff;
+  border: 1px solid var(--lp-border);
+  border-radius: 99px;
+  padding: 0.32rem 0.9rem;
+  margin: 0;
+}
+
+/* Square dot: a one-pixel nod to the pixel-art language */
+.landing-page .lp-pills li::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: var(--am-blue);
+  margin-right: 0.55rem;
+}
+
+.landing-page .lp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.7rem;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 1rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.landing-page .lp-btn-dark {
+  background: var(--am-ink);
+  color: #fff;
+  box-shadow: 0 10px 24px -10px rgba(17, 24, 39, 0.35);
+}
+
+.landing-page .lp-btn-dark:hover {
+  background: #000;
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 16px 30px -12px rgba(17, 24, 39, 0.4);
+}
+
+.landing-page .lp-btn-light {
+  background: #fff;
+  color: #0f172a;
+  margin-top: 2rem;
+}
+
+.landing-page .lp-btn-light:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+  transform: translateY(-2px);
+}
+
+/* --- Pixel band --- */
+.lp-band {
+  line-height: 0;
+  background: var(--lp-paper);
+}
+
+.pixel-band-svg {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+
+/* --- Install card, floating over the band --- */
+.lp-install-wrap {
+  position: relative;
+  padding: 0 1.5rem;
+  margin-top: -84px;
+}
+
+.lp-install-card {
+  max-width: 860px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid var(--lp-border);
+  border-radius: 18px;
+  padding: 1.9rem 2rem 1.6rem;
+  box-shadow: 0 30px 60px -30px rgba(17, 24, 39, 0.3);
+}
+
+.landing-page .lp-install-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--am-ink);
+  margin: 0;
+}
+
+/* Vertical word roller: one visible line, the track slides behind it */
+.lp-roller {
+  display: inline-block;
+  overflow: hidden;
+  height: 1.3em;
+  transition: width 0.45s cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.lp-roller-track {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  transition: transform 0.45s cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+.lp-roller-track span {
+  display: block;
+  height: 1.3em;
+  line-height: 1.3em;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: var(--am-blue);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-roller,
+  .lp-roller-track {
+    transition: none;
+  }
+}
+
+.landing-page .lp-install-sub {
+  color: #6b7280;
+  font-size: 0.95rem;
+  margin: 0.5rem 0 1.1rem;
+}
+
+.install-terminal {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--am-code-bg);
+  border-radius: 12px;
+  padding: 0.85rem 0.85rem 0.85rem 1.25rem;
+}
+
+.install-prompt {
+  color: #7aa2f7;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* Repeated selector: outweighs Material's inline-code chip rule
+   (`.md-typeset :not(pre) > code`), which would paint a light background */
+.install-command.install-command.install-command {
+  flex: 1;
+  border: 0;
+  padding: 0;
+  font-weight: 400;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  background: transparent;
+  color: var(--am-code-fg);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.92rem;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.install-command.switching {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.install-copy {
+  appearance: none;
+  border: 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 8px;
+  background: rgba(192, 202, 245, 0.08);
+  color: rgba(192, 202, 245, 0.7);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.install-copy:hover {
+  background: rgba(192, 202, 245, 0.18);
+  color: #fff;
+}
+
+.install-copy .install-copied-icon {
+  display: none;
+}
+
+.install-copy.copied {
+  color: #9ece6a;
+}
+
+.install-copy.copied .install-copy-icon {
+  display: none;
+}
+
+.install-copy.copied .install-copied-icon {
+  display: block;
+}
+
+.landing-page ul.lp-checks {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.6rem;
+  padding: 0;
+  margin: 1.1rem 0 0.6rem;
+}
+
+.landing-page .lp-checks li {
+  font-size: 0.82rem;
+  color: #4b5563;
+  margin: 0;
+}
+
+.landing-page .lp-checks li::before {
+  content: "✓";
+  color: #16a34a;
+  font-weight: 700;
+  margin-right: 0.45rem;
+}
+
+.lp-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.6rem;
+}
+
+.landing-page .lp-card-links a {
+  font-size: 0.85rem;
+  color: #6b7280;
+  border-bottom: 1px solid rgba(107, 114, 128, 0.35);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.landing-page .lp-card-links a:hover {
+  color: var(--am-blue);
+  border-bottom-color: var(--am-blue);
+}
+
+/* --- Sections --- */
+.lp-section {
+  padding: 5.5rem 0;
+  background: var(--lp-paper);
+}
+
+.lp-section-alt {
+  background: #fff;
+  border-top: 1px solid var(--lp-border);
+  border-bottom: 1px solid var(--lp-border);
+}
+
+.lp-section-head {
+  text-align: center;
+  margin-bottom: 2.6rem;
+}
+
+.landing-page .lp-h2 {
+  font-family: var(--lp-serif);
+  font-weight: 400;
+  font-size: 2.7rem;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  color: var(--am-ink);
+  margin: 0 0 1.1rem;
+}
+
+.landing-page .lp-section-lead {
+  font-size: 1.1rem;
+  line-height: 1.65;
+  color: #4b5563;
+  max-width: 660px;
+  margin: 0 auto 1.4rem;
+}
+
+/* --- Square window dots: same pixel language as the band --- */
+.lp-dot {
+  width: 10px;
+  height: 10px;
+}
+
+.lp-dot:nth-child(1) { background: #f7768e; }
+.lp-dot:nth-child(2) { background: #e0af68; }
+.lp-dot:nth-child(3) { background: #9ece6a; }
+
+/* --- Report screenshot in a light browser frame --- */
+.lp-shot-frame {
+  max-width: 1000px;
+  margin: 1.6rem auto 0;
+  background: #fff;
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 40px 80px -40px rgba(17, 24, 39, 0.35);
+}
+
+.lp-shot-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.7rem 0.95rem;
+  background: var(--lp-paper);
+  border-bottom: 1px solid var(--lp-border);
+}
+
+.lp-shot-url {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--am-muted);
+}
+
+.landing-page .lp-shot-frame img {
+  display: block;
+  width: 100%;
+}
+
+.landing-page .lp-try {
+  text-align: center;
+  font-size: 0.95rem;
+  color: #6b7280;
+  margin: 1.6rem 0 0;
+}
+
+.landing-page .lp-try a {
+  color: var(--am-blue);
+  font-weight: 600;
+  border-bottom: 1px solid rgba(37, 99, 235, 0.35);
+}
+
+.landing-page .lp-try a:hover {
+  color: var(--am-blue-dark);
+  border-bottom-color: var(--am-blue-dark);
+}
+
+/* --- Feature cards --- */
+.lp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.2rem;
+}
+
+.landing-page .lp-card {
+  display: block;
+  background: var(--lp-paper);
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  padding: 1.6rem;
+  color: inherit;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.landing-page .lp-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 34px -20px rgba(17, 24, 39, 0.3);
+  border-color: #d9d1bd;
+}
+
+.landing-page .lp-card h3 {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--am-ink);
+  margin: 0.95rem 0 0.45rem;
+}
+
+.landing-page .lp-card p {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #6b7280;
+  margin: 0;
+}
+
+.lp-px {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: #fff;
+  border: 1px solid var(--lp-border);
+  border-radius: 10px;
+}
+
+.lp-px svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* --- CI cards --- */
+.lp-ci-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem;
+  margin-top: 2.4rem;
+  text-align: left;
+}
+
+.lp-card-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  background: #fff;
+}
+
+.lp-card-row svg {
+  flex-shrink: 0;
+  color: var(--am-ink);
+  margin-top: 0.15rem;
+}
+
+.landing-page .lp-card-row h3 {
+  margin: 0 0 0.35rem;
+}
+
+/* --- Dark band (MCP) --- */
+.lp-dark {
+  padding: 5.5rem 0;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+.landing-page .lp-eyebrow-light {
+  color: #8ea3f2;
+}
+
+.landing-page .lp-h2-light {
+  color: #fff;
+}
+
+.landing-page .lp-lead-light {
+  color: #94a3b8;
+}
+
+/* Repeated class beats the docs inline-code chip rule below */
+.lp-dark .lp-lead-light.lp-lead-light code {
+  background: rgba(255, 255, 255, 0.1);
+  border: 0;
+  color: #e2e8f0;
+}
+
+.lp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-top: 1.6rem;
+}
+
+.lp-tags span {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+}
+
+/* --- Final CTA --- */
+.lp-final {
+  padding-bottom: 6.5rem;
+}
+
+/* --- Animations ---
+   Gated behind the `js` class (set by landing.js) so the page stays fully
+   visible when JavaScript is unavailable. */
+.js .fade-up {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+}
+
+.js .fade-up.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js .fade-up {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .lp-hero {
+    padding: 3.2rem 1rem 2.4rem;
+  }
+
+  .landing-page .lp-title {
+    font-size: 2.2rem;
+  }
+
+  .landing-page .lp-lead {
+    font-size: 1rem;
+  }
+
+  .landing-page .lp-h2 {
+    font-size: 1.8rem;
+  }
+
+  .pixel-band-svg {
+    height: 90px;
+  }
+
+  .lp-install-wrap {
+    margin-top: -50px;
+    padding: 0 1rem;
+  }
+
+  .lp-install-card {
+    padding: 1.3rem 1.2rem 1.2rem;
+  }
+
+  .install-command.install-command.install-command {
+    font-size: 0.78rem;
+  }
+
+  .lp-section {
+    padding: 3.5rem 0;
+  }
+
+  .lp-dark {
+    padding: 3.5rem 0;
+  }
+
+  .lp-ci-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-page .lp-btn {
+    padding: 0.75rem 1.4rem;
+    font-size: 0.95rem;
+  }
+}
+
+/* MCP Tools Grid (docs page) */
+.mcp-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.mcp-tool {
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.mcp-tool:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.mcp-tool h3 {
+  font-size: 0.95rem !important;
+  font-family: 'JetBrains Mono', monospace;
+  color: #2563eb;
+  margin: 0 0 0.5rem 0 !important;
+}
+
+.mcp-tool p {
+  font-size: 0.9rem;
+  color: #4b5563;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Fix Header Icons (GitHub) */
+.md-header__source {
+  color: #1a1b26 !important;
+}
+
+.md-header__button {
+  color: #1a1b26 !important;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-nav__item--section {
+    margin-top: 2em;
+  }
+}
+
+.md-tabs__link {
+  color: #333 !important;
+}
+
+.md-tabs__link:hover {
+  color: #333 !important;
+}
+
+.md-header__topic {
+  color: #333 !important;
+}
+
+/* ==========================================================================
+   DOCUMENTATION PAGES
+   Everything below styles the inner pages so they share the visual language
+   of the landing page: same tokens, rounded surfaces, soft shadows.
+   The `:has(.landing-page)` guards keep the home page untouched.
+   ========================================================================== */
+
+/* --- Page shell: content sits on a white card, floating on a tinted page --- */
+/* Solid, not a gradient: the sticky nav title below paints its own background
+   with this exact colour to mask the items scrolling underneath. */
+.md-main:not(:has(.landing-page)) {
+  background: var(--am-page-bg);
+}
+
+.md-content__inner:not(:has(.landing-page)) {
+  background: #fff;
+  border: 1px solid var(--am-border);
+  border-radius: var(--am-radius-lg);
+  padding: 2.2rem 2.4rem 2.8rem;
+  margin: 1.2rem 0.8rem 2.4rem;
+  box-shadow: var(--am-shadow-sm), 0 24px 48px -34px rgba(17, 24, 39, 0.18);
+}
+
+/* Material adds a 0.4rem spacer pseudo-element we no longer need inside the card */
+.md-content__inner:not(:has(.landing-page))::before {
+  display: none;
+}
+
+.md-header--shadow {
+  box-shadow: 0 4px 20px -10px rgba(17, 24, 39, 0.18);
+}
+
+/* Active tab indicator */
+.md-tabs__item--active {
+  box-shadow: inset 0 -2px 0 var(--am-blue);
+}
+
+.md-tabs__item--active .md-tabs__link {
+  font-weight: 700;
+  opacity: 1;
+}
+
+/* --- Typography ---
+   The heading rules are scoped away from the landing page: it defines its own
+   scale (`.hero-content h1`, `.feature-card h3`, ...) at the same specificity,
+   and being later in this file these rules would otherwise win and shrink it. */
+.md-typeset:not(:has(.landing-page)) {
+  line-height: 1.75;
+  color: var(--am-body);
+}
+
+.md-typeset:not(:has(.landing-page)) h1 {
+  font-family: var(--lp-serif);
+  font-size: 2.6rem;
+  line-height: 1.12;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  margin: 0 0 1.2rem;
+  background: linear-gradient(135deg, #111827 0%, #4b5563 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Anchors and emoji must not inherit the transparent fill of gradient headings */
+.md-typeset h1 .headerlink,
+.md-typeset h1 img,
+.md-typeset h1 svg {
+  -webkit-text-fill-color: initial;
+}
+
+/* Lead paragraph right after the page title */
+.md-content__inner:not(:has(.landing-page)) > h1 + p {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--am-muted);
+}
+
+.md-typeset:not(:has(.landing-page)) h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 2.8rem;
+  padding-top: 1.8rem;
+  border-top: 1px solid var(--am-border);
+}
+
+.md-typeset:not(:has(.landing-page)) h1 + h2 {
+  margin-top: 1.4rem;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.md-typeset:not(:has(.landing-page)) h3 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-top: 1.9rem;
+}
+
+.md-typeset:not(:has(.landing-page)) h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-top: 1.4rem;
+}
+
+.md-typeset hr {
+  border-bottom: 1px solid var(--am-border);
+  margin: 2rem 0;
+}
+
+.md-typeset ul li::marker {
+  color: var(--am-blue);
+}
+
+.md-typeset ol li::marker {
+  color: var(--am-blue);
+  font-weight: 700;
+}
+
+.md-typeset li {
+  margin-bottom: 0.4em;
+}
+
+/* Scoped away from the landing page, which styles its own links */
+.md-typeset:not(:has(.landing-page)) a {
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(37, 99, 235, 0.25);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.md-typeset:not(:has(.landing-page)) a:hover {
+  color: var(--am-blue-dark);
+  border-bottom-color: var(--am-blue-dark);
+}
+
+/* Links that are really UI elements keep no underline */
+.md-typeset .tabbed-labels a,
+.md-typeset a.md-button,
+.md-typeset a.headerlink {
+  border-bottom: 0;
+}
+
+/* --- Inline code: light chip. Blocks stay dark (see :root tokens) --- */
+.md-typeset :not(pre) > code {
+  background: #f1f5f9;
+  color: var(--am-blue-dark);
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0.1em 0.36em;
+  font-size: 0.85em;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.md-typeset a > code {
+  color: inherit;
+}
+
+/* --- Code blocks: dark surface matching the landing hero terminal --- */
+.md-typeset pre > code {
+  border-radius: 14px;
+  padding: 1rem 1.2rem;
+  box-shadow: 0 14px 30px -18px rgba(17, 24, 39, 0.5);
+}
+
+.md-typeset .highlighttable {
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 14px 30px -18px rgba(17, 24, 39, 0.5);
+}
+
+.md-typeset .highlighttable .linenos {
+  background: var(--am-code-bg);
+}
+
+.md-typeset .highlighttable pre > code {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.md-typeset .highlight .linenos,
+.md-typeset .highlight .linenodiv pre,
+.md-typeset .highlight code .linenos {
+  color: #565f89;
+  border-right-color: rgba(192, 202, 245, 0.12);
+}
+
+.md-typeset .highlight span.filename {
+  background: #16161e;
+  color: var(--am-code-fg);
+  border-bottom: 1px solid rgba(192, 202, 245, 0.12);
+  border-radius: 14px 14px 0 0;
+  font-weight: 600;
+}
+
+.md-typeset .highlight span.filename + pre > code {
+  border-radius: 0 0 14px 14px;
+}
+
+/* Copy button has to be readable on a dark background */
+.md-typeset .highlight .md-clipboard {
+  color: rgba(192, 202, 245, 0.35);
+}
+
+.md-typeset .highlight:hover .md-clipboard {
+  color: rgba(192, 202, 245, 0.7);
+}
+
+.md-typeset .highlight .md-clipboard:hover {
+  color: #fff;
+}
+
+/* --- Admonitions and collapsible blocks as soft cards --- */
+.md-typeset .admonition,
+.md-typeset details {
+  border: 1px solid var(--am-border-strong);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--am-shadow-sm);
+  font-size: 0.72rem;
+  padding: 0 1.1rem;
+  overflow: hidden;
+}
+
+/* Neutral 1px frame; the type identity stays carried by the tinted title band
+   and its coloured icon, which Material sets per type. The `[class]` attribute
+   selector is only there to match the specificity of Material's per-type rules
+   (`.md-typeset .admonition.info { border-color }`) so source order decides. */
+.md-typeset .admonition[class],
+.md-typeset details[class] {
+  border-color: var(--am-border-strong);
+}
+
+/* Collapsible blocks read as an accordion: neutral row, type-coloured icon.
+   Static callouts keep their tinted band, where the colour carries meaning. */
+.md-typeset details[class] > summary {
+  background: var(--am-surface);
+  transition: background 0.2s ease;
+}
+
+.md-typeset details[class] > summary:hover {
+  background: var(--am-surface-alt);
+}
+
+.md-typeset .admonition-title,
+.md-typeset summary {
+  margin: 0 -1.1rem 0.8rem;
+  padding: 0.6rem 1.1rem 0.6rem 2.6rem;
+  border-left-width: 0;
+  border-radius: 0;
+  font-weight: 700;
+  color: var(--am-ink);
+}
+
+/* A collapsed <details> is just its title band: no trailing white strip */
+.md-typeset details:not([open]) > summary {
+  margin-bottom: 0;
+}
+
+.md-typeset .admonition-title::before,
+.md-typeset summary::before {
+  top: 0.7rem;
+  left: 1.1rem;
+}
+
+.md-typeset summary {
+  cursor: pointer;
+}
+
+.md-typeset summary::after {
+  top: 0.7rem;
+  right: 0.8rem;
+}
+
+.md-typeset details[open] > summary {
+  margin-bottom: 0.8rem;
+}
+
+/* --- Tables --- */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--am-border);
+  border-radius: 14px;
+  box-shadow: none;
+  font-size: 0.72rem;
+  overflow: hidden;
+}
+
+.md-typeset table:not([class]) th {
+  background: var(--am-surface);
+  color: var(--am-ink);
+  font-weight: 700;
+  border-bottom: 1px solid var(--am-border-strong);
+}
+
+.md-typeset table:not([class]) td {
+  border-top: 1px solid var(--am-border);
+}
+
+.md-typeset table:not([class]) tr:hover {
+  background: rgba(239, 246, 255, 0.6);
+}
+
+/* --- Blockquotes --- */
+.md-typeset blockquote {
+  border-left: 3px solid var(--am-blue);
+  border-radius: 0 12px 12px 0;
+  background: var(--am-surface);
+  color: var(--am-muted);
+  padding: 0.8rem 1.1rem;
+  margin-left: 0;
+}
+
+.md-typeset blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* --- Images and figures --- */
+.md-typeset:not(:has(.landing-page)) img:not(.twemoji):not(.emojione):not(.gemoji) {
+  border-radius: 14px;
+  border: 1px solid var(--am-border);
+  box-shadow: var(--am-shadow);
+  max-width: 100%;
+}
+
+.md-typeset .admonition img,
+.md-typeset details img {
+  box-shadow: none;
+}
+
+/* --- Content tabs --- */
+.md-typeset .tabbed-set > .tabbed-labels {
+  box-shadow: none;
+  border-bottom: 1px solid var(--am-border);
+}
+
+.md-typeset .tabbed-labels > label {
+  font-weight: 600;
+  font-size: 0.68rem;
+  color: var(--am-muted);
+  padding: 0.5rem 0.9rem;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.md-typeset .tabbed-labels > label:hover {
+  color: var(--am-ink);
+}
+
+.md-typeset .tabbed-set > input:checked + label {
+  color: var(--am-blue);
+}
+
+/* --- Keyboard keys --- */
+.md-typeset kbd {
+  border-radius: 6px;
+  box-shadow: 0 1px 0 var(--am-border-strong), inset 0 -1px 0 var(--am-border);
+}
+
+/* --- Sidebar navigation: pills, section eyebrows, integrated ToC --- */
+.md-nav {
+  font-size: 0.7rem;
+}
+
+.md-nav__title {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--am-muted);
+}
+
+/* Page links become pills. Only anchors are targeted: `.md-nav__link` is also
+   carried by the `--container` wrapper and by the expand/collapse labels. */
+.md-sidebar--primary a.md-nav__link {
+  border-radius: var(--am-radius-sm);
+  padding: 0.28rem 0.55rem;
+  margin: 0.08rem -0.55rem;
+  color: var(--am-body);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.md-sidebar--primary a.md-nav__link:hover {
+  background: var(--am-surface-alt);
+  color: var(--am-ink);
+}
+
+.md-sidebar--primary a.md-nav__link--active,
+.md-sidebar--primary a.md-nav__link--active:hover {
+  background: var(--am-blue-soft);
+  color: var(--am-blue);
+  font-weight: 600;
+}
+
+/* The lifted (sticky) section title masks scrolling items with an opaque
+   background. Material hardcodes it to white, which would show as a slab on
+   the tinted page: repaint it with the page colour. */
+.md-sidebar--primary .md-nav--lifted > .md-nav__list > .md-nav__item--active > .md-nav__link {
+  background: var(--am-page-bg);
+  box-shadow: 0 0 0.4rem 0.4rem var(--am-page-bg);
+}
+
+/* Group labels ("Advanced usage", ...) read as headings, not as page links */
+.md-sidebar--primary .md-nav__item--section > label.md-nav__link {
+  color: var(--am-ink);
+  font-weight: 700;
+}
+
+/* Integrated table of contents nested under the current page */
+.md-sidebar--primary .md-nav--secondary {
+  margin-top: 0.2rem;
+}
+
+.md-sidebar--primary .md-nav--secondary .md-nav__list {
+  border-left: 1px solid var(--am-border);
+  padding-left: 0.55rem;
+  margin-left: 0.15rem;
+}
+
+.md-sidebar--primary .md-nav--secondary a.md-nav__link {
+  background: transparent;
+  font-size: 0.65rem;
+  font-weight: 400;
+  color: var(--am-muted);
+  padding: 0.18rem 0;
+  margin: 0;
+  border-radius: 0;
+}
+
+.md-sidebar--primary .md-nav--secondary a.md-nav__link:hover {
+  background: transparent;
+  color: var(--am-ink);
+}
+
+.md-sidebar--primary .md-nav--secondary a.md-nav__link--active,
+.md-sidebar--primary .md-nav--secondary a.md-nav__link--active:hover {
+  background: transparent;
+  color: var(--am-blue);
+  font-weight: 600;
+}
+
+/* --- "Edit this page" action --- */
+.md-content__button {
+  color: var(--am-muted) !important;
+  border-radius: 8px;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.md-content__button:hover {
+  color: var(--am-blue) !important;
+  background: var(--am-blue-soft);
+}
+
+/* --- Search --- */
+.md-search-result__item {
+  border-radius: var(--am-radius-sm);
+}
+
+.md-search-result__link:hover,
+.md-search-result__link[data-md-state="active"] {
+  background: var(--am-blue-soft);
+}
+
+.md-search-result__meta {
+  color: var(--am-muted);
+}
+
+/* --- Footer: light surface with prev/next as cards --- */
+.md-footer {
+  border-top: 1px solid var(--am-border);
+}
+
+.md-footer__inner {
+  padding: 1.4rem 0.4rem 2rem;
+  margin: 0;
+  gap: 0.8rem;
+}
+
+.md-footer__link {
+  background: #fff;
+  border: 1px solid var(--am-border);
+  border-radius: var(--am-radius);
+  padding: 0.9rem 1.1rem;
+  margin: 0;
+  opacity: 1;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.md-footer__link:focus,
+.md-footer__link:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+  box-shadow: var(--am-shadow-lg);
+}
+
+.md-footer__direction {
+  font-size: 0.58rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--am-muted);
+  opacity: 1;
+}
+
+.md-footer__title {
+  font-weight: 700;
+  color: var(--am-ink);
+}
+
+.md-footer-meta {
+  background: transparent;
+  border-top: 1px solid var(--am-border);
+}
+
+.md-copyright,
+.md-copyright__highlight {
+  color: var(--am-muted);
+}
+
+.md-social__link {
+  color: var(--am-muted);
+}
+
+/* --- Responsive --- */
+@media screen and (max-width: 76.1875em) {
+  .md-nav--primary .md-nav__title {
+    background: var(--am-surface);
+    color: var(--am-ink);
+  }
+}
+
+@media screen and (max-width: 44.9375em) {
+  .md-content__inner:not(:has(.landing-page)) {
+    border-radius: var(--am-radius);
+    padding: 1.4rem 1.1rem 1.8rem;
+    margin: 0.6rem 0.5rem 1.4rem;
+  }
+
+  .md-typeset h1 {
+    font-size: 1.75rem;
+  }
+
+  .md-typeset h2 {
+    font-size: 1.3rem;
+    margin-top: 2.2rem;
+    padding-top: 1.4rem;
+  }
+
+  .md-footer__inner {
+    flex-direction: column;
+    padding: 1rem 0.8rem 1.6rem;
+  }
+
+  .md-footer__link {
+    width: 100%;
+  }
+}

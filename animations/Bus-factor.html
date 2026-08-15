@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bus Factor Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Fira+Code:wght@400;500&display=swap');
+
+        :root {
+            --apple-blue: #0071e3;
+            --apple-gray: #f5f5f7;
+            --apple-text: #1d1d1f;
+            --alice: #0071e3;
+            --bob: #16a34a;
+            --carol: #f59e0b;
+            --risk: #ff3b30;
+            --ok: #22a447;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #ffffff;
+            color: var(--apple-text);
+            -webkit-font-smoothing: antialiased;
+            cursor: pointer;
+        }
+
+        .glass-card {
+            background: #ffffff;
+            border-radius: 32px;
+            box-shadow: 0 20px 80px rgba(0, 0, 0, 0.06);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .code-container {
+            font-family: 'Fira Code', monospace;
+            background: var(--apple-gray);
+            border-radius: 24px;
+            padding: 32px;
+            position: relative;
+            min-height: 540px;
+        }
+
+        .code-line {
+            padding: 4px 12px;
+            border-radius: 8px;
+            transition: all 0.45s cubic-bezier(0.23, 1, 0.32, 1);
+            opacity: 0.18;
+            display: block;
+            font-size: 0.95rem;
+            white-space: pre;
+            line-height: 1.6;
+        }
+
+        .code-line.active {
+            opacity: 1;
+            background: #ffffff;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            transform: translateX(12px);
+        }
+
+        .code-line.author-alice {
+            color: var(--alice);
+            font-weight: 600;
+        }
+
+        .code-line.author-bob {
+            color: var(--bob);
+            font-weight: 600;
+        }
+
+        .code-line.author-carol {
+            color: var(--carol);
+            font-weight: 600;
+        }
+
+        .scanner-line {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: var(--apple-blue);
+            box-shadow: 0 0 20px rgba(0, 113, 227, 0.3);
+            pointer-events: none;
+            z-index: 10;
+            display: none;
+            border-radius: 2px;
+        }
+
+        .score-badge {
+            background: var(--apple-blue);
+            color: white;
+            border-radius: 24px;
+            padding: 14px 22px;
+            box-shadow: 0 10px 30px rgba(0, 113, 227, 0.25);
+            min-width: 280px;
+        }
+
+        .timeline-shell {
+            background: #ffffff;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            border-radius: 24px;
+            padding: 14px;
+        }
+
+        .timeline-node {
+            opacity: 0;
+            transform-origin: center;
+            transition: opacity 0.35s ease, transform 0.35s ease;
+        }
+
+        .timeline-node.visible {
+            opacity: 1;
+        }
+
+        .timeline-node.latest circle {
+            stroke: #111827;
+            stroke-width: 2;
+        }
+
+        .owner-row {
+            display: grid;
+            grid-template-columns: 86px 1fr 56px;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .owner-name {
+            font-size: 12px;
+            text-transform: uppercase;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            color: #475569;
+        }
+
+        .owner-track {
+            height: 14px;
+            border-radius: 999px;
+            background: #e6ebf3;
+            overflow: hidden;
+            border: 1px solid rgba(0, 0, 0, 0.04);
+        }
+
+        .owner-fill {
+            height: 100%;
+            width: 0;
+            border-radius: 999px;
+            transition: width 0.8s cubic-bezier(0.23, 1, 0.32, 1);
+        }
+
+        .owner-pct {
+            font-size: 12px;
+            font-weight: 800;
+            color: #334155;
+            text-align: right;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .start-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.01);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .final-panel {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.95);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.9s ease;
+            z-index: 200;
+        }
+
+        .final-panel.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .final-card {
+            background: #ffffff;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 30px;
+            padding: 32px 40px;
+            text-align: center;
+            box-shadow: 0 20px 70px rgba(0, 0, 0, 0.08);
+            max-width: 700px;
+        }
+
+        .final-score {
+            font-size: 3.2rem;
+            line-height: 1;
+            font-weight: 800;
+            color: var(--apple-blue);
+            margin-bottom: 12px;
+        }
+
+        @media (max-width: 1024px) {
+            .code-container {
+                min-height: 430px;
+            }
+
+            .owner-row {
+                grid-template-columns: 74px 1fr 48px;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-6 bg-slate-50" onclick="handleInteraction()">
+
+    <div class="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-12 items-stretch relative">
+        <div id="clickOverlay" class="start-overlay"></div>
+
+        <div class="flex flex-col space-y-6">
+            <div class="code-container glass-card" id="codeBox">
+                <div id="scanner" class="scanner-line"></div>
+                <div id="codeList" class="space-y-1"></div>
+            </div>
+        </div>
+
+        <div class="glass-card p-10 flex flex-col relative bg-white">
+            <div class="flex justify-between items-center mb-8">
+                <h3 class="text-slate-400 uppercase text-xs font-black tracking-widest">Bus Factor from Commit Timeline</h3>
+                <div class="score-badge flex flex-col items-center justify-center text-center">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs opacity-75 uppercase font-bold tracking-wider">Bus Factor =</span>
+                        <span id="busFactorValue" class="text-4xl leading-none font-black">0</span>
+                    </div>
+                    <div id="riskText" class="text-[10px] uppercase tracking-widest mt-1.5 opacity-80 font-bold">No commits processed</div>
+                </div>
+            </div>
+
+            <div id="insightBox" class="p-4 mb-4 bg-slate-900 text-white rounded-2xl shadow-lg opacity-0 transition-all transform translate-y-2 text-md font-medium text-center">
+                Ready for analysis...
+            </div>
+
+            <div class="flex-grow flex items-center justify-center relative border border-slate-50 rounded-[40px] bg-slate-50/30 overflow-hidden p-6">
+                <div class="w-full max-w-[640px] space-y-4">
+                    <div class="timeline-shell">
+                        <svg id="timelineSvg" viewBox="0 0 620 200" class="w-full h-[220px]">
+                            <g id="timelineAxis"></g>
+                            <g id="timelineCommits"></g>
+                        </svg>
+                    </div>
+
+                    <div class="flex items-center gap-5 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                        <span class="flex items-center gap-2"><span class="legend-dot" style="background: var(--alice);"></span>Alice</span>
+                        <span class="flex items-center gap-2"><span class="legend-dot" style="background: var(--bob);"></span>Bob</span>
+                        <span class="flex items-center gap-2"><span class="legend-dot" style="background: var(--carol);"></span>Carol</span>
+                    </div>
+
+                    <div class="space-y-2.5">
+                        <div class="owner-row">
+                            <div class="owner-name">Alice</div>
+                            <div class="owner-track"><div id="fill-alice" class="owner-fill" style="background: var(--alice);"></div></div>
+                            <div id="pct-alice" class="owner-pct">0%</div>
+                        </div>
+                        <div class="owner-row">
+                            <div class="owner-name">Bob</div>
+                            <div class="owner-track"><div id="fill-bob" class="owner-fill" style="background: var(--bob);"></div></div>
+                            <div id="pct-bob" class="owner-pct">0%</div>
+                        </div>
+                        <div class="owner-row">
+                            <div class="owner-name">Carol</div>
+                            <div class="owner-track"><div id="fill-carol" class="owner-fill" style="background: var(--carol);"></div></div>
+                            <div id="pct-carol" class="owner-pct">0%</div>
+                        </div>
+                    </div>
+
+                    <div id="lastCommitBox" class="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 font-semibold">
+                        Latest commit: none
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="finalPanel" class="final-panel">
+        <div class="final-card">
+            <div class="text-xs uppercase tracking-[0.25em] text-slate-500 font-bold mb-3">Analysis Complete</div>
+            <div class="final-score">Bus Factor 1 -> 2</div>
+            <p class="text-slate-700 text-xl font-semibold mb-2">Commit activity became less concentrated over time.</p>
+            <p class="text-slate-500 text-base">The critical community now requires at least two key contributors, not just one.</p>
+        </div>
+    </div>
+
+    <script>
+        const commitEvents = [
+            { hash: 'f3a9c12', author: 'alice', message: 'feat: bootstrap payment aggregate' },
+            { hash: 'bc2d0f4', author: 'alice', message: 'refactor: split card validation pipeline' },
+            { hash: '0d7ac6e', author: 'alice', message: 'fix: settlement race condition' },
+            { hash: '5ef41b2', author: 'bob', message: 'test: add refund edge-case coverage' },
+            { hash: '9a42d1c', author: 'alice', message: 'feat: retries for gateway timeout' },
+            { hash: '213abde', author: 'alice', message: 'perf: optimize reconciliation walk' },
+            { hash: '7cd8e45', author: 'carol', message: 'docs: explain ledger rollback flow' },
+            { hash: '41c9b77', author: 'alice', message: 'fix: normalize tax rounding rule' },
+            { hash: '8bd53a9', author: 'alice', message: 'feat: idempotency key guard' },
+            { hash: 'ea20f61', author: 'alice', message: 'refactor: extract fraud precheck' },
+            { hash: 'd10b31f', author: 'bob', message: 'feat: webhook signature verifier' },
+            { hash: '2ac064d', author: 'bob', message: 'refactor: isolate chargeback mapping' },
+            { hash: '6f4b98a', author: 'carol', message: 'feat: dashboard for failed payouts' },
+            { hash: '93ea41b', author: 'bob', message: 'test: integration suite for tax sync' },
+            { hash: 'ac72df9', author: 'alice', message: 'chore: simplify payment status enum' },
+            { hash: 'b8fe204', author: 'carol', message: 'feat: backoffice export for disputes' }
+        ];
+
+        const authorStyles = {
+            alice: { name: 'Alice', color: '#0071e3' },
+            bob: { name: 'Bob', color: '#16a34a' },
+            carol: { name: 'Carol', color: '#f59e0b' }
+        };
+
+        const codeLines = [
+            { t: '$ git log --oneline -- community/payments', type: 'base' },
+            ...commitEvents.map(commit => ({
+                t: `${commit.hash} ${authorStyles[commit.author].name} ${commit.message}`,
+                type: `author-${commit.author}`
+            }))
+        ];
+
+        const codeList = document.getElementById('codeList');
+        const scanner = document.getElementById('scanner');
+        const timelineAxis = document.getElementById('timelineAxis');
+        const timelineCommits = document.getElementById('timelineCommits');
+        const busFactorValue = document.getElementById('busFactorValue');
+        const riskText = document.getElementById('riskText');
+        const insightBox = document.getElementById('insightBox');
+        const clickOverlay = document.getElementById('clickOverlay');
+        const finalPanel = document.getElementById('finalPanel');
+        const lastCommitBox = document.getElementById('lastCommitBox');
+
+        const fillAlice = document.getElementById('fill-alice');
+        const fillBob = document.getElementById('fill-bob');
+        const fillCarol = document.getElementById('fill-carol');
+        const pctAlice = document.getElementById('pct-alice');
+        const pctBob = document.getElementById('pct-bob');
+        const pctCarol = document.getElementById('pct-carol');
+
+        let isRunning = false;
+        let totals = { alice: 0, bob: 0, carol: 0 };
+
+        codeLines.forEach((line, i) => {
+            const div = document.createElement('div');
+            div.className = `code-line ${line.type !== 'base' ? line.type : ''}`;
+            div.id = `line-${i}`;
+            div.textContent = line.t;
+            codeList.appendChild(div);
+        });
+
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        function drawAxis() {
+            timelineAxis.innerHTML = '';
+            timelineCommits.innerHTML = '';
+
+            const baseline = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            baseline.setAttribute('x1', '36');
+            baseline.setAttribute('y1', '84');
+            baseline.setAttribute('x2', '584');
+            baseline.setAttribute('y2', '84');
+            baseline.setAttribute('stroke', '#d9dde6');
+            baseline.setAttribute('stroke-width', '4');
+            timelineAxis.appendChild(baseline);
+
+            const beforeText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            beforeText.setAttribute('x', '120');
+            beforeText.setAttribute('y', '118');
+            beforeText.setAttribute('fill', '#64748b');
+            beforeText.setAttribute('font-size', '11');
+            beforeText.setAttribute('font-weight', '700');
+            beforeText.setAttribute('text-anchor', 'middle');
+            beforeText.textContent = 'Concentrated phase';
+            timelineAxis.appendChild(beforeText);
+
+            const afterText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            afterText.setAttribute('x', '470');
+            afterText.setAttribute('y', '118');
+            afterText.setAttribute('fill', '#64748b');
+            afterText.setAttribute('font-size', '11');
+            afterText.setAttribute('font-weight', '700');
+            afterText.setAttribute('text-anchor', 'middle');
+            afterText.textContent = 'Knowledge transfer phase';
+            timelineAxis.appendChild(afterText);
+
+            const divider = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            divider.setAttribute('x1', '380');
+            divider.setAttribute('y1', '38');
+            divider.setAttribute('x2', '380');
+            divider.setAttribute('y2', '158');
+            divider.setAttribute('stroke', '#e5e7eb');
+            divider.setAttribute('stroke-width', '2');
+            divider.setAttribute('stroke-dasharray', '5 6');
+            timelineAxis.appendChild(divider);
+        }
+
+        function resetState() {
+            totals = { alice: 0, bob: 0, carol: 0 };
+            fillAlice.style.width = '0%';
+            fillBob.style.width = '0%';
+            fillCarol.style.width = '0%';
+            pctAlice.textContent = '0%';
+            pctBob.textContent = '0%';
+            pctCarol.textContent = '0%';
+            busFactorValue.textContent = '0';
+            riskText.textContent = 'No commits processed';
+            lastCommitBox.textContent = 'Latest commit: none';
+            drawAxis();
+        }
+
+        function computeBusFactor(percentages) {
+            const sorted = Object.values(percentages).sort((a, b) => b - a);
+            if (sorted[0] >= 80) {
+                return 1;
+            }
+            if (sorted[0] + sorted[1] >= 80) {
+                return 2;
+            }
+            return 3;
+        }
+
+        function updateOwnership() {
+            const totalCommits = totals.alice + totals.bob + totals.carol;
+            if (totalCommits === 0) {
+                return;
+            }
+
+            const percentages = {
+                alice: (totals.alice / totalCommits) * 100,
+                bob: (totals.bob / totalCommits) * 100,
+                carol: (totals.carol / totalCommits) * 100
+            };
+
+            fillAlice.style.width = `${percentages.alice.toFixed(1)}%`;
+            fillBob.style.width = `${percentages.bob.toFixed(1)}%`;
+            fillCarol.style.width = `${percentages.carol.toFixed(1)}%`;
+            pctAlice.textContent = `${Math.round(percentages.alice)}%`;
+            pctBob.textContent = `${Math.round(percentages.bob)}%`;
+            pctCarol.textContent = `${Math.round(percentages.carol)}%`;
+
+            const bf = computeBusFactor(percentages);
+            busFactorValue.textContent = String(bf);
+
+            if (bf === 1) {
+                riskText.textContent = 'Critical risk: one contributor dominates';
+            } else if (bf === 2) {
+                riskText.textContent = 'Moderate risk: ownership is spreading';
+            } else {
+                riskText.textContent = 'Healthy: ownership is broadly shared';
+            }
+        }
+
+        function addCommitToTimeline(commit, index) {
+            const totalSlots = commitEvents.length - 1;
+            const step = 548 / totalSlots;
+            const x = 36 + step * index;
+            const y = 84;
+
+            timelineCommits.querySelectorAll('.timeline-node').forEach(node => node.classList.remove('latest'));
+
+            const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            group.setAttribute('class', 'timeline-node latest');
+            group.setAttribute('transform', `translate(${x}, ${y}) scale(0.6)`);
+
+            const stem = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            stem.setAttribute('x1', '0');
+            stem.setAttribute('y1', '0');
+            stem.setAttribute('x2', '0');
+            stem.setAttribute('y2', commit.author === 'alice' ? '-26' : '26');
+            stem.setAttribute('stroke', authorStyles[commit.author].color);
+            stem.setAttribute('stroke-width', '2.5');
+            group.appendChild(stem);
+
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', '0');
+            circle.setAttribute('cy', '0');
+            circle.setAttribute('r', '8');
+            circle.setAttribute('fill', authorStyles[commit.author].color);
+            group.appendChild(circle);
+
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', '0');
+            text.setAttribute('y', commit.author === 'alice' ? '-32' : '42');
+            text.setAttribute('fill', '#475569');
+            text.setAttribute('font-size', '9');
+            text.setAttribute('font-weight', '700');
+            text.setAttribute('text-anchor', 'middle');
+            text.textContent = commit.hash.slice(0, 5);
+            group.appendChild(text);
+
+            timelineCommits.appendChild(group);
+
+            requestAnimationFrame(() => {
+                group.classList.add('visible');
+                group.setAttribute('transform', `translate(${x}, ${y}) scale(1)`);
+            });
+
+            totals[commit.author] += 1;
+            updateOwnership();
+            lastCommitBox.textContent = `Latest commit: ${commit.hash} by ${authorStyles[commit.author].name} - ${commit.message}`;
+        }
+
+        async function updateStep(index, message = null) {
+            document.querySelectorAll('.code-line').forEach(line => line.classList.remove('active'));
+            const line = document.getElementById(`line-${index}`);
+
+            if (line) {
+                line.classList.add('active');
+                scanner.style.display = 'block';
+                scanner.style.top = `${line.offsetTop}px`;
+            } else {
+                scanner.style.display = 'none';
+            }
+
+            if (message) {
+                insightBox.innerText = message;
+                insightBox.style.opacity = 1;
+                insightBox.style.transform = 'translateY(0)';
+            } else {
+                insightBox.style.opacity = 0;
+                insightBox.style.transform = 'translateY(10px)';
+            }
+        }
+
+        async function runAnalyse() {
+            if (isRunning) {
+                return;
+            }
+            isRunning = true;
+
+            clickOverlay.style.display = 'none';
+            finalPanel.classList.remove('visible');
+            resetState();
+
+            await updateStep(-1, 'Goal: infer bus factor from commit concentration over time.');
+            await sleep(2800);
+
+            await updateStep(0, 'We replay commits from the payments community.');
+            await sleep(2300);
+
+            for (let i = 0; i < 10; i += 1) {
+                const commit = commitEvents[i];
+                await updateStep(i + 1, `${authorStyles[commit.author].name} commits: ${commit.message}`);
+                addCommitToTimeline(commit, i);
+                await sleep(1800);
+            }
+
+            await updateStep(10, 'After phase 1, one author still dominates around 80%. Bus Factor = 1.');
+            await sleep(3400);
+
+            for (let i = 10; i < commitEvents.length; i += 1) {
+                const commit = commitEvents[i];
+                await updateStep(i + 1, `Knowledge transfer in practice: ${authorStyles[commit.author].name} commits.`);
+                addCommitToTimeline(commit, i);
+                await sleep(1800);
+            }
+
+            await updateStep(commitEvents.length, 'Ownership is less concentrated. Bus Factor improves to 2.');
+            await sleep(4200);
+
+            scanner.style.display = 'none';
+            finalPanel.classList.add('visible');
+            await sleep(5000);
+            finalPanel.classList.remove('visible');
+            isRunning = false;
+        }
+
+        function handleInteraction() {
+            if (!isRunning) {
+                runAnalyse();
+            }
+        }
+
+        resetState();
+    </script>
+</body>
+</html>

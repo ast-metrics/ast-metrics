@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyclomatic Complexity Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Fira+Code:wght@400;500&display=swap');
+        
+        :root {
+            --apple-blue: #0071e3;
+            --apple-gray: #f5f5f7;
+            --apple-text: #1d1d1f;
+            --apple-red: #ff3b30;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #ffffff;
+            color: var(--apple-text);
+            -webkit-font-smoothing: antialiased;
+            cursor: pointer;
+        }
+
+        .glass-card {
+            background: #ffffff;
+            border-radius: 32px;
+            box-shadow: 0 20px 80px rgba(0,0,0,0.06);
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .code-container {
+            font-family: 'Fira Code', monospace;
+            background: var(--apple-gray);
+            border-radius: 24px;
+            padding: 32px;
+            position: relative;
+            min-height: 480px;
+        }
+
+        .code-line {
+            padding: 4px 12px;
+            border-radius: 8px;
+            transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+            opacity: 0.15;
+            display: block;
+            font-size: 1.05rem;
+            white-space: pre;
+            line-height: 1.7;
+        }
+
+        .code-line.active {
+            opacity: 1;
+            background: #ffffff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            transform: translateX(12px);
+        }
+
+        .code-line.decision {
+            color: var(--apple-blue);
+            font-weight: 600;
+        }
+
+        .node {
+            transition: all 1s cubic-bezier(0.34, 1.56, 0.64, 1);
+            fill: #ffffff;
+            stroke: #d2d2d7;
+            stroke-width: 3;
+        }
+
+        .node.highlight {
+            stroke: var(--apple-blue);
+            stroke-width: 4;
+        }
+
+        .edge {
+            transition: stroke-dashoffset 1.5s ease-in-out;
+            stroke: #e8e8ed;
+            stroke-width: 3;
+            fill: none;
+        }
+
+        .edge.active {
+            stroke: var(--apple-blue);
+            stroke-width: 4;
+        }
+
+        .scanner-line {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: var(--apple-blue);
+            box-shadow: 0 0 20px rgba(0, 113, 227, 0.3);
+            pointer-events: none;
+            z-index: 10;
+            display: none;
+            border-radius: 2px;
+        }
+
+        @keyframes pulse-danger-r {
+            0% { r: 14; stroke-opacity: 1; }
+            50% { r: 19; stroke-opacity: 0.6; }
+            100% { r: 14; stroke-opacity: 1; }
+        }
+
+        .danger-node {
+            animation: pulse-danger-r 1.8s infinite ease-in-out;
+            stroke: var(--apple-red) !important;
+            stroke-width: 5;
+            fill: #fff5f5;
+        }
+
+        .score-badge {
+            background: var(--apple-blue);
+            color: white;
+            border-radius: 24px;
+            padding: 16px 28px;
+            box-shadow: 0 10px 30px rgba(0, 113, 227, 0.25);
+            min-width: 220px;
+        }
+
+        .start-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.01);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .complexity-image-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1.5s ease-in-out;
+            z-index: 200;
+        }
+
+        .complexity-image-container.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .complexity-image-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-6 bg-slate-50" onclick="handleInteraction()">
+
+    <div class="max-w-7xl w-full grid grid-cols-1 lg:grid-cols-2 gap-12 items-stretch relative">
+        
+        <!-- Start overlay -->
+        <div id="clickOverlay" class="start-overlay"></div>
+
+        <!-- Column: Source Code -->
+        <div class="flex flex-col space-y-6">
+            <div class="code-container glass-card" id="codeBox">
+                <div id="scanner" class="scanner-line"></div>
+                <div id="codeList" class="space-y-1">
+                    <!-- Lines injected via JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Column: Flow Graph -->
+        <div class="glass-card p-10 flex flex-col relative bg-white">
+            <div class="flex justify-between items-center mb-8">
+                <h3 class="text-slate-400 uppercase text-xs font-black tracking-widest">Flow Visualization</h3>
+                <div id="complexityCounter" class="score-badge flex flex-col items-center justify-center text-center">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs opacity-70 uppercase font-bold tracking-wider">Complexity =</span>
+                        <span id="mValue" class="text-4xl leading-none font-black">0</span>
+                    </div>
+                    <div id="pathText" class="text-[10px] uppercase tracking-widest mt-1.5 opacity-80 font-bold">0 paths detected in code</div>
+                </div>
+            </div>
+
+            <!-- Insight box moved to the top of the visualization area -->
+            <div id="insightBox" class="p-4 mb-4 bg-slate-900 text-white rounded-2xl shadow-lg opacity-0 transition-all transform translate-y-2 text-md font-medium text-center">
+                Ready for analysis...
+            </div>
+
+            <div class="flex-grow flex items-center justify-center relative border border-slate-50 rounded-[40px] bg-slate-50/30 overflow-hidden">
+                <svg id="canvas" viewBox="0 0 500 400" class="w-full h-full p-4">
+                    <defs>
+                        <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+                          <path d="M 0 0 L 10 5 L 0 10 z" fill="#d2d2d7" />
+                        </marker>
+                    </defs>
+                    <g id="edges"></g>
+                    <g id="nodes"></g>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- Final Fullscreen Image -->
+    <div id="complexityImage" class="complexity-image-container">
+        <img src="..//docs/images/ill-ccn.webp" alt="Cyclomatic Complexity Levels">
+    </div>
+
+    <script>
+        const codeLines = [
+            { t: "function checkOrder(cart) {", type: "base" },
+            { t: "  cart.calculateTotal();", type: "base" },
+            { t: "  if (cart.isPriority) {", type: "decision" },
+            { t: "    applyExpressShipping();", type: "path" },
+            { t: "  } else {", type: "decision" },
+            { t: "    applyStandardShipping();", type: "path" },
+            { t: "  }", type: "base" },
+            { t: "  for (let item of cart) {", type: "decision" },
+            { t: "    verifyStock(item);", type: "path" },
+            { t: "  }", type: "base" },
+            { t: "  return confirmOrder();", type: "base" },
+            { t: "}"}
+        ];
+
+        const nodes = [];
+        const codeList = document.getElementById('codeList');
+        const scanner = document.getElementById('scanner');
+        const nodesGroup = document.getElementById('nodes');
+        const edgesGroup = document.getElementById('edges');
+        const mValue = document.getElementById('mValue');
+        const pathText = document.getElementById('pathText');
+        const insightBox = document.getElementById('insightBox');
+        const clickOverlay = document.getElementById('clickOverlay');
+        const complexityImage = document.getElementById('complexityImage');
+
+        let isRunning = false;
+
+        codeLines.forEach((line, i) => {
+            const div = document.createElement('div');
+            div.className = `code-line ${line.type === 'decision' ? 'decision' : ''}`;
+            div.id = `line-${i}`;
+            div.textContent = line.t;
+            codeList.appendChild(div);
+        });
+
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        function createNode(id, x, y) {
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("cx", x);
+            circle.setAttribute("cy", y);
+            circle.setAttribute("r", 14);
+            circle.setAttribute("id", `n-${id}`);
+            circle.classList.add("node");
+            nodesGroup.appendChild(circle);
+            nodes.push({ id, x, y });
+            return circle;
+        }
+
+        function createEdge(fromId, toId, type = 'line') {
+            const from = nodes.find(n => n.id === fromId);
+            const to = nodes.find(n => n.id === toId);
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            
+            let d;
+            if (type === 'curve-left') {
+                d = `M ${from.x} ${from.y} Q ${from.x - 70} ${(from.y + to.y)/2} ${to.x} ${to.y}`;
+            } else if (type === 'curve-right') {
+                d = `M ${from.x} ${from.y} Q ${from.x + 70} ${(from.y + to.y)/2} ${to.x} ${to.y}`;
+            } else if (type === 'back') {
+                d = `M ${from.x} ${from.y} C ${from.x + 100} ${from.y} ${from.x + 100} ${to.y} ${to.x} ${to.y}`;
+            } else {
+                d = `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+            }
+
+            path.setAttribute("d", d);
+            path.setAttribute("marker-end", "url(#arrow)");
+            path.classList.add("edge");
+            edgesGroup.appendChild(path);
+
+            const length = path.getTotalLength();
+            path.style.strokeDasharray = length;
+            path.style.strokeDashoffset = length;
+            setTimeout(() => {
+                path.classList.add('active');
+                path.style.strokeDashoffset = 0;
+            }, 50);
+            return path;
+        }
+
+        function updateScore(score) {
+            mValue.innerText = score;
+            pathText.innerText = `${score} path${score !== 1 ? 's' : ''} detected in code`;
+        }
+
+        async function updateStep(index, message = null) {
+            document.querySelectorAll('.code-line').forEach(l => l.classList.remove('active'));
+            const line = document.getElementById(`line-${index}`);
+            if (line) line.classList.add('active');
+            
+            scanner.style.display = 'block';
+            if (line) scanner.style.top = line.offsetTop + 'px';
+
+            if (message) {
+                insightBox.innerText = message;
+                insightBox.style.opacity = 1;
+                insightBox.style.transform = 'translateY(0)';
+            } else {
+                insightBox.style.opacity = 0;
+                insightBox.style.transform = 'translateY(10px)';
+            }
+        }
+
+        async function runAnalyse() {
+            if (isRunning) return;
+            isRunning = true;
+            
+            clickOverlay.style.display = 'none';
+            complexityImage.classList.remove('visible');
+            nodesGroup.innerHTML = '';
+            edgesGroup.innerHTML = '';
+            nodes.length = 0;
+            updateScore(0);
+
+            // Intro
+            await updateStep(-1, "Goal: Detect decision points that create new logical paths.");
+            await sleep(5000);
+
+            // Function Start
+            await updateStep(0, "Function Start: We begin with the entry point.");
+            updateScore(1);
+            const n1 = createNode(1, 250, 40);
+            n1.classList.add('highlight');
+            await sleep(3500);
+
+            await updateStep(1);
+            createNode(2, 250, 100);
+            createEdge(1, 2);
+            await sleep(3000);
+
+            // IF
+            await updateStep(2, "Logic Point: An 'IF' statement is a decision point.");
+            const n3 = createNode(3, 250, 160);
+            n3.classList.add('highlight');
+            createEdge(2, 3);
+            await sleep(3500);
+
+            updateScore(2);
+            await updateStep(3, "Path Split: The code now has two independent ways to execute.");
+            createNode(4, 160, 220);
+            createEdge(3, 4, 'curve-left');
+            await sleep(3000);
+
+            await updateStep(5, "Alternative Path: Handling the 'ELSE' scenario.");
+            createNode(5, 340, 220);
+            createEdge(3, 5, 'curve-right');
+            await sleep(3500);
+
+            await updateStep(6, "Merge: Paths rejoin, but complexity is maintained.");
+            const n6 = createNode(6, 250, 280);
+            createEdge(4, 6, 'curve-left');
+            createEdge(5, 6, 'curve-right');
+            await sleep(3000);
+
+            // FOR
+            await updateStep(7, "Loop Point: A 'FOR' loop creates a cyclic path.");
+            updateScore(3);
+            const n7 = createNode(7, 250, 360);
+            createEdge(6, 7);
+            createEdge(7, 6, 'back');
+            await sleep(4000);
+
+            updateScore(4);
+            await updateStep(10, "Exit Point: Reaching the end of the function.");
+            document.getElementById('n-3').classList.add('danger-node');
+            await sleep(3000);
+
+            // Final message instead of Tutorial complete
+            await updateStep(11, "Flow analysis completed.");
+            scanner.style.display = 'none';
+            
+            await sleep(5000);
+            complexityImage.classList.add('visible');
+            
+            isRunning = false;
+        }
+
+        function handleInteraction() {
+            if (!isRunning) runAnalyse();
+        }
+    </script>
+</body>
+</html>

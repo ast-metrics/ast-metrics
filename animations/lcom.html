@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cohesion Grouping Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Fira+Code:wght@400;500&display=swap');
+
+        :root {
+            --apple-blue: #0071e3;
+            --apple-orange: #ff6b35;
+            --apple-green: #16a34a;
+            --apple-gray: #f5f5f7;
+            --apple-text: #1d1d1f;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #ffffff;
+            color: var(--apple-text);
+            -webkit-font-smoothing: antialiased;
+            cursor: pointer;
+        }
+
+        .glass-card {
+            background: #ffffff;
+            border-radius: 32px;
+            box-shadow: 0 20px 80px rgba(0, 0, 0, 0.06);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .code-container {
+            font-family: 'Fira Code', monospace;
+            background: var(--apple-gray);
+            border-radius: 24px;
+            padding: 30px;
+            position: relative;
+            min-height: 620px;
+        }
+
+        .code-line {
+            padding: 3px 12px;
+            border-radius: 8px;
+            transition: all 0.45s cubic-bezier(0.23, 1, 0.32, 1);
+            opacity: 0.22;
+            display: block;
+            font-size: 1rem;
+            white-space: pre;
+            line-height: 1.65;
+        }
+
+        .code-line.active {
+            opacity: 1;
+            transform: translateX(12px);
+            box-shadow: 0 5px 14px rgba(0, 0, 0, 0.08);
+            border-left: 4px solid #0f172a;
+            padding-left: 10px;
+        }
+
+        .code-line.attr1 {
+            color: var(--apple-blue);
+            font-weight: 600;
+        }
+
+        .code-line.attr2 {
+            color: var(--apple-orange);
+            font-weight: 600;
+        }
+
+        .code-line.call {
+            color: var(--apple-green);
+            font-weight: 600;
+        }
+
+        .code-line.group-one-bg {
+            background: rgba(0, 113, 227, 0.14);
+            opacity: 1;
+        }
+
+        .code-line.group-two-bg {
+            background: rgba(255, 107, 53, 0.15);
+            opacity: 1;
+        }
+
+        .scanner-line {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: var(--apple-blue);
+            box-shadow: 0 0 20px rgba(0, 113, 227, 0.3);
+            pointer-events: none;
+            z-index: 10;
+            display: none;
+            border-radius: 2px;
+        }
+
+        .summary-badge {
+            background: var(--apple-blue);
+            color: white;
+            border-radius: 24px;
+            padding: 14px 24px;
+            box-shadow: 0 10px 30px rgba(0, 113, 227, 0.25);
+            min-width: 360px;
+        }
+
+        .start-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.01);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .final-panel {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.95);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.9s ease;
+            z-index: 200;
+        }
+
+        .final-panel.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .final-card {
+            background: #ffffff;
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 30px;
+            padding: 32px 40px;
+            text-align: center;
+            box-shadow: 0 20px 70px rgba(0, 0, 0, 0.08);
+            max-width: 700px;
+        }
+
+        .final-score {
+            font-size: 3rem;
+            line-height: 1;
+            font-weight: 800;
+            color: var(--apple-blue);
+            margin-bottom: 12px;
+        }
+
+        @media (max-width: 1024px) {
+            .code-container {
+                min-height: 500px;
+                padding: 24px;
+            }
+
+            .code-line {
+                font-size: 0.9rem;
+            }
+
+            .summary-badge {
+                min-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-6 bg-slate-50" onclick="handleInteraction()">
+
+    <div class="max-w-6xl w-full relative">
+        <div id="clickOverlay" class="start-overlay"></div>
+
+        <div class="glass-card p-8 lg:p-10 bg-white">
+            <div class="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-7">
+                <h3 class="text-slate-400 uppercase text-xs font-black tracking-widest">Cohesion Grouping from Source Code</h3>
+                <div class="summary-badge flex flex-col items-center justify-center text-center">
+                    <div class="text-xs opacity-75 uppercase font-bold tracking-wider">Detected Method Groups</div>
+                    <div id="groupSummary" class="text-sm mt-2 font-bold tracking-wide">No groups confirmed yet</div>
+                </div>
+            </div>
+
+            <div id="insightBox" class="p-4 mb-5 bg-slate-900 text-white rounded-2xl shadow-lg opacity-0 transition-all transform translate-y-2 text-md font-medium text-center">
+                Ready for analysis...
+            </div>
+
+            <div class="code-container">
+                <div id="scanner" class="scanner-line"></div>
+                <div id="codeList" class="space-y-1"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="finalPanel" class="final-panel">
+        <div class="final-card">
+            <div class="text-xs uppercase tracking-[0.25em] text-slate-500 font-bold mb-3">Analysis Complete</div>
+            <div class="final-score">2 Groups</div>
+            <p class="text-slate-700 text-xl font-semibold mb-2">(A, B, C) and (D)</p>
+            <p class="text-slate-500 text-base">Blue lines belong to one cluster, orange lines to the other.</p>
+        </div>
+    </div>
+
+    <script>
+        const codeLines = [
+            { t: "class DemoClass {", type: "base" },
+            { t: "  constructor() {", type: "base" },
+            { t: "    this.attr1 = [];", type: "attr1" },
+            { t: "    this.attr2 = 0;", type: "attr2" },
+            { t: "  }", type: "base" },
+            { t: "  A() {", type: "base" },
+            { t: "    this.attr1.push('x');", type: "attr1" },
+            { t: "    return this.B();", type: "call" },
+            { t: "  }", type: "base" },
+            { t: "  B() {", type: "base" },
+            { t: "    return this.attr1.length;", type: "attr1" },
+            { t: "  }", type: "base" },
+            { t: "  C() {", type: "base" },
+            { t: "    return this.attr1.slice();", type: "attr1" },
+            { t: "  }", type: "base" },
+            { t: "  D() {", type: "base" },
+            { t: "    this.attr2 += 1;", type: "attr2" },
+            { t: "    return this.attr2;", type: "attr2" },
+            { t: "  }", type: "base" },
+            { t: "}", type: "base" }
+        ];
+
+        const methodLineMap = {
+            A: [5, 6, 7, 8],
+            B: [9, 10, 11],
+            C: [12, 13, 14],
+            D: [15, 16, 17, 18]
+        };
+
+        const codeList = document.getElementById('codeList');
+        const scanner = document.getElementById('scanner');
+        const groupSummary = document.getElementById('groupSummary');
+        const insightBox = document.getElementById('insightBox');
+        const clickOverlay = document.getElementById('clickOverlay');
+        const finalPanel = document.getElementById('finalPanel');
+
+        const groups = {
+            one: new Set(),
+            two: new Set()
+        };
+
+        let isRunning = false;
+
+        codeLines.forEach((line, i) => {
+            const div = document.createElement('div');
+            div.className = `code-line ${line.type}`;
+            div.id = `line-${i}`;
+            div.textContent = line.t;
+            codeList.appendChild(div);
+        });
+
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        function resetGroups() {
+            groups.one.clear();
+            groups.two.clear();
+            applyGroupBackgrounds();
+            updateSummary();
+        }
+
+        function updateSummary() {
+            const g1 = Array.from(groups.one).join(', ');
+            const g2 = Array.from(groups.two).join(', ');
+
+            if (!g1 && !g2) {
+                groupSummary.textContent = 'No groups confirmed yet';
+                return;
+            }
+            if (g1 && !g2) {
+                groupSummary.textContent = `Group 1: (${g1})`;
+                return;
+            }
+            groupSummary.textContent = `Group 1: (${g1}) | Group 2: (${g2})`;
+        }
+
+        function applyLines(method, className) {
+            methodLineMap[method].forEach(index => {
+                const line = document.getElementById(`line-${index}`);
+                if (line) {
+                    line.classList.add(className);
+                }
+            });
+        }
+
+        function applyGroupBackgrounds() {
+            document.querySelectorAll('.code-line').forEach(line => {
+                line.classList.remove('group-one-bg', 'group-two-bg');
+            });
+
+            groups.one.forEach(method => applyLines(method, 'group-one-bg'));
+            groups.two.forEach(method => applyLines(method, 'group-two-bg'));
+        }
+
+        function addToGroup(method, groupName) {
+            groups[groupName].add(method);
+            applyGroupBackgrounds();
+            updateSummary();
+        }
+
+        async function updateStep(index, message = null) {
+            document.querySelectorAll('.code-line').forEach(line => line.classList.remove('active'));
+            const line = document.getElementById(`line-${index}`);
+            if (line) {
+                line.classList.add('active');
+                scanner.style.display = 'block';
+                scanner.style.top = `${line.offsetTop}px`;
+            } else {
+                scanner.style.display = 'none';
+            }
+
+            if (message) {
+                insightBox.innerText = message;
+                insightBox.style.opacity = 1;
+                insightBox.style.transform = 'translateY(0)';
+            } else {
+                insightBox.style.opacity = 0;
+                insightBox.style.transform = 'translateY(10px)';
+            }
+        }
+
+        async function runAnalyse() {
+            if (isRunning) {
+                return;
+            }
+            isRunning = true;
+
+            clickOverlay.style.display = 'none';
+            finalPanel.classList.remove('visible');
+            resetGroups();
+
+            await updateStep(-1, 'Goal: group methods by shared state usage in source code.');
+            await sleep(3600);
+
+            await updateStep(6, 'A uses attr1: start Group 1 with method A.');
+            addToGroup('A', 'one');
+            await sleep(3400);
+
+            await updateStep(10, 'B also uses attr1: B joins the same background group.');
+            addToGroup('B', 'one');
+            await sleep(3400);
+
+            await updateStep(13, 'C uses attr1 too: Group 1 becomes (A, B, C).');
+            addToGroup('C', 'one');
+            await sleep(3600);
+
+            await updateStep(16, 'D uses attr2 only: Group 2 = (D).');
+            addToGroup('D', 'two');
+            await sleep(3800);
+
+            await updateStep(19, 'Final grouping: (A, B, C) and (D).');
+            await sleep(4200);
+
+            scanner.style.display = 'none';
+            finalPanel.classList.add('visible');
+            await sleep(5000);
+            finalPanel.classList.remove('visible');
+            isRunning = false;
+        }
+
+        function handleInteraction() {
+            if (!isRunning) {
+                runAnalyse();
+            }
+        }
+    </script>
+</body>
+</html>

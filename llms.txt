@@ -1,0 +1,234 @@
+# AST Metrics
+
+> AST Metrics is a language-agnostic static code analysis tool. It parses source
+> code into Abstract Syntax Trees, builds the dependency graph of the components it
+> finds, and derives architecture-level insights from both: complexity, coupling,
+> class cohesion, community detection, risk scoring, bus factor and test quality.
+> On a pull request, `ast-metrics review` reports only new or worsened findings,
+> deterministically. It is a single Go binary with no database, no server and no account.
+
+Homepage: https://ast-metrics.dev
+Documentation: https://ast-metrics.dev
+Source: https://github.com/ast-metrics/ast-metrics
+Try it online, on any public repository: https://analyze.ast-metrics.dev
+
+## What makes it different
+
+Most quality tools report every issue in the codebase, which makes the first run
+unusable on a legacy project. AST Metrics is built around the opposite default:
+`ast-metrics review` compares a branch with its base and reports only new or
+worsened findings. Existing debt is never mentioned.
+
+It also works above the file level. Instead of only flagging long functions, it
+detects the communities your code naturally forms, the circular dependencies
+between them, and which contributors hold knowledge nobody else has.
+
+## Supported languages
+
+Golang (any version), PHP (up to 8.5), Python (2 and 3), TypeScript (any version),
+Rust (any version), Java (any version), C# (any version).
+
+Every metric is computed the same way across all seven, so a polyglot repository
+yields one comparable picture. Files are matched by extension; unusual ones are
+declared with `--php-extensions`, `--go-extensions`, `--java-extensions` and so on.
+
+## Installation
+
+```bash
+# Homebrew (Linux, MacOS)
+brew install ast-metrics/tap/ast-metrics
+
+# Linux, MacOS, Windows
+curl -fsSL https://install.ast-metrics.dev | sh
+
+# Docker
+docker run --rm -v $(pwd):/src ghcr.io/ast-metrics/ast-metrics:latest analyze /src
+
+# Debian/Ubuntu (.deb) and Fedora/RHEL (.rpm): download from the GitHub releases page
+
+# JavaScript/TypeScript projects (official npm channel since v0.42.0)
+npm install --save-dev ast-metrics && npx ast-metrics analyze src
+# or one-shot, without installing:
+npx ast-metrics analyze src
+
+# Python projects (PyPI package: ast-metrics)
+pipx run ast-metrics analyze src
+# or as a dev dependency:
+pip install ast-metrics
+
+# PHP projects
+composer require --dev ast-metrics/ast-metrics
+
+# Go
+go install github.com/ast-metrics/ast-metrics/cmd/ast-metrics@latest
+```
+
+The result is a standalone binary. `ast-metrics self-update` upgrades it in place.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `ast-metrics analyze <paths>` | Full analysis. Opens an interactive terminal UI, or writes reports. |
+| `ast-metrics review` | Compare with a base branch and report only new or worsened findings. |
+| `ast-metrics lint` | Check the requirements declared in `.ast-metrics.yaml` and exit non-zero on violations. |
+| `ast-metrics baseline` | Snapshot existing lint violations into `.ast-metrics-baseline.yaml` so lint only fails on new ones. |
+| `ast-metrics ci <paths>` | Run the linter, then generate every report. The command to call from a pipeline. |
+| `ast-metrics mcp <paths>` | Start an MCP server over stdio, for AI coding agents. |
+| `ast-metrics init` | Create a default `.ast-metrics.yaml`. |
+| `ast-metrics ruleset list` / `add <name>` | List and import predefined rule sets. |
+| `ast-metrics clean` | Clear the work directory. |
+| `ast-metrics version` | Print version information. |
+
+Paths default to the current directory. `--exclude=<regexp>` can be repeated.
+
+Report flags, available on `analyze` and `ci`: `--report-html=<dir>`,
+`--report-markdown=<file>`, `--report-json=<file>`, `--report-sarif=<file>`,
+`--report-openmetrics=<file>`. Add `--open-html` to open the HTML report, or
+`--watch` to re-analyze on every change.
+
+There is no top-level `--report-html` flag and no `--ci` flag: both belong to a
+subcommand (`analyze --report-html=...`, `ast-metrics ci`).
+
+## Reviewing a branch
+
+```bash
+ast-metrics review                      # base is auto-detected
+ast-metrics review --base=develop
+ast-metrics review --fail-on=high       # never (default), high, medium, any
+ast-metrics review --format=markdown    # text, markdown, json
+ast-metrics review --report-json=review.json
+ast-metrics review --report-sarif=review.sarif --sarif-max-level=warning
+```
+
+The command checks out the base in a temporary git worktree, analyzes both versions
+and diffs the results. It reports improvements as well as regressions, and by
+default never fails the build. `--max-findings` raises the number of regressions
+shown in the text and Markdown output; the JSON report always holds the full list.
+
+## Enforcing rules
+
+Requirements live in `.ast-metrics.yaml` at the project root:
+
+```yaml
+sources:
+  - ./src
+exclude: []
+requirements:
+  rules:
+    architecture:
+      coupling:
+        forbidden:
+          - from: Controller
+            to: Repository
+      max_afferent_coupling: 10
+      max_efferent_coupling: 10
+      min_maintainability: 70
+      no_circular_dependencies: true
+    volume:
+      max_loc_by_method: 30
+      max_methods_per_class: 20
+    complexity:
+      max_cyclomatic: 10
+```
+
+Available rulesets: `architecture`, `volume`, `complexity`, `golang`. When such a
+file exists, `ast-metrics review` also reports the new violations a branch
+introduces, and only those.
+
+## MCP server for AI agents
+
+AI coding agents read code linearly and have no architectural awareness. The MCP
+server gives them on-demand access to the analysis instead of making them read every
+file.
+
+```bash
+ast-metrics mcp .
+```
+
+Declare it in `.mcp.json` at the project root:
+
+```json
+{
+  "mcpServers": {
+    "ast-metrics": {
+      "command": "ast-metrics",
+      "args": ["mcp", "."]
+    }
+  }
+}
+```
+
+Nine tools are exposed over stdio:
+
+| Tool | Returns |
+|---|---|
+| `analyze_project` | Project overview: languages, complexity, maintainability, top risks. |
+| `get_file_metrics` | Every metric for one file. |
+| `find_complex_code` | Functions and classes above a complexity threshold. |
+| `find_risky_code` | Components with the highest risk score. |
+| `get_coupling` | Afferent and efferent coupling for a component. |
+| `get_dependencies` | The dependency subgraph around a component. |
+| `get_communities` | Detected architectural communities and their metrics. |
+| `get_test_quality` | Test isolation, traceability, god tests, orphan classes. |
+| `list_components` | Inventory of classes, functions and components. |
+
+Useful before touching unfamiliar code: ask what a component is coupled to before
+changing its interface, or which files carry risk before proposing a refactor.
+
+## Metrics
+
+| Metric | What it answers |
+|---|---|
+| Volume | Lines of code, logical lines, comments. The baseline for the rest. |
+| Cyclomatic complexity | How many independent paths run through a function. |
+| Maintainability index | A single score for how hard a component is to change. |
+| Risk score | Complexity crossed with churn: where bugs are likely to hide. |
+| Coupling and instability | How entangled components are, and which way dependencies point. |
+| Class cohesion (LCOM4) | Whether the methods of a class belong together. |
+| Community detection | The groups your code actually forms, via the Louvain algorithm. |
+| Architecture map | The dependency graph, including circular dependencies. |
+| Bus factor | How concentrated knowledge is, from git history. |
+
+## Continuous integration
+
+On GitHub, one line of YAML is enough. The action runs `ast-metrics review` on pull
+requests and a full analysis on pushes:
+
+```yaml
+name: "AST Metrics"
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  ast-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ast-metrics/action-ast-metrics@v2
+```
+
+The analysis runs entirely on the runner. No code leaves the infrastructure, and no
+account is involved. Options include `fail-on`, `sarif`, `sarif-max-level`,
+`annotations` and `html-artifact`.
+
+GitLab CI reads the OpenMetrics report (`ast-metrics ci --report-openmetrics=metrics.txt .`)
+and can gate merge requests with `ast-metrics review --fail-on=high`.
+
+`ast-metrics deploy:github --token=<token> <org>` opens a pull request adding the
+workflow to every repository of a GitHub organization.
+
+## Documentation index
+
+- [Why AST Metrics?](https://ast-metrics.dev/getting-started/): what it computes and how.
+- [Installation](https://ast-metrics.dev/getting-started/install/): every install method.
+- [First execution](https://ast-metrics.dev/getting-started/first-execution/): the interactive UI.
+- [Reviewing your changes](https://ast-metrics.dev/getting-started/review-changes/): the `review` command in depth.
+- [Understanding the output](https://ast-metrics.dev/getting-started/understand/): AST, graphs, and what is derived from them.
+- [Generating a report](https://ast-metrics.dev/getting-started/generate-reports/): HTML, Markdown, JSON, SARIF, OpenMetrics.
+- [Metrics guide](https://ast-metrics.dev/metrics/): one page per metric, with thresholds and how to act.
+- [GitHub Actions](https://ast-metrics.dev/ci/github-actions/): all inputs and permissions.
+- [Rulesets and linting](https://ast-metrics.dev/ci/linting-architecture/): every available rule.
+- [GitLab CI](https://ast-metrics.dev/ci/gitlab-ci/)
+- [MCP server](https://ast-metrics.dev/ai/mcp-server/): setup for Claude, Cursor and other clients.
