@@ -28,7 +28,7 @@ func (c *CommunitySubMetricsCalculator) Calculate(aggregate *Aggregated) {
 			if namespace == "" {
 				namespace = file.Stmts.StmtNamespace[0].Name.Short
 			}
-			namespace = aggregate.NamespaceReducer.Reduce(namespace)
+			namespace = aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), namespace)
 		}
 
 		// If no namespace found, try using the file path

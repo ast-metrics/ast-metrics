@@ -11,6 +11,7 @@ import (
 	enginePkg "github.com/ast-metrics/ast-metrics/internal/engine"
 	golangengine "github.com/ast-metrics/ast-metrics/internal/engine/golang"
 	phpengine "github.com/ast-metrics/ast-metrics/internal/engine/php"
+	pythonengine "github.com/ast-metrics/ast-metrics/internal/engine/python"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
@@ -20,16 +21,26 @@ func graphOf(t *testing.T, sources ...string) *Aggregated {
 
 	files := make([]*pb.File, 0, len(sources))
 	for _, source := range sources {
-		file, err := enginePkg.CreateTestFileWithCode(&phpengine.PhpRunner{}, source)
-		if err != nil {
-			t.Fatalf("parse error: %v", err)
-		}
-		AnalyzeFile(file)
-		files = append(files, file)
+		files = append(files, parsedBy(t, &phpengine.PhpRunner{}, source))
 	}
+	return graphOfFiles(files...)
+}
 
+// graphOfFiles returns the graph built out of already parsed files.
+func graphOfFiles(files ...*pb.File) *Aggregated {
 	aggregated := NewAggregator(files, nil).Aggregates().Combined
 	return &aggregated
+}
+
+// parsedBy parses a source with the given engine and analyzes it.
+func parsedBy(t *testing.T, parser enginePkg.Engine, source string) *pb.File {
+	t.Helper()
+	file, err := enginePkg.CreateTestFileWithCode(parser, source)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	AnalyzeFile(file)
+	return file
 }
 
 // nodesOf returns the sorted identifiers of the nodes of the graph.
@@ -200,6 +211,53 @@ func TestCommunitiesAreKeyedOnTheNodesOfTheGraph(t *testing.T) {
 		}
 		if aggregated.Graph.Nodes[node] == nil {
 			t.Errorf("community keyed on %q, which is not a node of the graph", node)
+		}
+	}
+}
+
+// The root of a project is what its production code shares. A test suite kept
+// under a namespace of its own, Tests\Unit beside Company\Project\SubProject,
+// shares nothing with it, and must not leave the project with no root at all.
+func TestGraphRootIgnoresTheTestFiles(t *testing.T) {
+	root := `Company\Project\SubProject`
+	tests := parsedBy(t, &phpengine.PhpRunner{}, phpModule(`Tests\Unit\Artifact`, root+`\Artifact`))
+	tests.IsTest = true
+
+	aggregated := graphOfFiles(
+		parsedBy(t, &phpengine.PhpRunner{}, phpModule(root+`\Artifact`, root+`\Clearing`)),
+		parsedBy(t, &phpengine.PhpRunner{}, phpModule(root+`\Clearing`, root+`\Import`)),
+		parsedBy(t, &phpengine.PhpRunner{}, phpModule(root+`\Import`, "")),
+		tests,
+	)
+
+	nodes := nodesOf(aggregated)
+	for _, expected := range []string{root + `\Artifact`, root + `\Clearing`, root + `\Import`} {
+		if !slices.Contains(nodes, expected) {
+			t.Errorf("expected the node %q, got %q", expected, nodes)
+		}
+	}
+	// The test namespace is foreign to the root, and cut at the plain depth.
+	if !slices.Contains(nodes, `Tests\Unit\Artifact`) {
+		t.Errorf("expected the tests to keep their own node, got %q", nodes)
+	}
+}
+
+// Every language has a root of its own: the Python scripts kept beside a PHP
+// project name their modules after bare file names, which share nothing with
+// the namespaces of the PHP code, and must not decide how those are cut.
+func TestGraphRootIsFoundPerLanguage(t *testing.T) {
+	root := `Company\Project\SubProject`
+	aggregated := graphOfFiles(
+		parsedBy(t, &phpengine.PhpRunner{}, phpModule(root+`\Artifact`, root+`\Clearing`)),
+		parsedBy(t, &phpengine.PhpRunner{}, phpModule(root+`\Clearing`, root+`\Import`)),
+		parsedBy(t, &phpengine.PhpRunner{}, phpModule(root+`\Import`, "")),
+		parsedBy(t, &pythonengine.PythonRunner{}, "import os\n\nclass Script:\n    def run(self):\n        return os.getcwd()\n"),
+	)
+
+	nodes := nodesOf(aggregated)
+	for _, expected := range []string{root + `\Artifact`, root + `\Clearing`, root + `\Import`} {
+		if !slices.Contains(nodes, expected) {
+			t.Errorf("expected the node %q, got %q", expected, nodes)
 		}
 	}
 }

@@ -115,3 +115,26 @@ func commonDepthOfNamespaces(namespaces []string) int {
 		}
 	}
 }
+
+// NamespaceReducers holds one reducer per programming language. The root of a
+// project is looked for among the namespaces of one language at a time: a PHP
+// project rooted at Company\Project\SubProject shares nothing with the
+// TypeScript files beside it, whose modules are named after their bare file
+// name, and letting them weigh in would leave the PHP code with no root at all.
+type NamespaceReducers map[string]*NamespaceReducer
+
+// NewNamespaceReducers builds one reducer per language, out of the namespaces
+// each language owns.
+func NewNamespaceReducers(ownedByLanguage map[string][]string, depth int) NamespaceReducers {
+	reducers := make(NamespaceReducers, len(ownedByLanguage))
+	for language, owned := range ownedByLanguage {
+		reducers[language] = NewNamespaceReducer(owned, depth)
+	}
+	return reducers
+}
+
+// Reduce cuts a namespace of the given language. A language no reducer was
+// built for, and the nil set alike, keep DefaultNamespaceDepth levels.
+func (r NamespaceReducers) Reduce(language string, namespace string) string {
+	return r[language].Reduce(namespace)
+}
