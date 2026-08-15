@@ -1,6 +1,6 @@
 /* Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 /* Material declares its own tokens on `:root, [data-md-color-scheme=default]` and
@@ -28,9 +28,15 @@ body[data-md-color-scheme] {
   --md-typeset-a-color: #2563eb;
 
   /* Custom Variables */
-  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-bg: rgba(252, 250, 245, 0.85);
   --glass-border: rgba(255, 255, 255, 0.4);
   --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.05);
+
+  /* Landing page: warm paper with pixel-art accents */
+  --lp-paper: #faf7f0;
+  --lp-paper-deep: #f3eee1;
+  --lp-border: #e8e1d1;
+  --lp-serif: 'Instrument Serif', Georgia, serif;
 
   /* Design tokens shared by the landing page and the documentation pages */
   --am-ink: #111827;
@@ -40,7 +46,7 @@ body[data-md-color-scheme] {
   --am-border-strong: #dfe3ea;
   --am-surface: #f9fafb;
   --am-surface-alt: #f3f4f6;
-  --am-page-bg: #f6f8fc;
+  --am-page-bg: #f8f5ee;
   --am-blue: #2563eb;
   --am-blue-dark: #1d4ed8;
   --am-blue-soft: #eff6ff;
@@ -71,8 +77,8 @@ body[data-md-color-scheme] {
   --md-code-hl-generic-color: #565f89;
 
   /* Footer: light, aligned with the landing page instead of the default dark slab */
-  --md-footer-bg-color: #f9fafb;
-  --md-footer-bg-color--dark: #f3f4f6;
+  --md-footer-bg-color: #f8f5ee;
+  --md-footer-bg-color--dark: #f3eee1;
   --md-footer-fg-color: #111827;
   --md-footer-fg-color--light: #4b5563;
   --md-footer-fg-color--lighter: #9ca3af;
@@ -91,30 +97,6 @@ body[data-md-color-scheme] {
 
 .md-header__button.md-logo img {
   height: 2.5rem;
-}
-
-.hero-cta {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 0;
-}
-
-.hero-cta a,
-.hero-cta a:hover {
-  color: #FFF;
-}
-
-.hero-cta a.cta-button-outline {
-  color: #111827;
-}
-
-.hero-cta a.cta-button-outline:hover {
-  color: white;
 }
 
 /* Fix Search Hover */
@@ -163,193 +145,654 @@ h6 {
   color: #111827;
 }
 
-/* Landing Page Specifics */
+/* ==========================================================================
+   LANDING PAGE
+   Warm paper background, editorial serif headlines, pixel-art accents.
+   All landing links opt out of the documentation underline (see the
+   `.md-typeset .landing-page a` reset in the docs zone below).
+   ========================================================================== */
+
+/* The landing breaks out of Material's centered grid: full-bleed paper
+   background, sections manage their own max-width. `overflow-x: clip` on the
+   ancestor swallows the scrollbar-width excess of the 100vw stretch. */
+.md-main:has(.landing-page) {
+  background: var(--lp-paper);
+  overflow-x: clip;
+}
+
+.md-content__inner:has(.landing-page) {
+  margin: 0;
+  padding: 0;
+}
+
+.md-content__inner:has(.landing-page)::before {
+  display: none;
+}
+
 .landing-page {
   font-family: 'Plus Jakarta Sans', sans-serif;
   overflow-x: hidden;
+  background: var(--lp-paper);
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
 }
 
-.hero-section {
-  padding: 8rem 0 6rem;
-  background: radial-gradient(circle at top right, #eff6ff 0%, #ffffff 40%);
-  position: relative;
-}
-
-.hero-container {
-  max-width: 1200px;
+.lp-container {
+  max-width: 1080px;
   margin: 0 auto;
   padding: 0 1.5rem;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4rem;
-  align-items: center;
 }
 
-.hero-content h1 {
-  font-size: 4.5rem;
-  line-height: 1.1;
-  font-weight: 800;
-  margin-bottom: 1.5rem;
-  background: linear-gradient(135deg, #111827 0%, #4b5563 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  letter-spacing: -0.03em;
-}
-
-.hero-content p {
-  font-size: 1.25rem;
-  color: #4b5563;
-  line-height: 1.6;
-  margin-bottom: 2.5rem;
-  max-width: 540px;
-}
-
-.cta-button {
-  display: inline-flex;
-  align-items: center;
-  padding: 1rem 2rem;
-  background: #111827;
-  color: white;
-  font-weight: 600;
-  border-radius: 99px;
-  transition: all 0.3s ease;
-  font-size: 1.125rem;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-}
-
-.cta-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.2);
-  background: #000;
-}
-
-.cta-button-outline {
-  background: transparent;
-  color: #111827;
-  border: 2px solid #111827;
-  box-shadow: none;
-}
-
-.cta-button-outline:hover {
-  background: #111827;
-  color: white;
-}
-
-.hero-visual {
-  position: relative;
-}
-
-.code-window {
-  background: #1e1e2e;
-  border-radius: 12px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  padding: 1.5rem;
-  transform: perspective(1000px) rotateY(-5deg) rotateX(2deg);
-  transition: transform 0.5s ease;
-}
-
-.code-window:hover {
-  transform: perspective(1000px) rotateY(0) rotateX(0);
-}
-
-.window-header {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 1rem;
-}
-
-.dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-.dot.red {
-  background: #ff5f56;
-}
-
-.dot.yellow {
-  background: #ffbd2e;
-}
-
-.dot.green {
-  background: #27c93f;
-}
-
-/* Features Grid */
-.features-section {
-  padding: 6rem 0;
-  background: #fff;
-}
-
-/* CI Section */
-.ci-section {
-  padding: 6rem 0;
-  background: #f9fafb;
-}
-
-.ci-container {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 0 1.5rem;
+.lp-narrow {
+  max-width: 800px;
   text-align: center;
 }
 
-.ci-content h2 {
-  font-size: 2.5rem;
-  font-weight: 800;
-  margin-bottom: 1rem;
-  color: #111827;
+.landing-page .lp-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--am-blue);
+  margin: 0 0 1.1rem;
 }
 
-.ci-content p {
-  font-size: 1.25rem;
+/* --- Hero --- */
+.lp-hero {
+  padding: 5.5rem 1.5rem 3.5rem;
+  text-align: center;
+}
+
+.lp-hero-inner {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.landing-page .lp-title {
+  font-family: var(--lp-serif);
+  font-weight: 400;
+  font-size: 3.9rem;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--am-ink);
+  margin: 0 0 1.6rem;
+}
+
+.landing-page .lp-title em,
+.landing-page .lp-h2 em {
+  font-style: italic;
+  color: var(--am-blue);
+}
+
+.landing-page .lp-lead {
+  font-size: 1.18rem;
+  line-height: 1.65;
   color: #4b5563;
-  margin-bottom: 3rem;
-  line-height: 1.6;
-  max-width: 700px;
-  margin-left: auto;
-  margin-right: auto;
+  max-width: 690px;
+  margin: 0 auto 1.6rem;
 }
 
-.ci-logos {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 2rem;
+.landing-page ul.lp-pills {
+  list-style: none;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 2.2rem;
+  padding: 0;
+}
+
+.landing-page .lp-pills li {
+  display: flex;
+  align-items: center;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4b5563;
+  background: #fff;
+  border: 1px solid var(--lp-border);
+  border-radius: 99px;
+  padding: 0.32rem 0.9rem;
+  margin: 0;
+}
+
+/* Square dot: a one-pixel nod to the pixel-art language */
+.landing-page .lp-pills li::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: var(--am-blue);
+  margin-right: 0.55rem;
+}
+
+.landing-page .lp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1.7rem;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 1rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.landing-page .lp-btn-dark {
+  background: var(--am-ink);
+  color: #fff;
+  box-shadow: 0 10px 24px -10px rgba(17, 24, 39, 0.35);
+}
+
+.landing-page .lp-btn-dark:hover {
+  background: #000;
+  color: #fff;
+  transform: translateY(-2px);
+  box-shadow: 0 16px 30px -12px rgba(17, 24, 39, 0.4);
+}
+
+.landing-page .lp-btn-light {
+  background: #fff;
+  color: #0f172a;
   margin-top: 2rem;
 }
 
-.ci-card {
-  background: white;
-  padding: 2rem;
-  border-radius: 16px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-  transition: transform 0.3s ease;
+.landing-page .lp-btn-light:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+  transform: translateY(-2px);
+}
+
+/* --- Pixel band --- */
+.lp-band {
+  line-height: 0;
+  background: var(--lp-paper);
+}
+
+.pixel-band-svg {
+  display: block;
+  width: 100%;
+  height: 150px;
+}
+
+/* --- Install card, floating over the band --- */
+.lp-install-wrap {
   position: relative;
+  padding: 0 1.5rem;
+  margin-top: -84px;
+}
+
+.lp-install-card {
+  max-width: 860px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid var(--lp-border);
+  border-radius: 18px;
+  padding: 1.9rem 2rem 1.6rem;
+  box-shadow: 0 30px 60px -30px rgba(17, 24, 39, 0.3);
+}
+
+.landing-page .lp-install-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--am-ink);
+  margin: 0;
+}
+
+/* Vertical word roller: one visible line, the track slides behind it */
+.lp-roller {
+  display: inline-block;
   overflow: hidden;
-  border: 1px solid rgba(229, 231, 235, 0.5);
+  height: 1.3em;
+  transition: width 0.45s cubic-bezier(0.65, 0, 0.35, 1);
 }
 
-.ci-card:hover {
-  transform: translateY(-5px);
+.lp-roller-track {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  transition: transform 0.45s cubic-bezier(0.65, 0, 0.35, 1);
 }
 
-.ci-icon {
-  color: #111827;
-  margin-bottom: 1rem;
-}
-
-.ci-card h3 {
-  font-size: 1.25rem;
+.lp-roller-track span {
+  display: block;
+  height: 1.3em;
+  line-height: 1.3em;
+  font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
-  margin-bottom: 0.5rem;
-  color: #111827;
+  color: var(--am-blue);
+  white-space: nowrap;
 }
 
-.ci-card p {
-  font-size: 1rem;
+@media (prefers-reduced-motion: reduce) {
+  .lp-roller,
+  .lp-roller-track {
+    transition: none;
+  }
+}
+
+.landing-page .lp-install-sub {
   color: #6b7280;
-  margin-bottom: 0;
+  font-size: 0.95rem;
+  margin: 0.5rem 0 1.1rem;
+}
+
+.install-terminal {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--am-code-bg);
+  border-radius: 12px;
+  padding: 0.85rem 0.85rem 0.85rem 1.25rem;
+}
+
+.install-prompt {
+  color: #7aa2f7;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* Repeated selector: outweighs Material's inline-code chip rule
+   (`.md-typeset :not(pre) > code`), which would paint a light background */
+.install-command.install-command.install-command {
+  flex: 1;
+  border: 0;
+  padding: 0;
+  font-weight: 400;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  background: transparent;
+  color: var(--am-code-fg);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.92rem;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.install-command.switching {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.install-copy {
+  appearance: none;
+  border: 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 8px;
+  background: rgba(192, 202, 245, 0.08);
+  color: rgba(192, 202, 245, 0.7);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.install-copy:hover {
+  background: rgba(192, 202, 245, 0.18);
+  color: #fff;
+}
+
+.install-copy .install-copied-icon {
+  display: none;
+}
+
+.install-copy.copied {
+  color: #9ece6a;
+}
+
+.install-copy.copied .install-copy-icon {
+  display: none;
+}
+
+.install-copy.copied .install-copied-icon {
+  display: block;
+}
+
+.landing-page ul.lp-checks {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.6rem;
+  padding: 0;
+  margin: 1.1rem 0 0.6rem;
+}
+
+.landing-page .lp-checks li {
+  font-size: 0.82rem;
+  color: #4b5563;
+  margin: 0;
+}
+
+.landing-page .lp-checks li::before {
+  content: "✓";
+  color: #16a34a;
+  font-weight: 700;
+  margin-right: 0.45rem;
+}
+
+.lp-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.6rem;
+}
+
+.landing-page .lp-card-links a {
+  font-size: 0.85rem;
+  color: #6b7280;
+  border-bottom: 1px solid rgba(107, 114, 128, 0.35);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.landing-page .lp-card-links a:hover {
+  color: var(--am-blue);
+  border-bottom-color: var(--am-blue);
+}
+
+/* --- Sections --- */
+.lp-section {
+  padding: 5.5rem 0;
+  background: var(--lp-paper);
+}
+
+.lp-section-alt {
+  background: #fff;
+  border-top: 1px solid var(--lp-border);
+  border-bottom: 1px solid var(--lp-border);
+}
+
+.lp-section-head {
+  text-align: center;
+  margin-bottom: 2.6rem;
+}
+
+.landing-page .lp-h2 {
+  font-family: var(--lp-serif);
+  font-weight: 400;
+  font-size: 2.7rem;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  color: var(--am-ink);
+  margin: 0 0 1.1rem;
+}
+
+.landing-page .lp-section-lead {
+  font-size: 1.1rem;
+  line-height: 1.65;
+  color: #4b5563;
+  max-width: 660px;
+  margin: 0 auto 1.4rem;
+}
+
+/* --- Square window dots: same pixel language as the band --- */
+.lp-dot {
+  width: 10px;
+  height: 10px;
+}
+
+.lp-dot:nth-child(1) { background: #f7768e; }
+.lp-dot:nth-child(2) { background: #e0af68; }
+.lp-dot:nth-child(3) { background: #9ece6a; }
+
+/* --- Report screenshot in a light browser frame --- */
+.lp-shot-frame {
+  max-width: 1000px;
+  margin: 1.6rem auto 0;
+  background: #fff;
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 40px 80px -40px rgba(17, 24, 39, 0.35);
+}
+
+.lp-shot-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.7rem 0.95rem;
+  background: var(--lp-paper);
+  border-bottom: 1px solid var(--lp-border);
+}
+
+.lp-shot-url {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--am-muted);
+}
+
+.landing-page .lp-shot-frame img {
+  display: block;
+  width: 100%;
+}
+
+.landing-page .lp-try {
+  text-align: center;
+  font-size: 0.95rem;
+  color: #6b7280;
+  margin: 1.6rem 0 0;
+}
+
+.landing-page .lp-try a {
+  color: var(--am-blue);
+  font-weight: 600;
+  border-bottom: 1px solid rgba(37, 99, 235, 0.35);
+}
+
+.landing-page .lp-try a:hover {
+  color: var(--am-blue-dark);
+  border-bottom-color: var(--am-blue-dark);
+}
+
+/* --- Feature cards --- */
+.lp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.2rem;
+}
+
+.landing-page .lp-card {
+  display: block;
+  background: var(--lp-paper);
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  padding: 1.6rem;
+  color: inherit;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.landing-page .lp-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 34px -20px rgba(17, 24, 39, 0.3);
+  border-color: #d9d1bd;
+}
+
+.landing-page .lp-card h3 {
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: var(--am-ink);
+  margin: 0.95rem 0 0.45rem;
+}
+
+.landing-page .lp-card p {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #6b7280;
+  margin: 0;
+}
+
+.lp-px {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: #fff;
+  border: 1px solid var(--lp-border);
+  border-radius: 10px;
+}
+
+.lp-px svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* --- CI cards --- */
+.lp-ci-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem;
+  margin-top: 2.4rem;
+  text-align: left;
+}
+
+.lp-card-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  background: #fff;
+}
+
+.lp-card-row svg {
+  flex-shrink: 0;
+  color: var(--am-ink);
+  margin-top: 0.15rem;
+}
+
+.landing-page .lp-card-row h3 {
+  margin: 0 0 0.35rem;
+}
+
+/* --- Dark band (MCP) --- */
+.lp-dark {
+  padding: 5.5rem 0;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+.landing-page .lp-eyebrow-light {
+  color: #8ea3f2;
+}
+
+.landing-page .lp-h2-light {
+  color: #fff;
+}
+
+.landing-page .lp-lead-light {
+  color: #94a3b8;
+}
+
+/* Repeated class beats the docs inline-code chip rule below */
+.lp-dark .lp-lead-light.lp-lead-light code {
+  background: rgba(255, 255, 255, 0.1);
+  border: 0;
+  color: #e2e8f0;
+}
+
+.lp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-top: 1.6rem;
+}
+
+.lp-tags span {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+}
+
+/* --- Final CTA --- */
+.lp-final {
+  padding-bottom: 6.5rem;
+}
+
+/* --- Animations ---
+   Gated behind the `js` class (set by landing.js) so the page stays fully
+   visible when JavaScript is unavailable. */
+.js .fade-up {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+}
+
+.js .fade-up.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js .fade-up {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .lp-hero {
+    padding: 3.2rem 1rem 2.4rem;
+  }
+
+  .landing-page .lp-title {
+    font-size: 2.2rem;
+  }
+
+  .landing-page .lp-lead {
+    font-size: 1rem;
+  }
+
+  .landing-page .lp-h2 {
+    font-size: 1.8rem;
+  }
+
+  .pixel-band-svg {
+    height: 90px;
+  }
+
+  .lp-install-wrap {
+    margin-top: -50px;
+    padding: 0 1rem;
+  }
+
+  .lp-install-card {
+    padding: 1.3rem 1.2rem 1.2rem;
+  }
+
+  .install-command.install-command.install-command {
+    font-size: 0.78rem;
+  }
+
+  .lp-section {
+    padding: 3.5rem 0;
+  }
+
+  .lp-dark {
+    padding: 3.5rem 0;
+  }
+
+  .lp-ci-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-page .lp-btn {
+    padding: 0.75rem 1.4rem;
+    font-size: 0.95rem;
+  }
 }
 
 /* MCP Tools Grid (docs page) */
@@ -387,72 +830,6 @@ h6 {
   line-height: 1.5;
 }
 
-/* AI Integration Section */
-.ai-section {
-  padding: 6rem 0;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-  color: white;
-}
-
-.ai-container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 0 1.5rem;
-  text-align: center;
-}
-
-.ai-content h2 {
-  font-size: 2.5rem;
-  font-weight: 800;
-  margin-bottom: 1rem;
-  color: white;
-}
-
-.ai-content p {
-  font-size: 1.25rem;
-  color: #94a3b8;
-  margin-bottom: 2rem;
-  line-height: 1.6;
-  max-width: 700px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.ai-tools {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.75rem;
-  margin-top: 1.5rem;
-}
-
-.ai-tool-tag {
-  display: inline-block;
-  padding: 0.5rem 1rem;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 99px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.875rem;
-  color: #e2e8f0;
-  transition: background 0.2s ease;
-}
-
-.ai-tool-tag:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.ai-section .cta-button {
-  background: white;
-  color: #0f172a;
-}
-
-.ai-section .cta-button:hover {
-  background: #e2e8f0;
-  color: #0f172a;
-  transform: translateY(-2px);
-}
-
 /* Fix Header Icons (GitHub) */
 .md-header__source {
   color: #1a1b26 !important;
@@ -460,172 +837,6 @@ h6 {
 
 .md-header__button {
   color: #1a1b26 !important;
-}
-
-/* Metrics CTA Section */
-.metrics-cta-section {
-  padding: 5rem 0;
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-}
-
-.metrics-cta-container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 0 1.5rem;
-  text-align: center;
-}
-
-.metrics-cta-content h2 {
-  font-size: 2.5rem;
-  font-weight: 800;
-  margin-bottom: 1rem;
-  color: #111827;
-}
-
-.metrics-cta-content p {
-  font-size: 1.25rem;
-  color: #4b5563;
-  margin-bottom: 2rem;
-  line-height: 1.6;
-}
-
-.cta-button-secondary {
-  background: #2563eb;
-  color: white !important;
-}
-
-.cta-button-secondary:hover {
-  background: #1d4ed8;
-  color: white !important;
-}
-
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 1.5rem;
-}
-
-.feature-card {
-  padding: 2.5rem;
-  border-radius: 24px;
-  background: rgba(249, 250, 251, 0.8);
-  /* Slightly transparent */
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-  border: 1px solid rgba(229, 231, 235, 0.5);
-  position: relative;
-  overflow: hidden;
-}
-
-/* Spotlight Effect */
-.feature-card::before,
-.ci-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: translateY(-5px);
-  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.05);
-}
-
-.feature-icon {
-  width: 48px;
-  height: 48px;
-  background: #eff6ff;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1.5rem;
-  color: #2563eb;
-}
-
-.feature-card h3 {
-  font-size: 1.5rem;
-  margin-bottom: 1rem;
-  font-weight: 700;
-}
-
-.feature-card p {
-  color: #6b7280;
-  line-height: 1.6;
-}
-
-/* Animations */
-.fade-up {
-  opacity: 0;
-  transform: translateY(20px);
-  transition: opacity 0.8s ease-out, transform 0.8s ease-out;
-}
-
-.fade-up.visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-@media (max-width: 768px) {
-  .hero-section {
-    padding: 4rem 0 3rem;
-  }
-
-  .hero-container {
-    grid-template-columns: 1fr;
-    text-align: center;
-    gap: 2rem;
-    padding: 0 1rem;
-  }
-
-  .hero-content h1 {
-    font-size: 2.5rem;
-    line-height: 1.2;
-  }
-
-  .hero-content p {
-    font-size: 1rem;
-    margin: 0 auto 2rem;
-  }
-
-  .code-window {
-    transform: none;
-    font-size: 0.75rem;
-  }
-
-  .hero-visual {
-    display: none;
-  }
-
-  .hero-cta {
-    justify-content: center;
-  }
-
-  .cta-button {
-    padding: 0.875rem 1.5rem;
-    font-size: 1rem;
-  }
-
-  .features-grid {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-    padding: 0 1rem;
-  }
-
-  .feature-card {
-    padding: 2rem;
-  }
-
-  .ci-logos {
-    grid-template-columns: 1fr;
-  }
-
-  .metrics-cta-content h2 {
-    font-size: 2rem;
-  }
-
-  .metrics-cta-content p {
-    font-size: 1.125rem;
-  }
 }
 
 @media screen and (min-width: 76.25em) {
@@ -698,10 +909,11 @@ h6 {
 }
 
 .md-typeset:not(:has(.landing-page)) h1 {
-  font-size: 2.25rem;
-  line-height: 1.15;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-family: var(--lp-serif);
+  font-size: 2.6rem;
+  line-height: 1.12;
+  font-weight: 400;
+  letter-spacing: -0.01em;
   margin: 0 0 1.2rem;
   background: linear-gradient(135deg, #111827 0%, #4b5563 100%);
   -webkit-background-clip: text;
@@ -768,20 +980,20 @@ h6 {
   margin-bottom: 0.4em;
 }
 
-.md-typeset a {
+/* Scoped away from the landing page, which styles its own links */
+.md-typeset:not(:has(.landing-page)) a {
   font-weight: 500;
   text-decoration: none;
   border-bottom: 1px solid rgba(37, 99, 235, 0.25);
   transition: color 0.2s ease, border-color 0.2s ease;
 }
 
-.md-typeset a:hover {
+.md-typeset:not(:has(.landing-page)) a:hover {
   color: var(--am-blue-dark);
   border-bottom-color: var(--am-blue-dark);
 }
 
 /* Links that are really UI elements keep no underline */
-.md-typeset a.cta-button,
 .md-typeset .tabbed-labels a,
 .md-typeset a.md-button,
 .md-typeset a.headerlink {
@@ -963,7 +1175,7 @@ h6 {
 }
 
 /* --- Images and figures --- */
-.md-typeset img:not(.twemoji):not(.emojione):not(.gemoji) {
+.md-typeset:not(:has(.landing-page)) img:not(.twemoji):not(.emojione):not(.gemoji) {
   border-radius: 14px;
   border: 1px solid var(--am-border);
   box-shadow: var(--am-shadow);
