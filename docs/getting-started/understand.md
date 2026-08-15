@@ -1,8 +1,12 @@
-## Understanding AST Metrics
+---
+description: "The concepts behind AST Metrics output: abstract syntax trees, dependency graphs, and the insights derived from both."
+---
+
+# Understanding the output
 
 You don't need a PhD in Computer Science to use AST Metrics, but understanding a few concepts will help you get the most out of it.
 
-### 1. Everything is a Tree (AST)
+## 1. Everything is a Tree (AST)
 First, you need to understand that any source code can be represented as a tree. This tree is called an [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree).
 
 For example, this code:
@@ -25,7 +29,7 @@ Can be represented as this tree:
 
 **AST Metrics analyzes this tree** to calculate complexity, volume, and other code-level metrics.
 
-### 2. The Architecture is a Graph
+## 2. The Architecture is a Graph
 Just like code forms a tree, **dependencies between your files form a graph**.
 
 - When Class A uses Class B, there is a link.
@@ -37,7 +41,7 @@ AST Metrics analyzes this graph to find:
 - **Cycles**: Circular dependencies that lock your system.
 - **Coupling**: How tightly connected your components are.
 
-### 3. From Math to Insights
+## 3. From Math to Insights
 By combining the AST analysis (micro-view) and the Graph analysis (macro-view), AST Metrics uses mathematical models to uncover hidden truths about your project:
 
 - **Bus Factor**: Who is indispensable?

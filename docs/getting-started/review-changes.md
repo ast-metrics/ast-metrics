@@ -1,3 +1,7 @@
+---
+description: "ast-metrics review compares your branch with its base and reports only new or worsened findings, never existing debt."
+---
+
 # Reviewing your changes
 
 Most quality tools greet you with thousands of pre-existing issues. You close the

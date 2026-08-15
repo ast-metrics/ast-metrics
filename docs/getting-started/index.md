@@ -1,3 +1,7 @@
+---
+description: "Why AST Metrics: abstract syntax trees and component graphs reveal complexity, coupling and risk beyond simple linting."
+---
+
 # Why AST Metrics?
 
 !!! info "TL;DR"

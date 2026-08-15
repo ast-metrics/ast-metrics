@@ -1,3 +1,7 @@
+---
+description: "Use ast-metrics analyze --watch to monitor a directory and refresh the analysis on every file change."
+---
+
 # Watching a directory
 
 It is sometimes convenient to be able to monitor a directory to detect changes in files, without having to rerun the analysis.

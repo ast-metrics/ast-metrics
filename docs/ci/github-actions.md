@@ -1,3 +1,7 @@
+---
+description: "Add the AST Metrics GitHub Action to your pull requests: it reports only new or worsened issues, never existing debt."
+---
+
 # Using AST Metrics in GitHub Actions
 
 The [AST Metrics GitHub Action](https://github.com/ast-metrics/action-ast-metrics) prevents architectural regressions in your pull requests.

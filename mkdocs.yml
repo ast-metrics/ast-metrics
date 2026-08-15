@@ -2,7 +2,9 @@
 site_name: AST Metrics documentation
 site_author: Jean-François Lépine
 site_description: >-
-  Understand your code, any language
+  Open source code analyzer for PHP, Go, Python, Rust, Java, C# and TypeScript.
+  On every pull request, ast-metrics review flags only what got worse.
+  One binary, no server, no account.
 edit_uri: edit/documentation/docs/
 site_url: https://ast-metrics.dev/
   
@@ -21,7 +23,7 @@ theme:
   palette:
     scheme: default
   logo: assets/images/logo-no-text.png
-  favicon: assets/favicon.png
+  favicon: assets/images/logo-no-text.png
   icon:
     repo: fontawesome/brands/github
   custom_dir: docs/overrides
@@ -48,8 +50,8 @@ nav:
   - Home: index.md
   - Getting started:
     - Why?: getting-started/index.md
+    - Quickstart: getting-started/first-execution.md
     - Installation: getting-started/install.md
-    - First execution: getting-started/first-execution.md
     - Reviewing your changes: getting-started/review-changes.md
     - Understanding the output: getting-started/understand.md
     - Generating a report: getting-started/generate-reports.md
@@ -64,6 +66,7 @@ nav:
     - Risk Score: metrics/risk.md
     - Coupling & Instability: metrics/coupling.md
     - Class Cohesion (LCOM4): metrics/lcom4.md
+    - Test Quality: metrics/test-quality.md
     - Community Detection: metrics/community-detection.md
     - Architecture Map: metrics/architecture-map.md
     - Bus Factor: metrics/bus-factor.md

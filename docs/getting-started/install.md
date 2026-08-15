@@ -1,3 +1,7 @@
+---
+description: "Install AST Metrics with Homebrew, npm, curl, Docker, Linux packages, Composer, pip or go install. One binary, no dependencies."
+---
+
 # Installing AST Metrics
 
 AST Metrics is built in Golang and distributed as a single binary. It has no dependencies.
@@ -13,6 +17,37 @@ Choose your preferred method below.
     ```
 
     Homebrew keeps the binary up to date: `brew upgrade` installs new releases.
+
+??? info ":simple-npm: JavaScript / TypeScript Project (npm)"
+
+    On a JavaScript or TypeScript project, install AST Metrics like any other dev tool, so that its version lands in your lockfile:
+
+    ```bash
+    npm install --save-dev ast-metrics
+    npx ast-metrics analyze src
+    ```
+
+    Or without installing anything: `npx ast-metrics analyze src`. The package downloads the binary matching your platform on first run and caches it. npm is an official channel since v0.42.0.
+
+??? info ":simple-python: Python Project (pip / pipx)"
+
+    Run it without installing anything:
+
+    ```bash
+    pipx run ast-metrics analyze src
+    ```
+
+    Or add it to your project like any other dev tool, so that its version lands in your lockfile:
+
+    ```bash
+    pip install ast-metrics
+    # or, with uv:
+    uv add --dev ast-metrics
+
+    ast-metrics analyze src
+    ```
+
+    The [PyPI package](https://pypi.org/project/ast-metrics/) downloads the binary matching your platform on first run and caches it.
 
 ??? info ":magic_wand: Automatic Install (Linux/MacOS/Windows)"
 
@@ -82,17 +117,6 @@ Choose your preferred method below.
     ```bash
     php vendor/bin/ast-metrics analyze .
     ```
-
-??? info ":simple-npm: Node.js Project (npm)"
-
-    On a TypeScript project, install AST Metrics like any other dev tool, so that its version lands in your lockfile:
-
-    ```bash
-    npm install --save-dev ast-metrics
-    npx ast-metrics analyze src
-    ```
-
-    Or without installing anything: `npx ast-metrics analyze src`. The package downloads the analyzer binary once and caches it.
 
 ??? info ":simple-python: Python Project (pip)"
 

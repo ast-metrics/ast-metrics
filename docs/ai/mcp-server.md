@@ -1,9 +1,13 @@
+---
+description: "Give AI coding agents access to AST Metrics through the built-in MCP server: setup for Claude Code, Cursor and other clients."
+---
+
 # MCP Server
 
 Let AI agents analyze your codebase. AST Metrics includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that exposes all metrics through a standard interface.
 
 !!! tip "How it works"
-    The `ast-metrics mcp` command starts an MCP server over **stdio**. Your AI client launches it automatically — you never run it manually.
+    The `ast-metrics mcp` command starts an MCP server over **stdio**. Your AI client launches it automatically: you never run it manually.
 
 ## Available tools
 

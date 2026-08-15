@@ -1,3 +1,7 @@
+---
+description: "Overview of every metric AST Metrics computes: volume, complexity, maintainability, risk, coupling, cohesion and more."
+---
+
 # Metrics Overview
 
 AST Metrics provides a comprehensive set of metrics to help you understand the quality, structure, and health of your codebase.
@@ -19,6 +23,9 @@ We believe that **code quality is not just about style**. It's about:
 ### 🔗 Coupling & Cohesion
 - [**Coupling & Instability**](coupling.md): How classes depend on each other.
 - [**LCOM4**](lcom4.md): Do methods in a class belong together?
+
+### 🧪 Tests
+- [**Test Quality**](test-quality.md): Isolation, traceability, god tests and untested classes.
 
 ### 🏗️ Architecture & Team
 - [**Community Detection**](community-detection.md): The natural structure of your code.

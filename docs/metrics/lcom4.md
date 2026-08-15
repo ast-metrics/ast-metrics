@@ -1,6 +1,10 @@
+---
+description: "LCOM4 measures class cohesion: whether the methods of a class belong together, and how to split a class that does too much."
+---
+
 # LCOM4 (Lack of Cohesion of Methods)
 
-<video controls src="../../animations/lcom.webm" title="Title"></video>
+<video controls preload="none" src="../../animations/lcom.webm" title="How LCOM4 detects a class doing several unrelated things"></video>
 
 ## What is it?
 

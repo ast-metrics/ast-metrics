@@ -1,3 +1,7 @@
+---
+description: "AST Metrics uses the Louvain algorithm to detect the communities your classes naturally form in the dependency graph."
+---
+
 # Community Detection
 
 ## What is it?

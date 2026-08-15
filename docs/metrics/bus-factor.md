@@ -1,6 +1,10 @@
+---
+description: "The bus factor measures how concentrated knowledge is in your codebase, computed from git history and grouped by community."
+---
+
 # Bus Factor
 
-<video controls src="../../animations/bus-factor.webm" title="Title"></video>
+<video controls preload="none" src="../../animations/bus-factor.webm" title="How the bus factor measures knowledge concentration"></video>
 
 ## What is it?
 The Bus Factor is a risk metric that answers: **"How many team members have to be hit by a bus for the project to stall?"**

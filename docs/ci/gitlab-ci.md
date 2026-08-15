@@ -1,3 +1,7 @@
+---
+description: "Integrate AST Metrics into GitLab CI with OpenMetrics reports and gate merge requests on new findings."
+---
+
 # Using AST Metrics in GitLab CI
 
 AST Metrics is compatible with the [OpenMetrics](https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md) standard. This means that you can easily integrate AST Metrics into your GitLab CI/CD pipeline.

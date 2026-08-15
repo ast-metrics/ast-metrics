@@ -1,3 +1,7 @@
+---
+description: "Generate HTML, Markdown, JSON, SARIF and OpenMetrics reports from a single ast-metrics analyze run."
+---
+
 # Generate reports
 
 All report options belong to the `analyze` command, and several can be combined in

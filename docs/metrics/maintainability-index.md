@@ -1,3 +1,7 @@
+---
+description: "The maintainability index is a 0-100 score of how easy code is to change, combining volume, complexity and comments."
+---
+
 # Maintainability Index
 
 ## What is it?

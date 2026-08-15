@@ -1,3 +1,7 @@
+---
+description: "The risk score combines complexity and churn to point at the hotspots where bugs are most likely to hide."
+---
+
 # Risk Score
 
 ## What is it?

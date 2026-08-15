@@ -1,3 +1,7 @@
+---
+description: "Afferent coupling, efferent coupling and instability: how entangled your components are and which way dependencies point."
+---
+
 # Coupling & Instability
 
 Coupling measures how dependent classes are on each other. High coupling makes code rigid and fragile.

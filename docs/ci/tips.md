@@ -1,3 +1,7 @@
+---
+description: "Practical tips for running AST Metrics in CI: the ci command, deploying to many repositories, and comparing branches."
+---
+
 # Tips for your CI
 
 ## Generate all reports easily

@@ -1,3 +1,7 @@
+---
+description: "Enforce complexity, coupling and volume rules with the AST Metrics linter and its .ast-metrics.yaml configuration."
+---
+
 # Rulesets & Linting
 
 AST Metrics allows you to enforce rules on your codebase (Linting). You can check complexity, coupling, volume, and more.

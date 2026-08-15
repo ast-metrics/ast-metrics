@@ -1,3 +1,7 @@
+---
+description: "Volume metrics count lines of code, logical lines and comments: the baseline every other metric builds on."
+---
+
 # Volume Metrics
 
 ## What is it?

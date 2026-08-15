@@ -1,3 +1,7 @@
+---
+description: "Deploy AST Metrics to a whole GitHub organization with one command: it opens a pull request on each repository you select."
+---
+
 # Deploy to GitHub Organization
 
 AST Metrics provides a powerful command to automatically deploy AST Metrics to multiple repositories in your GitHub organization with a single command. This feature scans your organization, lets you select which repositories to target, and opens a Pull Request on each selected repository.
@@ -11,8 +15,9 @@ When you run the deployment command:
 3. **Open PRs**: A Pull Request is automatically opened on each selected repository
 4. **You control the merge**: The PRs are only opened - you remain in control and decide when to merge them
 
-> [!IMPORTANT]
-> The Pull Requests are **only opened**, not automatically merged. You or your team members will need to review and merge each PR manually. This gives you full control over when AST Metrics is integrated into each repository.
+!!! important "You control the merge"
+
+    The Pull Requests are **only opened**, not automatically merged. You or your team members will need to review and merge each PR manually. This gives you full control over when AST Metrics is integrated into each repository.
 
 ## Required GitHub Token Permissions
 

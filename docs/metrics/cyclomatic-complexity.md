@@ -1,7 +1,11 @@
+---
+description: "Cyclomatic complexity counts the independent paths through your code: what it means, thresholds, and how to reduce it."
+---
+
 # Cyclomatic Complexity
 
 
-<video controls src="../../animations/Cyclomatic-complexity.webm" title="Title"></video>
+<video controls preload="none" src="../../animations/Cyclomatic-complexity.webm" title="How cyclomatic complexity counts the paths through a function"></video>
 
 ## What is it?
 

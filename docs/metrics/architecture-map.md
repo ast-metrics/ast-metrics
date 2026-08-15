@@ -1,3 +1,7 @@
+---
+description: "The architecture map shows your real dependency structure: layers, hidden coupling and circular dependencies."
+---
+
 # Architecture Map
 
 ## What It Reveals
@@ -23,8 +27,9 @@ Developers often believe their architecture follows a certain pattern: "We have 
 
 **Cycles**: Circular dependencies appear as loops. These create rigid, hard-to-test code.
 
-> [!TIP]
-> If you think you have a layered architecture but the map shows a flat horizontal line, your code is not as decoupled as you think. The graph doesn't lie.
+!!! tip "Reality check"
+
+    If you think you have a layered architecture but the map shows a flat horizontal line, your code is not as decoupled as you think. The graph doesn't lie.
 
 ---
 

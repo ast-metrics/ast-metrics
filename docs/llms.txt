@@ -4,7 +4,8 @@
 > code into Abstract Syntax Trees, builds the dependency graph of the components it
 > finds, and derives architecture-level insights from both: complexity, coupling,
 > class cohesion, community detection, risk scoring, bus factor and test quality.
-> It is a single Go binary with no database, no server and no account.
+> On a pull request, `ast-metrics review` reports only new or worsened findings,
+> deterministically. It is a single Go binary with no database, no server and no account.
 
 Homepage: https://ast-metrics.dev
 Documentation: https://ast-metrics.dev
@@ -45,11 +46,21 @@ docker run --rm -v $(pwd):/src ghcr.io/ast-metrics/ast-metrics:latest analyze /s
 
 # Debian/Ubuntu (.deb) and Fedora/RHEL (.rpm): download from the GitHub releases page
 
+# JavaScript/TypeScript projects (official npm channel since v0.42.0)
+npm install --save-dev ast-metrics && npx ast-metrics analyze src
+# or one-shot, without installing:
+npx ast-metrics analyze src
+
+# Python projects (PyPI package: ast-metrics)
+pipx run ast-metrics analyze src
+# or as a dev dependency:
+pip install ast-metrics
+
 # PHP projects
 composer require --dev ast-metrics/ast-metrics
 
 # Go
-go install github.com/ast-metrics/ast-metrics@latest
+go install github.com/ast-metrics/ast-metrics/cmd/ast-metrics@latest
 ```
 
 The result is a standalone binary. `ast-metrics self-update` upgrades it in place.
