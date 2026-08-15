@@ -83,6 +83,28 @@ Choose your preferred method below.
     php vendor/bin/ast-metrics analyze .
     ```
 
+??? info ":simple-npm: Node.js Project (npm)"
+
+    On a TypeScript project, install AST Metrics like any other dev tool, so that its version lands in your lockfile:
+
+    ```bash
+    npm install --save-dev ast-metrics
+    npx ast-metrics analyze src
+    ```
+
+    Or without installing anything: `npx ast-metrics analyze src`. The package downloads the analyzer binary once and caches it.
+
+??? info ":simple-python: Python Project (pip)"
+
+    On a Python project, the same package exists on PyPI:
+
+    ```bash
+    pip install ast-metrics          # or: uv add --dev ast-metrics, poetry add --group dev ast-metrics
+    ast-metrics analyze src
+    ```
+
+    Or without installing anything: `pipx run ast-metrics analyze src`. A [pre-commit hook](https://github.com/ast-metrics/ast-metrics-bridge-python#pre-commit) is available too. The binary is downloaded on first run and cached.
+
 ??? info ":simple-go: Go Install"
 
     If you have Go and a C compiler installed (CGO is required by the tree-sitter parsers):
