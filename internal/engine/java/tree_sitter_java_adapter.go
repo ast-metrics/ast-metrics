@@ -230,9 +230,19 @@ func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
 	return javaDecisions.LogicalOperator(n, a.src)
 }
 
+// Imports returns the dependencies written on a node. An import names the
+// package and the class it brings in. Every other reference to a type is
+// returned with an empty Module: Java writes most types by their simple name,
+// which the analysis resolves against the imports of the file, then the
+// package of the file, the way the compiler does. The visitor calls this on
+// every node it visits and files the result under the class and the method the
+// node sits in.
 func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
-	if n == nil || n.Type() != "import_declaration" {
+	if n == nil {
 		return nil
+	}
+	if n.Type() != "import_declaration" {
+		return a.typeReferences(n)
 	}
 	var path string
 	isWildcard := false
@@ -257,6 +267,132 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 		return []Treesitter.ImportItem{{Module: path[:idx], Name: path[idx+1:]}}
 	}
 	return []Treesitter.ImportItem{{Module: path, Name: ""}}
+}
+
+// typeReferences returns the types a node refers to, by the name written in
+// the source: a simple name with an empty Module, a qualified name split into
+// its package and its class.
+//
+// The visitor walks the body of a class and of a method, not their
+// declaration: the types written on the declaration itself (superclass,
+// interfaces, annotations, parameter and return types, thrown exceptions) are
+// read when the visitor lands on the declaration, the ones written in a body
+// when it lands on each type_identifier of the body.
+func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportItem {
+	items := []Treesitter.ImportItem{}
+	add := func(name string) {
+		if name == "" {
+			return
+		}
+		if idx := strings.LastIndex(name, "."); idx >= 0 {
+			items = append(items, Treesitter.ImportItem{Module: name[:idx], Name: name[idx+1:]})
+			return
+		}
+		items = append(items, Treesitter.ImportItem{Module: "", Name: name})
+	}
+	// typesUnder collects every type written under a node.
+	var typesUnder func(x *sitter.Node)
+	typesUnder = func(x *sitter.Node) {
+		if x == nil {
+			return
+		}
+		switch x.Type() {
+		case "type_identifier":
+			add(text(a.src, x))
+			return
+		case "scoped_type_identifier":
+			add(text(a.src, x))
+			return
+		case "marker_annotation", "annotation":
+			if name := x.ChildByFieldName("name"); name != nil {
+				add(text(a.src, name))
+			}
+			return
+		}
+		for i := 0; i < int(x.NamedChildCount()); i++ {
+			typesUnder(x.NamedChild(i))
+		}
+	}
+	switch n.Type() {
+	case "class_declaration", "interface_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration":
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			ch := n.NamedChild(i)
+			switch ch.Type() {
+			case "superclass", "super_interfaces", "extends_interfaces", "modifiers", "formal_parameters", "type_parameters":
+				typesUnder(ch)
+			}
+		}
+	case "method_declaration", "constructor_declaration":
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			ch := n.NamedChild(i)
+			switch ch.Type() {
+			case "block", "constructor_body", "identifier":
+				continue
+			default:
+				typesUnder(ch)
+			}
+		}
+	case "type_identifier":
+		// inside a body; the ones under a declaration were read with it, and
+		// the last segment of a qualified name goes with the whole name
+		if parent := n.Parent(); parent != nil && parent.Type() == "scoped_type_identifier" {
+			return nil
+		}
+		add(text(a.src, n))
+	case "scoped_type_identifier":
+		if parent := n.Parent(); parent != nil && parent.Type() == "scoped_type_identifier" {
+			return nil
+		}
+		add(text(a.src, n))
+	case "marker_annotation", "annotation":
+		if name := n.ChildByFieldName("name"); name != nil {
+			add(text(a.src, name))
+		}
+	case "method_invocation", "field_access":
+		// Util.go(), Const.MAX: a capitalised receiver is a class by
+		// convention, a variable would be written in lower case
+		if object := n.ChildByFieldName("object"); object != nil {
+			switch object.Type() {
+			case "identifier":
+				if name := text(a.src, object); looksLikeJavaType(name) {
+					add(name)
+				}
+			case "field_access":
+				// a.b.Foo.bar(): a qualified class name written inline
+				if name := text(a.src, object); looksLikeJavaQualifiedType(name) {
+					add(name)
+				}
+			}
+		}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return items
+}
+
+// looksLikeJavaType tells whether a simple name is written like a class.
+func looksLikeJavaType(name string) bool {
+	return name != "" && name[0] >= 'A' && name[0] <= 'Z' && strings.ToUpper(name) != name
+}
+
+// looksLikeJavaQualifiedType tells whether a dotted name is a package
+// followed by a class: lower case segments then one capitalised.
+func looksLikeJavaQualifiedType(name string) bool {
+	idx := strings.LastIndex(name, ".")
+	if idx <= 0 {
+		return false
+	}
+	pkg, class := name[:idx], name[idx+1:]
+	if !looksLikeJavaType(class) {
+		return false
+	}
+	for _, segment := range strings.Split(pkg, ".") {
+		if segment == "" || segment[0] < 'a' || segment[0] > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 // IsLogicalNode reports whether a node begins a logical line. In Java, local
