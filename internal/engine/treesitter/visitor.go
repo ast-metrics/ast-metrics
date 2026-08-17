@@ -29,6 +29,9 @@ type Visitor struct {
 	// belong to (Go receivers). They are attached to their class once the whole
 	// file has been visited, because a method may be declared before its type.
 	receiverMethods []receiverMethod
+	// interfaceName is the qualified name of the interface being visited, so
+	// that its methods are named after it the way a class names its own
+	interfaceName string
 
 	// logicalLines tells, for each line of the file, whether a statement starts
 	// on it. LLOC at every level (file, class, function) is the number of such
@@ -394,8 +397,13 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		// attach to namespace and file
 		v.ns.Stmts.StmtInterface = append(v.ns.Stmts.StmtInterface, itf)
 		v.file.Stmts.StmtInterface = append(v.file.Stmts.StmtInterface, itf)
+		// what the interface extends, on behalf of the interface
+		v.recordImportsFrom(node, qualified)
 		// visit body
+		previous := v.interfaceName
+		v.interfaceName = qualified
 		v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
+		v.interfaceName = previous
 		return
 
 	case v.ad.IsClass(node):
@@ -437,31 +445,11 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		c.Stmts.Analyze.Volume.Cloc = &cl
 
 		v.attachClass(c)
-		// Attach any class-level externals provided by adapter
-		if items := v.ad.Imports(node); len(items) > 0 {
-			for _, it := range items {
-				name := it.Name // leave empty for plain module imports (Python expectation)
-				from := ""
-				if f := v.curFunc(); f != nil && f.Name != nil {
-					from = f.Name.Qualified
-					if from == "" {
-						from = f.Name.Short
-					}
-				} else if c != nil && c.Name != nil {
-					from = c.Name.Qualified
-					if from == "" {
-						from = c.Name.Short
-					}
-				} else if v.ns != nil && v.ns.Name != nil {
-					from = v.ns.Name.Qualified
-					if from == "" {
-						from = v.ns.Name.Short
-					}
-				}
-				dep := &pb.StmtExternalDependency{ClassName: name, Namespace: it.Module, From: from}
-				c.Stmts.StmtExternalDependencies = append(c.Stmts.StmtExternalDependencies, dep)
-			}
-		}
+		// the dependencies written on the declaration itself: what the class
+		// extends and implements, its attributes
+		v.pushClass(c)
+		v.recordImports(node, false)
+		v.popClass()
 		// If adapter can list direct class operands (e.g., PHP properties), attach them
 		if va, ok := v.ad.(interface{ ClassDirectOperands(*sitter.Node) []string }); ok {
 			for _, p := range va.ClassDirectOperands(node) {
@@ -484,6 +472,8 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		qualified := name
 		if cls := v.curClass(); cls != nil {
 			qualified = v.ad.AttachQualified(cls.Name.Qualified, name)
+		} else if v.interfaceName != "" {
+			qualified = v.ad.AttachQualified(v.interfaceName, name)
 		}
 
 		fn := &pb.StmtFunction{
@@ -515,6 +505,9 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		v.collectDecisions(node, fn.Stmts)
 
 		v.pushFunc(fn)
+		// the dependencies written on the signature: parameter and return
+		// types, attributes
+		v.recordImports(node, true)
 		v.ad.EachChildBody(body, func(ch *sitter.Node) { v.Visit(ch) })
 		// optional: extract operators/operands from source per adapter
 		if va, ok := v.ad.(interface {
@@ -542,41 +535,7 @@ func (v *Visitor) Visit(node *sitter.Node) {
 	}
 
 	// Imports and externals
-	if items := v.ad.Imports(node); len(items) > 0 {
-		st := v.curStmts()
-		for _, it := range items {
-			name := it.Name // keep empty for plain imports
-			from := ""
-			if f := v.curFunc(); f != nil && f.Name != nil {
-				from = f.Name.Qualified
-				if from == "" {
-					from = f.Name.Short
-				}
-			} else if c := v.curClass(); c != nil && c.Name != nil {
-				from = c.Name.Qualified
-				if from == "" {
-					from = c.Name.Short
-				}
-			} else if v.ns != nil && v.ns.Name != nil {
-				from = v.ns.Name.Qualified
-				if from == "" {
-					from = v.ns.Name.Short
-				}
-			}
-			dep := &pb.StmtExternalDependency{
-				ClassName:    name,
-				FunctionName: "",
-				Namespace:    it.Module,
-				From:         from,
-			}
-			// attach to class scope when inside a class to satisfy PHP tests
-			if c := v.curClass(); c != nil {
-				c.Stmts.StmtExternalDependencies = append(c.Stmts.StmtExternalDependencies, dep)
-			}
-			st.StmtExternalDependencies = append(st.StmtExternalDependencies, dep)
-			v.ns.Stmts.StmtExternalDependencies = append(v.ns.Stmts.StmtExternalDependencies, dep)
-		}
-	}
+	v.recordImports(node, true)
 
 	// Fallback
 	for i := 0; i < int(node.ChildCount()); i++ {
@@ -716,6 +675,65 @@ func (v *Visitor) recordDecision(n *sitter.Node, target *pb.Stmts) {
 //
 // The classes declared inside the class are left out of the search: they are
 // coupled on their own, and what they use is not what the enclosing class uses.
+// recordImports asks the adapter for the dependencies written on a node and
+// files them under the scope they are used from: the function, else the class,
+// else the namespace. A dependency is written on the class it is used in, on
+// the statements of the current scope when withScope is set, and on the
+// namespace, so that every reader finds it where it looks.
+func (v *Visitor) recordImports(node *sitter.Node, withScope bool) {
+	items := v.ad.Imports(node)
+	if len(items) == 0 {
+		return
+	}
+	from := ""
+	if f := v.curFunc(); f != nil && f.Name != nil {
+		from = f.Name.Qualified
+		if from == "" {
+			from = f.Name.Short
+		}
+	} else if c := v.curClass(); c != nil && c.Name != nil {
+		from = c.Name.Qualified
+		if from == "" {
+			from = c.Name.Short
+		}
+	} else if v.ns != nil && v.ns.Name != nil {
+		from = v.ns.Name.Qualified
+		if from == "" {
+			from = v.ns.Name.Short
+		}
+	}
+	class := v.curClass()
+	var scope *pb.Stmts
+	if withScope {
+		scope = v.curStmts()
+	}
+	for _, it := range items {
+		dep := &pb.StmtExternalDependency{ClassName: it.Name, Namespace: it.Module, From: from}
+		if class != nil {
+			class.Stmts.StmtExternalDependencies = append(class.Stmts.StmtExternalDependencies, dep)
+		}
+		if scope != nil && (class == nil || scope != class.Stmts) {
+			scope.StmtExternalDependencies = append(scope.StmtExternalDependencies, dep)
+		}
+		if class == nil && v.ns != nil && v.ns.Stmts != nil && (scope == nil || scope != v.ns.Stmts) {
+			v.ns.Stmts.StmtExternalDependencies = append(v.ns.Stmts.StmtExternalDependencies, dep)
+		}
+	}
+}
+
+// recordImportsFrom files the dependencies written on a node under a scope
+// named explicitly, the way an interface declaration is: the interface is not
+// a class the visitor keeps on its stack.
+func (v *Visitor) recordImportsFrom(node *sitter.Node, from string) {
+	items := v.ad.Imports(node)
+	if len(items) == 0 || v.ns == nil || v.ns.Stmts == nil {
+		return
+	}
+	for _, it := range items {
+		v.ns.Stmts.StmtExternalDependencies = append(v.ns.Stmts.StmtExternalDependencies, &pb.StmtExternalDependency{ClassName: it.Name, Namespace: it.Module, From: from})
+	}
+}
+
 func (v *Visitor) attachImportsUsedBy(c *pb.StmtClass, node *sitter.Node) {
 	if c == nil || c.Stmts == nil || v.ns == nil || v.ns.Stmts == nil || v.src == nil {
 		return
