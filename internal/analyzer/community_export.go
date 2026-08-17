@@ -1,0 +1,157 @@
+package analyzer
+
+// CommunitiesExport is the community analysis laid out for a reader that did
+// not see the report: the JSON report and the MCP tools both serve it.
+type CommunitiesExport struct {
+	Verdict          string                   `json:"verdict"`
+	Granularity      string                   `json:"granularity"`
+	Root             string                   `json:"root,omitempty"`
+	CommunitiesCount int                      `json:"communitiesCount"`
+	LargestSize      int                      `json:"largestSize"`
+	UnitsGrouped     int                      `json:"unitsGrouped"`
+	UnitsIsolated    int                      `json:"unitsIsolated"`
+	InternalShare    float64                  `json:"internalShare"`
+	SharedShare      float64                  `json:"sharedShare"`
+	CrossShare       float64                  `json:"crossShare"`
+	Modularity       float64                  `json:"modularity"`
+	CohesiveCount    int                      `json:"cohesiveCount"`
+	Communities      []CommunityExport        `json:"communities"`
+	Edges            []CommunityEdgeExport    `json:"edges"`
+	Cycles           [][]string               `json:"cycles"`
+	Findings         []CommunityFindingExport `json:"findings"`
+}
+
+// CommunityExport is one community, the shared kernel included.
+type CommunityExport struct {
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	ShortName     string                 `json:"shortName"`
+	Shared        bool                   `json:"shared,omitempty"`
+	Size          int                    `json:"size"`
+	Cohesive      bool                   `json:"cohesive"`
+	Namespaces    []NamespaceShareExport `json:"namespaces"`
+	Hubs          []string               `json:"hubs,omitempty"`
+	Members       []string               `json:"members,omitempty"`
+	Uses          []CommunityLinkExport  `json:"uses,omitempty"`
+	UsedBy        []CommunityLinkExport  `json:"usedBy,omitempty"`
+	Externals     []ExternalUseExport    `json:"externals,omitempty"`
+	Internal      int                    `json:"internalReferences"`
+	Outbound      int                    `json:"outboundReferences"`
+	Inbound       int                    `json:"inboundReferences"`
+	BusFactor     int                    `json:"busFactor,omitempty"`
+	TopCommitters []CommitterExport      `json:"topCommitters,omitempty"`
+}
+
+type NamespaceShareExport struct {
+	Namespace string  `json:"namespace"`
+	Count     int     `json:"count"`
+	Share     float64 `json:"share"`
+}
+
+type CommunityLinkExport struct {
+	ID      string           `json:"id"`
+	Name    string           `json:"name"`
+	Weight  int              `json:"references"`
+	Details []UnitLinkExport `json:"details,omitempty"`
+}
+
+type UnitLinkExport struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Weight int    `json:"references"`
+}
+
+type ExternalUseExport struct {
+	Namespace string `json:"namespace"`
+	Count     int    `json:"references"`
+}
+
+type CommitterExport struct {
+	Name    string `json:"name"`
+	Commits int    `json:"commits"`
+}
+
+type CommunityEdgeExport struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Weight  int    `json:"references"`
+	InCycle bool   `json:"inCycle"`
+	Back    bool   `json:"back"`
+	Shared  bool   `json:"shared"`
+}
+
+type CommunityFindingExport struct {
+	Kind        string   `json:"kind"`
+	Title       string   `json:"title"`
+	Detail      string   `json:"detail"`
+	Communities []string `json:"communities,omitempty"`
+	Units       []string `json:"units,omitempty"`
+}
+
+// ExportCommunities lays the community metrics out for the JSON report and
+// the MCP tools. Members are listed when withMembers is set: they are the
+// bulk of the payload.
+func ExportCommunities(cm *CommunityMetrics, withMembers bool) *CommunitiesExport {
+	if cm == nil {
+		return nil
+	}
+	export := &CommunitiesExport{
+		Verdict:          cm.Verdict + " " + cm.VerdictNote,
+		Granularity:      cm.Granularity,
+		Root:             cm.Root,
+		CommunitiesCount: cm.CommunitiesCount,
+		LargestSize:      cm.MaxSize,
+		UnitsGrouped:     cm.UnitCount,
+		UnitsIsolated:    cm.IsolatedUnits,
+		InternalShare:    cm.InternalShare,
+		SharedShare:      cm.SharedShare,
+		CrossShare:       cm.CrossShare,
+		Modularity:       cm.Modularity,
+		CohesiveCount:    cm.CohesiveCount,
+		Communities:      make([]CommunityExport, 0, len(cm.Communities)),
+		Edges:            make([]CommunityEdgeExport, 0, len(cm.Edges)),
+		Cycles:           cm.Cycles,
+		Findings:         make([]CommunityFindingExport, 0, len(cm.Findings)),
+	}
+	if export.Cycles == nil {
+		export.Cycles = [][]string{}
+	}
+	links := func(in []CommunityLink) []CommunityLinkExport {
+		out := make([]CommunityLinkExport, 0, len(in))
+		for _, l := range in {
+			details := make([]UnitLinkExport, 0, len(l.Details))
+			for _, d := range l.Details {
+				details = append(details, UnitLinkExport{From: d.From, To: d.To, Weight: d.Weight})
+			}
+			out = append(out, CommunityLinkExport{ID: l.ID, Name: l.Name, Weight: l.Weight, Details: details})
+		}
+		return out
+	}
+	for _, c := range cm.Communities {
+		item := CommunityExport{
+			ID: c.ID, Name: c.Name, ShortName: c.ShortName, Shared: c.Shared, Size: c.Size, Cohesive: c.Cohesive,
+			Hubs: c.Hubs, Internal: c.InternalWeight, Outbound: c.OutWeight, Inbound: c.InWeight, BusFactor: c.BusFactor,
+			Uses: links(c.Uses), UsedBy: links(c.UsedBy),
+		}
+		for _, s := range c.Namespaces {
+			item.Namespaces = append(item.Namespaces, NamespaceShareExport{Namespace: s.Namespace, Count: s.Count, Share: s.Share})
+		}
+		for _, e := range c.Externals {
+			item.Externals = append(item.Externals, ExternalUseExport{Namespace: e.Namespace, Count: e.Count})
+		}
+		for _, t := range c.TopCommitters {
+			item.TopCommitters = append(item.TopCommitters, CommitterExport{Name: t.Name, Commits: t.Commits})
+		}
+		if withMembers {
+			item.Members = c.Units
+		}
+		export.Communities = append(export.Communities, item)
+	}
+	for _, e := range cm.Edges {
+		export.Edges = append(export.Edges, CommunityEdgeExport{From: e.From, To: e.To, Weight: e.Weight, InCycle: e.InCycle, Back: e.Back, Shared: e.Shared})
+	}
+	for _, f := range cm.Findings {
+		export.Findings = append(export.Findings, CommunityFindingExport{Kind: f.Kind, Title: f.Title, Detail: f.Detail, Communities: f.Communities, Units: f.Units})
+	}
+	return export
+}
