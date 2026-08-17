@@ -2,2555 +2,845 @@
 {% block pageTitle %}Communities - {{ scopeLabel }}{% endblock %}
 {% block content %}
 
-<style>
-    .dashboard-card {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        position: relative;
-        overflow: hidden;
-    }
-
-    .dashboard-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-        border-color: #cbd5e1;
-    }
-
-    .dashboard-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-        opacity: 0;
-        transition: opacity 0.3s ease;
-    }
-
-    .dashboard-card:hover::before {
-        opacity: 1;
-    }
-
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    .animate-fade-in-up {
-        animation: fadeIn 0.5s ease-out backwards;
-    }
-</style>
-
 {% set cm = currentView.Community %}
 {% if not cm %}
 <div class="text-gray-600">No community data available.</div>
 {% else %}
 
-
 {% include "partials/language_tabs.html" with pageBase="communities" %}
 
-
-<div class="dashboard-card p-6 mb-8 mt-8 animate-fade-in-up">
-    <h2 class="leading-none text-2xl font-bold text-gray-900 pb-2 mb-3">Communities - Help</h2>
-    <p class="text-sm text-gray-600">Graph communities detected via label propagation on the dependency graph.</p>
-
-    <div class="mt-4 mb-4">
-        <img src="images/help-community.png" alt="Diagram showing how software classes form communities. A network of classes is grouped into a community when some classes interact more with each other. Communities are then evaluated: if most classes share the same namespace, it is a high-purity community; if classes mix different namespaces, it is a low-purity community."
-             loading="lazy"
-             decoding="async"
-             class="mx-auto"
-             width="996"
-             height="400"
-        />
-    </div>
-</div>
-
-
 <style>
-    /* Clean Google Labs / Antigravity style */
-    #layered-map {
-        background: #ffffff;
-    }
+    /* Community map: the SVG is drawn in Go; the page only adds hover states */
+    .community-map { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+    .community-map .cm-box { cursor: pointer; }
+    .community-map .cm-box rect { transition: stroke 0.15s ease, filter 0.15s ease; }
+    .community-map .cm-box:hover rect:first-child { stroke: #94a3b8; filter: drop-shadow(0 2px 6px rgba(15, 23, 42, 0.12)); }
+    .community-map .cm-edge { transition: stroke-opacity 0.15s ease, stroke-width 0.15s ease; }
+    .community-map.is-focused .cm-edge { stroke-opacity: 0.08; }
+    .community-map.is-focused .cm-edge.is-lit { stroke-opacity: 1; }
+    .community-map.is-focused .cm-box { opacity: 0.35; }
+    .community-map.is-focused .cm-box.is-lit { opacity: 1; }
+    .community-map.is-focused .cm-shared { opacity: 1; }
+    .community-map text { pointer-events: none; }
+    .community-map.is-zoomed .cm-box:not(.in-focus) { opacity: 0.22; }
+    .community-map.is-zoomed .cm-edge { stroke-opacity: 0.12; }
+    .community-map.is-zoomed .cm-edge.in-focus { stroke-opacity: 0.85; }
+    .community-map.is-zoomed .cm-shared { opacity: 1; }
+    .community-map-layout { display: flex; gap: 1.25rem; align-items: flex-start; }
+    .community-folders { width: 17rem; flex-shrink: 0; border-left: 1px solid #f1f5f9; padding-left: 1.25rem; max-height: 720px; overflow-y: auto; }
+    .community-folders-head { display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0.75rem; }
+    .folder-row { display: flex; align-items: center; gap: 0.35rem; width: 100%; text-align: left; padding: 0.3rem 0.5rem; border-radius: 8px; font-size: 0.8125rem; color: #334155; cursor: pointer; border: 0; background: transparent; }
+    .folder-row:hover { background: #f8fafc; }
+    .folder-row.is-active { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+    .folder-row .caret { width: 0.9rem; color: #94a3b8; font-size: 0.7rem; flex-shrink: 0; }
+    .folder-row .fname { font-family: var(--font-mono); font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .folder-row .fcount { font-family: var(--font-mono); font-size: 0.6875rem; color: #64748b; flex-shrink: 0; }
+    .comm-table tr.out-of-focus { display: none; }
+    .zoom-table { margin-top: 1.25rem; border-top: 1px solid #f1f5f9; padding-top: 0.75rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: 0.5rem 1.5rem; }
+    .zoom-row { display: flex; align-items: flex-start; gap: 0.5rem; padding: 0.5rem 0; font-size: 0.875rem; }
+    .focus-chip { display: inline-block; font-size: 0.6875rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #eff6ff; color: #1d4ed8; margin-left: 0.4rem; vertical-align: middle; }
+    @media (max-width: 1100px) { .community-map-layout { flex-direction: column; } .community-folders { width: 100%; border-left: 0; padding-left: 0; max-height: 320px; } }
+    .community-map.cuts-only .cm-edge:not(.cm-edge--cycle) { display: none; }
 
-    .layered-link {
-        transition: opacity 0.2s ease, stroke-width 0.2s ease;
+    /* Table of communities */
+    .comm-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+    .comm-table td { overflow-wrap: anywhere; }
+    .comm-table th {
+        text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+        text-transform: uppercase; color: #64748b; padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid #e2e8f0; white-space: nowrap;
     }
-
-    .layer-bg {
-        transition: opacity 0.2s ease;
+    .comm-table td { padding: 0.875rem 0.75rem; vertical-align: top; border-bottom: 1px solid #f1f5f9; font-size: 0.875rem; }
+    .comm-table tr:last-child td { border-bottom: 0; }
+    .comm-table tr:target td { background: #eff6ff; }
+    .comm-name { font-weight: 600; color: #0f172a; }
+    .comm-hint { font-size: 0.75rem; color: #64748b; margin-top: 0.125rem; }
+    .comm-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; display: inline-block; margin-top: 0.3rem; }
+    .ns-chip {
+        display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem;
+        padding: 0.15rem 0.5rem; border-radius: 999px; background: #f1f5f9; color: #334155;
+        margin: 0.125rem 0.25rem 0.125rem 0; max-width: 100%;
     }
-
-    .layer-label {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-        font-weight: 400;
-        letter-spacing: 0.3px;
+    .ns-chip .ns-share { color: #64748b; font-family: var(--font-mono); font-size: 0.6875rem; }
+    .ns-top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; font-size: 0.8125rem; color: #0f172a; }
+    .ns-top-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ns-share { color: #64748b; font-family: var(--font-mono); font-size: 0.6875rem; }
+    .ns-meter { display: flex; height: 6px; border-radius: 999px; overflow: hidden; background: #e8ecf1; margin: 0.35rem 0; }
+    .ns-meter > span { height: 100%; }
+    .ns-others { font-size: 0.75rem; color: #475569; line-height: 1.5; display: flex; flex-wrap: wrap; gap: 0 0.6rem; }
+    .ns-others > span { white-space: nowrap; }
+    .link-list { font-size: 0.8125rem; color: #334155; line-height: 1.5; }
+    .link-list .w { color: #64748b; font-family: var(--font-mono); font-size: 0.6875rem; }
+    .link-detail summary { cursor: pointer; list-style: none; }
+    .link-detail summary::-webkit-details-marker { display: none; }
+    .link-detail summary::before { content: "▸"; display: inline-block; width: 0.9rem; color: #94a3b8; font-size: 0.7rem; }
+    .link-detail[open] summary::before { content: "▾"; }
+    .link-detail ul { margin: 0.2rem 0 0.4rem 0.9rem; font-size: 0.6875rem; font-family: var(--font-mono); color: #475569; }
+    .link-detail li { overflow-wrap: anywhere; }
+    .link-detail .arrow { color: #94a3b8; }
+    .members summary { cursor: pointer; font-size: 0.75rem; color: #2563eb; }
+    .members summary:hover { text-decoration: underline; }
+    .members ul { margin-top: 0.5rem; columns: 2; column-gap: 1.5rem; font-size: 0.75rem; }
+    .members li { font-family: var(--font-mono); color: #334155; break-inside: avoid; padding: 0.1rem 0; }
+    .members .ns-head { font-family: var(--font-sans); font-weight: 600; color: #0f172a; margin-top: 0.4rem; list-style: none; break-after: avoid; }
+    .finding { display: flex; gap: 0.875rem; align-items: flex-start; padding: 0.875rem 0; border-bottom: 1px solid #f1f5f9; }
+    .finding:last-child { border-bottom: 0; }
+    .finding-kind {
+        flex-shrink: 0; font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+        padding: 0.25rem 0.5rem; border-radius: 6px; margin-top: 0.1rem; min-width: 5.5rem; text-align: center;
     }
-
-    .node-label {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-    }
-
-    /* Subtle fade-in */
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-
-    .nodes-group g {
-        animation: fadeIn 0.4s ease backwards;
-    }
-
-    .nodes-group g:nth-child(1) { animation-delay: 0.02s; }
-    .nodes-group g:nth-child(2) { animation-delay: 0.04s; }
-    .nodes-group g:nth-child(3) { animation-delay: 0.06s; }
-    .nodes-group g:nth-child(4) { animation-delay: 0.08s; }
-    .nodes-group g:nth-child(5) { animation-delay: 0.1s; }
-    .nodes-group g:nth-child(n+6) { animation-delay: 0.12s; }
-
-    /* Architecture tabs */
-    .arch-tab { border-bottom: 2px solid transparent; transition: all 0.15s ease; }
-    .arch-tab:hover { color: #1f2937; border-color: #d1d5db; }
-    /* The view switcher is a segmented control; the JS toggles `active`. */
-    .arch-tab.active {
-        background: white;
-        color: #0f172a;
-        font-weight: 600;
-        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
-    }
-    .arch-panel { display: none; }
-    .arch-panel.active { display: block; }
+    .finding-kind--cycle { background: #fef2f2; color: #b91c1c; }
+    .finding-kind--shared { background: #f1f5f9; color: #334155; }
+    .finding-kind--shared-leak { background: #fffbeb; color: #b45309; }
+    .finding-kind--split, .finding-kind--spread, .finding-kind--layered { background: #eff6ff; color: #1d4ed8; }
+    .finding-kind--bridge { background: #f5f3ff; color: #6d28d9; }
+    .finding-title { font-weight: 600; color: #0f172a; font-size: 0.9375rem; }
+    .finding-detail { color: #475569; font-size: 0.875rem; line-height: 1.6; margin-top: 0.2rem; }
+    .more-findings > summary { cursor: pointer; font-size: 0.8125rem; color: #2563eb; padding: 0.75rem 0 0.25rem; list-style: none; }
+    .more-findings > summary::before { content: "▸ "; color: #94a3b8; }
+    .more-findings[open] > summary::before { content: "▾ "; }
+    .share-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: #e8ecf1; margin-top: 0.75rem; }
+    .share-bar > span { height: 100%; }
 </style>
-
 
 <!-- Verdict -->
 <div class="page-hero animate-fade-in-up mb-6">
-    <p class="page-kicker mb-3">Communities &middot; detected from the dependency graph</p>
-    <h1 class="verdict-title max-w-4xl">
-        <span id="metric-verdict-main">{% if cm.MaxSize <= 1 %}Your code shows no natural grouping.{% else %}Your code splits into {{ cm.CommunitiesCount }} natural group{{ cm.CommunitiesCount|pluralize }}.{% endif %}</span>
-        <span class="verdict-muted block" id="metric-verdict-note">{% if cm.MaxSize <= 1 %}Every namespace stands on its own: the dependency graph is too sparse to reveal modules.{% else %}The largest one holds {{ cm.MaxSize }} node{{ cm.MaxSize|pluralize }}.{% endif %}</span>
-    </h1>
-    <p class="verdict-lead mt-4">
-        A community is a set of namespaces that depend on each other more than on the rest of the code.
-        They are computed from the graph, not from folder names, so they show the architecture as it
-        actually is. <strong id="metric-boundary-count">{{ cm.BoundaryNodes|length }}</strong> nodes sit on
-        a boundary between two groups.
-    </p>
-    <div class="kpi-strip kpi-strip--divided mt-8">
-        <div>
-            <div class="kpi-value" id="metric-avg-size">{{ cm.AvgSize|floatformat:1 }}</div>
-            <div class="kpi-label">nodes per group<br>on average</div>
+    <div class="flex flex-wrap items-start justify-between gap-8">
+        <div class="min-w-0 max-w-3xl">
+            <p class="page-kicker mb-3">Communities read from the dependency graph{% if scopeKind != "all" %}, {{ scopeLabel }}{% endif %}</p>
+            <h1 class="verdict-title">
+                {{ cm.Verdict }}<br>
+                <span class="verdict-muted">{{ cm.VerdictNote }}</span>
+            </h1>
+            <p class="verdict-lead mt-4">
+                A community is a group of {% if cm.Granularity == "namespace" %}packages{% else %}classes{% endif %} that depend on each other more than on the rest of the code.
+                It is found on the dependencies alone, without reading folder names, so it shows the modules the code
+                actually forms, next to the ones the namespaces declare.
+                {% if cm.Shared %}The classes the whole codebase leans on, base classes, value objects, interfaces everybody implements,
+                are set aside as the <strong>shared kernel</strong>: they belong to every community, and to none.{% endif %}
+            </p>
         </div>
-        <div>
-            <div class="kpi-value" id="metric-density">{{ cm.GraphDensity|floatformat:3 }}</div>
-            <div class="kpi-label">graph density
-                <span tabindex="0" data-tip="Share of the possible dependencies that actually exist. Low means a sparse, loosely connected graph." class="text-slate-300">&#9432;</span>
-            </div>
-        </div>
-        <div>
-            <div class="kpi-value" id="metric-modularity">{{ cm.ModularityQ|floatformat:2 }}</div>
-            <div class="kpi-label">separation quality
-                <span tabindex="0" data-tip="Modularity Q, from 0 to 1. Higher means the groups are cleanly separated from each other." class="text-slate-300">&#9432;</span>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Community detection settings -->
-<div class="flex flex-wrap items-center gap-8 mb-4 px-1">
-    <label class="flex items-center gap-3">
-        <span class="text-sm text-gray-700">Resolution</span>
-        <input id="lpa-resolution" type="range" min="0" max="2" step="0.1" value="0" class="w-48 h-2 rounded-lg appearance-none bg-gray-200 cursor-pointer">
-        <span id="lpa-resolution-value" class="text-sm text-gray-700 tabular-nums w-8">0</span>
-    </label>
-    <div class="flex flex-col gap-0.5">
-        <label class="flex items-center gap-2 cursor-pointer">
-            <input id="hide-external" type="checkbox" class="w-4 h-4 text-blue-600 rounded">
-            <span class="text-sm text-gray-700">Include external dependencies</span>
-        </label>
-        <span id="ext-count" class="text-xs text-gray-600 ml-6"></span>
-    </div>
-    <span class="text-xs text-gray-600 max-w-xs leading-tight">Enable this to see how your code relates to frameworks and libraries. Disable it to focus on your own business components.</span>
-</div>
-
-<!-- Raw graph data from Go (source of truth for JS community engine) -->
-<script id="data-graph" type="application/json">[
-    {% for nid, n in currentView.Graph.Nodes %}
-    {"id":"{{ nid|escapejs }}",
-     "namespace":"{% if n.Name and n.Name.Package %}{{ n.Name.Package|escapejs }}{% else %}{% if n.Name and n.Name.Qualified %}{{ n.Name.Qualified|escapejs }}{% else %}{% endif %}{% endif %}",
-     "edges":[{% for v in n.Edges %}"{{ v|escapejs }}"{% if not forloop.Last %},{% endif %}{% endfor %}]}
-    {% if not forloop.Last %},{% endif %}
-    {% endfor %}
-]</script>
-<!-- External node IDs (dependencies outside project source) -->
-<script id="data-ext" type="application/json">[
-    {% for nid, _ in currentView.ExternalNodes %}"{{ nid|escapejs }}"{% if not forloop.Last %},{% endif %}{% endfor %}
-]</script>
-
-<!-- Architecture views (tabbed) -->
-<style>
-    .graph-tooltip {
-        position: fixed;
-        pointer-events: none;
-        z-index: 50;
-        background: rgba(255, 255, 255, 0.98);
-        color: #1f2937;
-        font-size: 12px;
-        line-height: 1.5;
-        padding: 8px 12px;
-        border-radius: 6px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        border: 1px solid #e5e7eb;
-        transform: translate(-50%, calc(-100% - 8px));
-        opacity: 0;
-        transition: opacity 150ms ease;
-        white-space: normal;
-        max-width: 280px;
-    }
-    .graph-tooltip.visible {
-        opacity: 1;
-    }
-    .graph-hover { transition: transform 120ms ease, filter 120ms ease; }
-    .graph-hover:hover { transform: scale(1.06); filter: drop-shadow(0 2px 6px rgba(0,0,0,0.2)); }
-    #sankey .sankey-node:hover { transform: none !important; filter: drop-shadow(0 1px 4px rgba(0,0,0,0.18)); }
-</style>
-<div class="dashboard-card p-6 mb-8" style="position:relative">
-    <div id="arch-loading" style="display:none;position:absolute;inset:0;background:rgba(255,255,255,0.8);z-index:20;display:none;align-items:center;justify-content:center;border-radius:inherit">
-        <div style="text-align:center">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style="animation:spin 1s linear infinite;margin:0 auto 8px">
-                <circle cx="12" cy="12" r="10" stroke="#d1d5db" stroke-width="3" fill="none"/>
-                <path d="M12 2a10 10 0 0 1 10 10" stroke="#2563eb" stroke-width="3" stroke-linecap="round" fill="none"/>
-            </svg>
-            <div style="font-size:12px;color:#6b7280">Recalculating communities...</div>
-        </div>
-    </div>
-    <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
-    <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-        <div class="seg" role="tablist" aria-label="Community view">
-            <button role="tab" class="arch-tab seg-item active" data-arch-tab="clustered">Clusters</button>
-            <button role="tab" class="arch-tab seg-item" data-arch-tab="graph">Graph</button>
-            <button role="tab" class="arch-tab seg-item" data-arch-tab="layered">Layers</button>
-            <button role="tab" class="arch-tab seg-item" data-arch-tab="sankey">Flows</button>
-            <button role="tab" class="arch-tab seg-item" data-arch-tab="purity">Purity</button>
-        </div>
-        <button id="export-clustered" class="text-sm text-gray-500 hover:text-gray-900 px-3 py-1.5 rounded-full hover:bg-slate-100 transition-colors">Export PNG</button>
-    </div>
-    <!-- Tab panels -->
-    <div id="arch-panel-graph" class="arch-panel">
-        <div class="text-sm text-gray-600 flex items-center gap-4 rounded mb-2">
-            <label class="flex items-center gap-1"><input id="only-critical-comms" type="checkbox" class="mr-1"> Only critical</label>
-            <label class="flex items-center gap-1">Search <input id="graph-search" type="text" placeholder="namespace or name" class="border px-1 py-0.5 rounded w-44"></label>
-        </div>
-        {% if cm.Communities|length == 0 %}
-        <div class="text-gray-600">No communities to display.</div>
-        {% else %}
-        <div class="grid grid-cols-12 gap-4">
-            <div class="col-span-9">
-                <svg id="comm-graph" viewBox="0 0 900 500" class="w-full h-[500px] border border-gray-200 rounded"></svg>
-            </div>
-            <div class="col-span-3">
-                <div id="drilldown" class="hidden bg-gray-50 border rounded p-3 h-[500px] overflow-auto">
-                    <div class="flex justify-between items-center mb-2">
-                        <h3 id="dd-title" class="font-semibold">Community</h3>
-                        <button id="dd-close" class="text-xs text-gray-600 hover:text-black">close</button>
+        {% if cm.CommunitiesCount > 0 %}
+        <div class="shrink-0">
+            <div class="kpi-strip kpi-strip--divided">
+                <div>
+                    <div class="kpi-value">{{ cm.CommunitiesCount }}</div>
+                    <div class="kpi-label">communit{% if cm.CommunitiesCount == 1 %}y{% else %}ies{% endif %}</div>
+                </div>
+                <div>
+                    <div class="kpi-value">{{ cm.InternalShare|percent }}%</div>
+                    <div class="kpi-label">of dependencies stay<br>inside their community</div>
+                </div>
+                {% if cm.Shared %}
+                <div>
+                    <div class="kpi-value">{{ cm.SharedShare|percent }}%</div>
+                    <div class="kpi-label">go to the<br>shared kernel</div>
+                </div>
+                {% endif %}
+                <div>
+                    <div class="kpi-value {% if cm.CrossShare > 0.3 %}text-bad{% elif cm.CrossShare > 0.15 %}text-warn{% else %}text-good{% endif %}">{{ cm.CrossShare|percent }}%</div>
+                    <div class="kpi-label">cross from one<br>community to another
+                        <span tabindex="0" data-tip="The lower, the more independent the communities are from each other. Dependencies on the shared kernel are not counted here." class="text-slate-300">&#9432;</span>
                     </div>
-                    <div id="dd-meta" class="text-sm text-gray-700 mb-2"></div>
-                    <table class="min-w-full text-xs">
-                        <thead>
-                        <tr>
-                            <th class="text-left p-1">node</th>
-                            <th class="text-left p-1">namespace</th>
-                            <th class="text-left p-1">boundary</th>
-                            <th class="text-left p-1">in</th>
-                            <th class="text-left p-1">out</th>
-                        </tr>
-                        </thead>
-                        <tbody id="dd-body"></tbody>
-                    </table>
                 </div>
-                <div id="legend" class="text-xs text-gray-700">
-                    <div class="font-semibold mb-1">Legend</div>
-                    <div>Each node = one namespace (classes aggregated by package)</div>
-                    <div>Size = nb of namespaces</div>
-                    <div>Color = top namespace</div>
-                    <div>Edge thickness = nb of calls between communities</div>
-                    <div><span class="inline-block w-3 h-3 rounded-full mr-1" style="border:2px solid #dc2626"></span> Red ring = community contains critical nodes</div>
+                {% if cm.Cycles|length > 0 %}
+                <div>
+                    <div class="kpi-value text-bad">{{ cm.Cycles|length }}</div>
+                    <div class="kpi-label">cycle{% if cm.Cycles|length != 1 %}s{% endif %} between<br>communities</div>
                 </div>
+                {% endif %}
+            </div>
+            <div class="share-bar" style="width: 100%" title="Inside communities / to the shared kernel / between communities">
+                <span style="width: {{ cm.InternalShare|percent }}%; background: #22c55e"></span>
+                <span style="width: {{ cm.SharedShare|percent }}%; background: #94a3b8"></span>
+                <span style="width: {{ cm.CrossShare|percent }}%; background: #f59e0b"></span>
             </div>
         </div>
         {% endif %}
     </div>
-    <div id="arch-panel-clustered" class="arch-panel active" style="position:relative">
-        <p class="text-xs text-gray-500 mb-2">Each dot represents a namespace (aggregated at 3 levels of depth), grouped by detected community. Color = namespace identity. Hull border = health (green=healthy, red=risky). Click a cluster to zoom in, hover for details.</p>
-        <svg id="clustered-graph" viewBox="0 0 1200 700" class="w-full h-[700px] border border-gray-200 rounded"></svg>
-        <div id="clustered-detail" style="display:none;position:absolute;bottom:12px;left:12px;width:320px;max-height:220px;overflow-y:auto;background:rgba(255,255,255,0.96);border:1px solid #e5e7eb;border-radius:8px;padding:12px 14px;font-size:12px;color:#374151;box-shadow:0 2px 8px rgba(0,0,0,0.08);z-index:10;transition:opacity 0.2s ease">
-            <div id="clustered-detail-content"></div>
-        </div>
-    </div>
-    <div id="arch-panel-layered" class="arch-panel">
-        <div class="flex items-center justify-between mb-4">
-            <p class="text-sm text-gray-500 font-light">Visualize your architecture layers and dependencies</p>
-            <div class="flex items-center gap-3">
-                <button id="toggle-layered-filters" class="text-sm text-gray-600 hover:text-gray-900 flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-gray-50 transition-colors" title="Show/hide filters">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                    </svg>
-                    <span>Filters</span>
-                </button>
-            </div>
-        </div>
-        <div id="layered-filters" class="text-sm text-gray-600 flex items-center gap-6 mb-6 hidden pb-4 border-b border-gray-100">
-            <label class="flex items-center gap-2">
-                <span class="text-xs text-gray-500">Min edge %</span>
-                <input id="min-edge-slider" type="range" min="0" max="50" value="0" class="w-24">
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-                <input id="highlight-bottlenecks" type="checkbox" checked="checked" class="w-4 h-4 text-blue-600 rounded">
-                <span>Highlight bottlenecks</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-                <input id="only-cross-layer" type="checkbox" class="w-4 h-4 text-blue-600 rounded">
-                <span>Only cross-layer</span>
-            </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-                <input id="bundle-edges" type="checkbox" class="w-4 h-4 text-blue-600 rounded">
-                <span>Edge bundling</span>
-            </label>
-            <label class="flex items-center gap-2">
-                <span class="text-xs text-gray-500">Search</span>
-                <input id="search-comm" type="text" placeholder="name" class="border border-gray-200 rounded-full px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
-            </label>
-        </div>
-        <svg id="layered-map" viewBox="0 0 1200 600" class="w-full h-[600px] border border-gray-200 rounded"></svg>
-        <div class="mt-4 pt-3 border-t border-gray-100">
-            <div class="flex flex-wrap items-center gap-6 text-xs text-gray-500">
-                <span class="font-medium text-gray-700">Legend:</span>
-                <div class="flex items-center gap-2">
-                    <div class="w-2.5 h-2.5 rounded-full bg-gray-400"></div>
-                    <span>Each node = one namespace (classes aggregated by package). Size = number of namespaces</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <div class="w-2.5 h-2.5 rounded-full" style="background: linear-gradient(90deg, #34d399 0%, #fbbf24 50%, #f87171 100%);"></div>
-                    <span>Color = coupling ratio</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <div class="h-0.5 w-5 bg-gray-400"></div>
-                    <span>Width = number of calls</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div id="arch-panel-sankey" class="arch-panel">
-        <svg id="sankey" viewBox="0 0 500 420" class="w-full h-[420px] border border-gray-200 rounded"></svg>
-    </div>
-    <div id="arch-panel-purity" class="arch-panel">
-        <div class="overflow-x-auto">
-            <table class="min-w-full text-sm border-separate border-spacing-0">
-                <thead>
-                <tr class="bg-gray-50">
-                    <th class="text-left px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Community</th>
-                    <th class="text-left px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Purity</th>
-                    <th class="text-left px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Top namespaces</th>
-                </tr>
-                </thead>
-                <tbody id="purity-table-body">
-                {% for id, purity in cm.PurityPerCommunity %}
-                <tr class="border-t hover:bg-slate-50 odd:bg-white even:bg-slate-50/30">
-                    <td class="px-3 py-2 font-medium text-gray-900">{% for k, n in cm.DisplayNamePerComm %}{% if k == id %}{{ n }}{% endif %}{% endfor %}</td>
-                    {% set purity_pct = purity * 100 %}
-                    {% if purity_pct >= 80 %}
-                    {% set purity_bar = "bg-emerald-500" %}
-                    {% elif purity_pct >= 60 %}
-                    {% set purity_bar = "bg-amber-500" %}
-                    {% else %}
-                    {% set purity_bar = "bg-rose-500" %}
-                    {% endif %}
-                    <td class="px-3 py-2">
-                        <div class="flex items-center gap-2">
-                            <div class="w-40 h-2.5 bg-gray-200 rounded">
-                                <div class="h-2.5 rounded {{ purity_bar }}" style="width: {{ purity_pct|floatformat:0 }}%"></div>
-                            </div>
-                            <span class="tabular-nums text-gray-700">{{ purity_pct|floatformat:1 }}%</span>
-                        </div>
-                    </td>
-                    <td class="px-3 py-2">
-                        <div class="flex flex-wrap gap-1">
-                            {% for k, ns in cm.TopNamespacesPerComm %}
-                            {% if k == id %}
-                            {% for s in ns %}
-                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 ring-1 ring-sky-200">{{ s }}</span>
-                            {% endfor %}
-                            {% endif %}
-                            {% endfor %}
-                        </div>
-                    </td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
 </div>
 
+{% if cm.CommunitiesCount > 0 %}
+<!-- Map -->
+<div class="soft-card animate-fade-in-up mb-6">
+    <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+        <div class="min-w-0">
+            <h2 class="card-title">The map</h2>
+            <p class="card-sub">
+                Arrows point from a community to the ones it depends on, thicker for more references.
+                Communities nobody depends on sit at the top, the ones everything rests on at the bottom;
+                <span class="text-bad font-medium">a red dashed arrow goes against that flow: it closes a cycle</span>.
+                Hover a community to follow its dependencies, click it for the details.
+            </p>
+        </div>
+        {% if cm.Cycles|length > 0 %}
+        <div class="seg shrink-0" role="tablist" aria-label="Arrows drawn">
+            <button role="tab" class="seg-item seg-item--active" data-map-mode="all" aria-selected="true">All dependencies</button>
+            <button role="tab" class="seg-item" data-map-mode="cuts" aria-selected="false">Only the cycles to cut</button>
+        </div>
+        {% endif %}
+    </div>
+    <div id="focus-banner" class="insight mb-4" style="display:none">
+        <span class="dot" style="background:#2563eb"></span>
+        <div class="min-w-0 flex-1">
+            <strong id="focus-title"></strong>, <span id="focus-detail"></span>
+        </div>
+        <button id="focus-clear" class="text-sm text-blue-700 hover:underline shrink-0">Show everything</button>
+    </div>
+    <div class="community-map-layout">
+        <div class="overflow-x-auto min-w-0 flex-1" id="community-map-wrap">
+            {{ cm|communityMap }}
+        </div>
+        <aside class="community-folders" id="community-folders" aria-label="Zoom on a folder">
+            <div class="community-folders-head">
+                <span class="section-title">Zoom on a folder</span>
+                <span class="text-xs text-slate-500">Click a folder to redraw the map with its communities and the dependencies written there</span>
+            </div>
+            <div class="community-folders-tree" id="community-folders-tree"></div>
+        </aside>
+    </div>
+    <div id="zoom-table" class="zoom-table" style="display:none"></div>
+    <script id="data-community-files" type="application/json">{{ cm|communityFiles }}</script>
+</div>
 
-{% include "partials/suggestions.html" with suggestions=currentView.Suggestions subtitle="Automatically inferred from coupling, purity and boundary nodes" emptyText="No suggestions — the architecture looks healthy based on current heuristics." %}
+<!-- Findings -->
+<div class="soft-card animate-fade-in-up mb-6">
+    <div class="mb-2">
+        <h2 class="card-title">What stands out</h2>
+        <p class="card-sub">Read from the map: cycles first, then the shared kernel, then where the folders and the dependencies disagree.</p>
+    </div>
+    {% if cm.Findings|length == 0 %}
+    <div class="insight insight--good mt-3"><span class="dot sev-good"></span><div>Nothing stands out: the communities are independent from each other and each stays inside its namespace.</div></div>
+    {% else %}
+    <div>
+        {% for f in cm.Findings %}
+        {% if forloop.Counter == 7 %}<details class="more-findings"><summary>{% with cm.Findings|length as n %}Show {{ n - 6 }} more{% endwith %}</summary>{% endif %}
+        <div class="finding" id="finding-{{ forloop.Counter }}">
+            <span class="finding-kind finding-kind--{{ f.Kind }}">
+                {% if f.Kind == "cycle" %}cycle{% elif f.Kind == "shared" %}shared kernel{% elif f.Kind == "shared-leak" %}kernel leak{% elif f.Kind == "split" %}split folder{% elif f.Kind == "spread" %}spread{% elif f.Kind == "layered" %}layers{% elif f.Kind == "bridge" %}bridge{% else %}{{ f.Kind }}{% endif %}
+            </span>
+            <div class="min-w-0">
+                <div class="finding-title">{{ f.Title }}</div>
+                <div class="finding-detail">{{ f.Detail }}</div>
+            </div>
+        </div>
+        {% if forloop.Last and forloop.Counter > 6 %}</details>{% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
 
-<!-- ============================================================ -->
-<!-- JS Community Engine: computes communities client-side for     -->
-<!-- interactive resolution slider and external node filtering     -->
-<!-- ============================================================ -->
+<!-- Communities -->
+<div class="soft-card animate-fade-in-up mb-6" id="communities-table-card">
+    <div class="mb-4">
+        <h2 class="card-title">The communities</h2>
+        <p class="card-sub">
+            Largest first. "Filed under" says where the members sit in the namespaces: a full bar means the folders and the dependencies agree, a bar in several shades means the community cuts across them.
+        </p>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="comm-table">
+            <thead>
+            <tr>
+                <th style="width: 24%">Community</th>
+                <th style="width: 5%">Size</th>
+                <th style="width: 21%">Filed under</th>
+                <th style="width: 18%">Depends on</th>
+                <th style="width: 18%">Used by</th>
+                {% if currentView.CommitCountForPeriod > 0 %}<th style="width: 14%">Owners</th>{% endif %}
+            </tr>
+            </thead>
+            <tbody>
+            {% for c in cm.Communities %}
+            {% set rowColor = forloop.Counter0|communityColor:c.Shared %}
+            {# the references behind each link are written for the communities shown first: the smaller ones, folded away, keep the page light #}
+            {% set detailed = forloop.Counter0 < 40 or c.Shared %}
+            <tr id="community-{{ c.ID }}"{% if forloop.Counter0 >= 40 and not c.Shared %} class="row-more" hidden{% endif %}>
+                <td>
+                    <div class="flex items-start gap-2">
+                        <span class="comm-swatch" style="background: {{ rowColor }}"></span>
+                        <div class="min-w-0">
+                            <div class="comm-name">{{ c.ShortName }}</div>
+                            {% if c.Hint %}<div class="comm-hint" title="The classes carrying the most dependencies inside the community">{{ c.Hint }}</div>{% endif %}
+                            <details class="members mt-1">
+                                <summary>{{ c.Size }} member{% if c.Size != 1 %}s{% endif %}{% if c.Externals|length > 0 %}, relies on {{ c.Externals|length }} external package{% if c.Externals|length != 1 %}s{% endif %}{% endif %}</summary>
+                                {% if c.Externals|length > 0 %}
+                                <div class="comm-hint mt-2">Relies on {% for e in c.Externals %}{% if forloop.Counter0 > 0 %}, {% endif %}<span class="ident">{{ e.Namespace }}</span>{% endfor %}</div>
+                                {% endif %}
+                                <ul data-lazy-members="{{ c.ID }}">{% if cm.Granularity == "namespace" %}{% for u in c.Units %}<li>{{ cm.Labels|getMapValue:u|default:u }}</li>{% endfor %}{% endif %}</ul>
+                            </details>
+                        </div>
+                    </div>
+                </td>
+                <td class="font-mono text-slate-700 whitespace-nowrap">{{ c.Size }}</td>
+                <td>
+                    {% with c.Namespaces|first as top %}
+                    <div class="ns-top">
+                        <span class="ns-top-name" title="{{ top.Namespace }}">{% if top.Label %}{{ top.Label }}{% else %}(no namespace){% endif %}</span>
+                        <span class="ns-share">{{ top.Share|percent }}%</span>
+                    </div>
+                    {% endwith %}
+                    <div class="ns-meter" title="{% for ns in c.Namespaces %}{% if forloop.Counter0 < 6 %}{% if forloop.Counter0 > 0 %}, {% endif %}{% if ns.Label %}{{ ns.Label }}{% else %}(no namespace){% endif %} {{ ns.Share|percent }}%{% endif %}{% endfor %}">
+                        {% for ns in c.Namespaces %}{% if forloop.Counter0 < 5 %}<span style="width: {{ ns.Share|percent }}%; background: {{ rowColor }}; opacity: {% if forloop.Counter0 == 0 %}1{% elif forloop.Counter0 == 1 %}0.55{% elif forloop.Counter0 == 2 %}0.4{% else %}0.28{% endif %}"></span>{% endif %}{% endfor %}
+                    </div>
+                    {% if c.Namespaces|length > 1 %}
+                    <div class="ns-others">
+                        {% for ns in c.Namespaces %}{% if forloop.Counter0 > 0 and forloop.Counter0 < 4 %}<span title="{{ ns.Namespace }}">{% if ns.Label %}{{ ns.Label }}{% else %}(no namespace){% endif %} <span class="ns-share">{{ ns.Share|percent }}%</span></span>{% endif %}{% endfor %}
+                        {% if c.Namespaces|length > 4 %}{% with c.Namespaces|length as n %}<span class="ns-share">+{{ n - 4 }} more</span>{% endwith %}{% endif %}
+                    </div>
+                    {% endif %}
+                </td>
+                <td class="link-list">
+                    {% if c.Uses|length == 0 %}<span class="text-slate-400">nothing</span>{% endif %}
+                    {% for l in c.Uses %}{% if forloop.Counter0 < 5 %}
+                    {% if detailed %}<details class="link-detail">
+                        <summary><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></summary>
+                        <ul>{% for d in l.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul>
+                    </details>{% else %}<div><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></div>{% endif %}
+                    {% endif %}{% endfor %}
+                    {% if c.Uses|length > 5 %}{% with c.Uses|length as n %}<div class="text-slate-400">+{{ n - 5 }} more</div>{% endwith %}{% endif %}
+                </td>
+                <td class="link-list">
+                    {% if c.UsedBy|length == 0 %}<span class="text-slate-400">nobody</span>{% endif %}
+                    {% for l in c.UsedBy %}{% if forloop.Counter0 < 5 %}
+                    {% if detailed %}<details class="link-detail">
+                        <summary><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></summary>
+                        <ul>{% for d in l.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul>
+                    </details>{% else %}<div><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></div>{% endif %}
+                    {% endif %}{% endfor %}
+                    {% if c.UsedBy|length > 5 %}{% with c.UsedBy|length as n %}<div class="text-slate-400">+{{ n - 5 }} more</div>{% endwith %}{% endif %}
+                </td>
+                {% if currentView.CommitCountForPeriod > 0 %}
+                <td class="link-list">
+                    {% if c.CommitCount == 0 %}<span class="text-slate-400">no commits</span>{% else %}
+                    <div>bus factor <span class="font-mono font-semibold {% if c.BusFactor <= 1 %}text-bad{% elif c.BusFactor == 2 %}text-warn{% else %}text-good{% endif %}">{{ c.BusFactor }}</span></div>
+                    {% for t in c.TopCommitters %}<div class="truncate" title="{{ t.Name }}">{{ t.Name }} <span class="w">{{ t.Commits }}</span></div>{% endfor %}
+                    {% endif %}
+                </td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if cm.Communities|length > 41 %}
+    <button type="button" id="rows-more" class="text-sm text-blue-700 hover:underline mt-3">{% with cm.Communities|length as n %}Show the {{ n - 41 }} smaller communities{% endwith %}</button>
+    {% endif %}
+    {% if cm.IsolatedUnits > 0 %}
+    <p class="text-xs text-slate-500 mt-4">
+        {{ cm.IsolatedUnits }} {% if cm.Granularity == "namespace" %}package{% else %}class{% endif %}{% if cm.IsolatedUnits != 1 %}es{% endif %}
+        stand apart from these communities: they neither use nor are used by another part of the project, or barely so.
+    </p>
+    {% endif %}
+</div>
+
 <script>
-(function() {
-    'use strict';
+(function () {
+    // ---- The map: hovering a community lights up its dependencies -------
+    var wrap = document.getElementById('community-map-wrap');
+    if (!wrap) return;
+    var svg = wrap.querySelector('svg');
+    if (!svg) return;
+    var originalSVG = svg;
+    var edges = [], boxes = [];
+    var cutsOnly = false;
 
-    // ---- Data loading ----
-    var allGraphNodes = JSON.parse(document.getElementById('data-graph').textContent || '[]');
-    var extSet = new Set(JSON.parse(document.getElementById('data-ext').textContent || '[]'));
-    allGraphNodes.forEach(function(n) { if (extSet.has(n.id)) n.ext = true; });
-
-    var extCount = allGraphNodes.filter(function(n){ return n.ext; }).length;
-    var totalCount = allGraphNodes.length;
-    var extRatio = totalCount > 0 ? extCount / totalCount : 0;
-
-    var extCountEl = document.getElementById('ext-count');
-    if (extCountEl) {
-        extCountEl.textContent = extCount > 0 ? '(' + extCount + ' external node' + (extCount > 1 ? 's' : '') + ')' : '';
+    function wire(target) {
+        svg = target;
+        edges = Array.prototype.slice.call(svg.querySelectorAll('.cm-edge'));
+        boxes = Array.prototype.slice.call(svg.querySelectorAll('.cm-box'));
+        svg.classList.toggle('cuts-only', cutsOnly);
+        boxes.forEach(function (b) {
+            b.addEventListener('mouseenter', function () { focus(b.getAttribute('data-id')); });
+            b.addEventListener('mouseleave', blur);
+            b.addEventListener('focus', function () { focus(b.getAttribute('data-id')); });
+            b.addEventListener('blur', blur);
+        });
     }
-
-    // Auto-check "Include external dependencies" when externals are a minority (≤30%)
-    // They add useful architectural context without cluttering the graph
-    var extToggle = document.getElementById('hide-external');
-    if (extToggle && extCount > 0 && extRatio <= 0.3) {
-        extToggle.checked = true;
+    function focus(id) {
+        svg.classList.add('is-focused');
+        var lit = {};
+        lit[id] = true;
+        edges.forEach(function (e) {
+            var on = e.getAttribute('data-from') === id || e.getAttribute('data-to') === id;
+            e.classList.toggle('is-lit', on);
+            if (on) { lit[e.getAttribute('data-from')] = true; lit[e.getAttribute('data-to')] = true; }
+        });
+        boxes.forEach(function (b) { b.classList.toggle('is-lit', !!lit[b.getAttribute('data-id')]); });
     }
-
-    // ---- Hash-based namespace color: deterministic HSL from string ----
-    function nsColor(name) {
-        var h = 0;
-        for (var i = 0; i < name.length; i++) {
-            h = ((h << 5) - h + name.charCodeAt(i)) | 0;
-        }
-        h = ((h % 360) + 360) % 360;
-        return 'hsl(' + h + ', 58%, 50%)';
+    function blur() {
+        svg.classList.remove('is-focused');
+        edges.forEach(function (e) { e.classList.remove('is-lit'); });
+        boxes.forEach(function (b) { b.classList.remove('is-lit'); });
     }
+    wire(originalSVG);
 
-    // ---- LPA: Label Propagation Algorithm ----
-    function buildUndirectedAdj(nodes) {
-        var adj = {};
-        nodes.forEach(function(n) { adj[n.id] = []; });
-        nodes.forEach(function(u) {
-            (u.edges || []).forEach(function(v) {
-                if (!adj[v]) adj[v] = [];
-                if (adj[u.id].indexOf(v) < 0) adj[u.id].push(v);
-                if (adj[v].indexOf(u.id) < 0) adj[v].push(u.id);
+    // The switch between every arrow and the ones closing a cycle.
+    document.querySelectorAll('[data-map-mode]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            cutsOnly = button.getAttribute('data-map-mode') === 'cuts';
+            svg.classList.toggle('cuts-only', cutsOnly);
+            document.querySelectorAll('[data-map-mode]').forEach(function (other) {
+                var active = other === button;
+                other.classList.toggle('seg-item--active', active);
+                other.setAttribute('aria-selected', active ? 'true' : 'false');
             });
-        });
-        return adj;
-    }
-
-    function labelPropagation(adj, opts) {
-        var maxIters = (opts && opts.maxIters) || 15;
-        var resolution = (opts && opts.resolution) || 0;
-        var nodeIds = Object.keys(adj).sort();
-        var labels = {};
-        nodeIds.forEach(function(id) { labels[id] = id; });
-
-        for (var iter = 0; iter < maxIters; iter++) {
-            var changed = false;
-            var sorted = nodeIds.slice().sort();
-            for (var si = 0; si < sorted.length; si++) {
-                var u = sorted[si];
-                var count = {};
-                // Self-retention: resolution weight for current label
-                if (resolution > 0) {
-                    count[labels[u]] = resolution;
-                }
-                var neighbors = adj[u] || [];
-                for (var ni = 0; ni < neighbors.length; ni++) {
-                    var v = neighbors[ni];
-                    var l = labels[v];
-                    var deg = (adj[v] || []).length;
-                    var w = deg > 0 ? 1.0 / Math.sqrt(deg) : 1.0;
-                    count[l] = (count[l] || 0) + w;
-                }
-                var maxC = -1, best = [];
-                var keys = Object.keys(count);
-                for (var ki = 0; ki < keys.length; ki++) {
-                    var c = count[keys[ki]];
-                    if (c > maxC) { maxC = c; best = [keys[ki]]; }
-                    else if (c === maxC) { best.push(keys[ki]); }
-                }
-                if (best.length === 0) continue;
-                best.sort();
-                var newLabel = best[0];
-                if (newLabel !== labels[u]) {
-                    labels[u] = newLabel;
-                    changed = true;
-                }
-            }
-            if (!changed) break;
-        }
-
-        // Group by label
-        var comms = {};
-        nodeIds.forEach(function(u) {
-            var l = labels[u];
-            if (!comms[l]) comms[l] = [];
-            comms[l].push(u);
-        });
-        Object.keys(comms).forEach(function(k) { comms[k].sort(); });
-        return { communities: comms, labels: labels };
-    }
-
-    // ---- Post-processing metrics ----
-    function computeAllMetrics(nodes, lpaResult) {
-        var communities = lpaResult.communities;
-        var nodeToCommunity = lpaResult.labels;
-        var nodeMap = {};
-        nodes.forEach(function(n) { nodeMap[n.id] = n; });
-        var commIds = Object.keys(communities).sort();
-
-        // Basic stats
-        var sizes = commIds.map(function(id) { return communities[id].length; });
-        var totalNodes = sizes.reduce(function(a, b) { return a + b; }, 0);
-        var maxSize = Math.max.apply(null, sizes.concat([0]));
-        var avgSize = commIds.length > 0 ? totalNodes / commIds.length : 0;
-
-        // Graph density (undirected)
-        var edgeSet = {};
-        var edgeCount = 0;
-        nodes.forEach(function(u) {
-            (u.edges || []).forEach(function(v) {
-                var a = u.id < v ? u.id : v;
-                var b = u.id < v ? v : u.id;
-                var key = a + '|' + b;
-                if (!edgeSet[key]) { edgeSet[key] = true; edgeCount++; }
-            });
-        });
-        var n = totalNodes;
-        var graphDensity = n > 1 ? (2 * edgeCount) / (n * (n - 1)) : 0;
-
-        // Modularity Q (Newman-Girvan, undirected)
-        var adj = buildUndirectedAdj(nodes);
-        var degree = {};
-        Object.keys(adj).forEach(function(u) { degree[u] = (adj[u] || []).length; });
-        var m = 0;
-        Object.keys(degree).forEach(function(u) { m += degree[u]; });
-        m = m / 2;
-        var Q = 0;
-        if (m > 0) {
-            Object.keys(adj).forEach(function(u) {
-                var cu = nodeToCommunity[u];
-                (adj[u] || []).forEach(function(v) {
-                    var cv = nodeToCommunity[v];
-                    if (cu === cv) {
-                        Q += 1 - (degree[u] * degree[v]) / (2 * m);
-                    }
-                });
-            });
-            Q = Q / (2 * m);
-        }
-
-        // Purity, top namespaces, top classes
-        var purityPerComm = {};
-        var topNamespacesPerComm = {};
-        var topClassesPerComm = {};
-        commIds.forEach(function(cid) {
-            var nodeIds = communities[cid];
-            var nsCounts = {};
-            nodeIds.forEach(function(nid) {
-                var ns = (nodeMap[nid] && nodeMap[nid].namespace || '').trim();
-                if (ns) nsCounts[ns] = (nsCounts[ns] || 0) + 1;
-            });
-            var sortedNs = Object.keys(nsCounts).map(function(ns) { return [ns, nsCounts[ns]]; })
-                .sort(function(a, b) { return b[1] - a[1]; });
-            purityPerComm[cid] = nodeIds.length > 0 && sortedNs.length > 0 ? sortedNs[0][1] / nodeIds.length : 0;
-            topNamespacesPerComm[cid] = sortedNs.slice(0, 3).map(function(e) { return e[0]; });
-            topClassesPerComm[cid] = nodeIds.slice(0, 5);
-        });
-
-        // Edges between communities (directed)
-        var ebcMap = {};
-        var inbound = {}, outbound = {}, internal = {};
-        commIds.forEach(function(id) { inbound[id] = 0; outbound[id] = 0; internal[id] = 0; });
-        nodes.forEach(function(u) {
-            var cu = nodeToCommunity[u.id];
-            if (!cu) return;
-            (u.edges || []).forEach(function(v) {
-                var cv = nodeToCommunity[v];
-                if (!cv) return;
-                if (cu === cv) { internal[cu]++; return; }
-                outbound[cu]++;
-                inbound[cv]++;
-                var key = cu + '|' + cv;
-                ebcMap[key] = (ebcMap[key] || 0) + 1;
-            });
-        });
-        var edgesBetweenCommunities = [];
-        Object.keys(ebcMap).forEach(function(key) {
-            var parts = key.split('|');
-            edgesBetweenCommunities.push({ from: parts[0], to: parts[1], edges: ebcMap[key] });
-        });
-
-        // Coupling ratio
-        var couplingPerComm = {};
-        commIds.forEach(function(cid) {
-            var total = internal[cid] + inbound[cid] + outbound[cid];
-            couplingPerComm[cid] = total > 0 ? outbound[cid] / total : 0;
-        });
-
-        // Boundary nodes
-        var boundaryNodes = [];
-        Object.keys(nodeToCommunity).forEach(function(nid) {
-            var cu = nodeToCommunity[nid];
-            var node = nodeMap[nid];
-            if (!node) return;
-            var neighborComms = {};
-            (node.edges || []).forEach(function(v) {
-                var cv = nodeToCommunity[v];
-                if (cv && cv !== cu) neighborComms[cv] = true;
-            });
-            // Also check inbound
-            nodes.forEach(function(u2) {
-                if ((u2.edges || []).indexOf(nid) >= 0) {
-                    var cv2 = nodeToCommunity[u2.id];
-                    if (cv2 && cv2 !== cu) neighborComms[cv2] = true;
-                }
-            });
-            if (Object.keys(neighborComms).length >= 2) boundaryNodes.push(nid);
-        });
-        boundaryNodes.sort();
-
-        // Levels via SCC + DAG layering
-        var levels = computeLevels(commIds, nodeToCommunity, nodes);
-
-        // Betweenness on community graph (Brandes, undirected)
-        var betweenness = computeCommBetweenness(commIds, edgesBetweenCommunities);
-
-        // Matrix order (RCM)
-        var matrixOrder = computeMatrixOrder(commIds, edgesBetweenCommunities);
-
-        // Display names
-        var displayNames = computeDisplayNames(communities, nodeMap);
-
-        return {
-            communities: communities,
-            nodeToCommunity: nodeToCommunity,
-            communitiesCount: commIds.length,
-            avgSize: avgSize,
-            maxSize: maxSize,
-            graphDensity: graphDensity,
-            modularityQ: Q,
-            purityPerComm: purityPerComm,
-            topNamespacesPerComm: topNamespacesPerComm,
-            topClassesPerComm: topClassesPerComm,
-            inbound: inbound,
-            outbound: outbound,
-            couplingPerComm: couplingPerComm,
-            boundaryNodes: boundaryNodes,
-            edgesBetweenCommunities: edgesBetweenCommunities,
-            levels: levels,
-            betweenness: betweenness,
-            matrixOrder: matrixOrder,
-            displayNames: displayNames
-        };
-    }
-
-    function computeLevels(commIds, nodeToCommunity, graphNodes) {
-        // Build directed community graph
-        var commAdj = {}, commAdjRev = {};
-        commIds.forEach(function(id) { commAdj[id] = {}; commAdjRev[id] = {}; });
-        graphNodes.forEach(function(node) {
-            var cu = nodeToCommunity[node.id];
-            if (!cu) return;
-            (node.edges || []).forEach(function(v) {
-                var cv = nodeToCommunity[v];
-                if (cv && cu !== cv) {
-                    commAdj[cu][cv] = true;
-                    commAdjRev[cv][cu] = true;
-                }
-            });
-        });
-
-        // Kosaraju SCC
-        var visited = {};
-        var order = [];
-        function dfs1(u) {
-            visited[u] = true;
-            Object.keys(commAdj[u] || {}).forEach(function(v) { if (!visited[v]) dfs1(v); });
-            order.push(u);
-        }
-        commIds.forEach(function(id) { if (!visited[id]) dfs1(id); });
-
-        var sccId = {};
-        var sccCount = 0;
-        var visited2 = {};
-        function dfs2(u, id) {
-            visited2[u] = true;
-            sccId[u] = id;
-            Object.keys(commAdjRev[u] || {}).forEach(function(v) { if (!visited2[v]) dfs2(v, id); });
-        }
-        for (var i = order.length - 1; i >= 0; i--) {
-            if (!visited2[order[i]]) { dfs2(order[i], sccCount); sccCount++; }
-        }
-
-        // Condensation DAG + longest path
-        var dagAdj = [];
-        for (var s = 0; s < sccCount; s++) dagAdj.push({});
-        commIds.forEach(function(u) {
-            Object.keys(commAdj[u] || {}).forEach(function(v) {
-                if (sccId[u] !== sccId[v]) dagAdj[sccId[u]][sccId[v]] = true;
-            });
-        });
-
-        var inDeg = new Array(sccCount).fill(0);
-        dagAdj.forEach(function(targets) { Object.keys(targets).forEach(function(t) { inDeg[parseInt(t)]++; }); });
-        var queue = [];
-        var dist = new Array(sccCount).fill(0);
-        for (var j = 0; j < sccCount; j++) { if (inDeg[j] === 0) queue.push(j); }
-        while (queue.length > 0) {
-            var u = queue.shift();
-            Object.keys(dagAdj[u]).forEach(function(v) {
-                v = parseInt(v);
-                dist[v] = Math.max(dist[v], dist[u] + 1);
-                if (--inDeg[v] === 0) queue.push(v);
-            });
-        }
-
-        var levels = {};
-        commIds.forEach(function(id) { levels[id] = dist[sccId[id]]; });
-        return levels;
-    }
-
-    function computeCommBetweenness(commIds, ebc) {
-        var adj = {};
-        commIds.forEach(function(id) { adj[id] = []; });
-        ebc.forEach(function(e) {
-            if (adj[e.from] && adj[e.from].indexOf(e.to) < 0) adj[e.from].push(e.to);
-            if (adj[e.to] && adj[e.to].indexOf(e.from) < 0) adj[e.to].push(e.from);
-        });
-
-        var bet = {};
-        commIds.forEach(function(id) { bet[id] = 0; });
-        commIds.forEach(function(s) {
-            var S = [], P = {}, sigma = {}, distMap = {};
-            commIds.forEach(function(v) { P[v] = []; sigma[v] = 0; distMap[v] = -1; });
-            sigma[s] = 1; distMap[s] = 0;
-            var Q = [s];
-            while (Q.length) {
-                var v = Q.shift(); S.push(v);
-                (adj[v] || []).forEach(function(w) {
-                    if (distMap[w] < 0) { Q.push(w); distMap[w] = distMap[v] + 1; }
-                    if (distMap[w] === distMap[v] + 1) { sigma[w] += sigma[v]; P[w].push(v); }
-                });
-            }
-            var delta = {};
-            commIds.forEach(function(v) { delta[v] = 0; });
-            while (S.length) {
-                var w = S.pop();
-                P[w].forEach(function(v) { delta[v] += (sigma[v] / sigma[w]) * (1 + delta[w]); });
-                if (w !== s) bet[w] += delta[w];
-            }
-        });
-
-        var nn = commIds.length;
-        var norm = nn > 2 ? 1.0 / ((nn - 1) * (nn - 2)) : 1;
-        commIds.forEach(function(v) { bet[v] *= norm; });
-        return bet;
-    }
-
-    function computeMatrixOrder(commIds, ebc) {
-        var adj = {};
-        commIds.forEach(function(id) { adj[id] = []; });
-        ebc.forEach(function(e) {
-            if (adj[e.from] && adj[e.from].indexOf(e.to) < 0) adj[e.from].push(e.to);
-            if (adj[e.to] && adj[e.to].indexOf(e.from) < 0) adj[e.to].push(e.from);
-        });
-        var visited = {};
-        var result = [];
-        while (Object.keys(visited).length < commIds.length) {
-            var start = null, minDeg = Infinity;
-            commIds.forEach(function(id) {
-                if (!visited[id] && (adj[id] || []).length < minDeg) { minDeg = (adj[id] || []).length; start = id; }
-            });
-            if (!start) break;
-            var component = [];
-            var queue = [start]; visited[start] = true;
-            while (queue.length) {
-                var u = queue.shift(); component.push(u);
-                var nbrs = (adj[u] || []).filter(function(v) { return !visited[v]; })
-                    .sort(function(a, b) { return (adj[a] || []).length - (adj[b] || []).length; });
-                nbrs.forEach(function(v) { visited[v] = true; queue.push(v); });
-            }
-            component.reverse();
-            result = result.concat(component);
-        }
-        return result;
-    }
-
-    // ---- Community Namer ----
-    var _stopTokens = null;
-    function getStopTokens() {
-        if (_stopTokens) return _stopTokens;
-        _stopTokens = new Set([
-            'service','manager','handler','helper','provider','factory','repository',
-            'controller','adapter','impl','abstract','base','interface','builder',
-            'processor','resolver','dispatcher','listener','observer','decorator',
-            'strategy','command','query','event','dto','model','entity','mapper',
-            'converter','formatter','validator','checker','guard','filter','proxy',
-            'wrapper','delegate','facade','registry','locator','broker','bus',
-            'module','component','plugin','middleware','interceptor','trait','mixin',
-            'enum','struct','class','type','config','configuration','util','utils',
-            'utility','common','shared','core','main','app','application','server',
-            'client','api','http','grpc','rpc','rest','web','pkg','internal','cmd',
-            'src','lib','test','tests','spec','mock','stub','fake','fixture',
-            'index','init','setup','run','exec','do','get','set','new','make',
-            'create','delete','update','read','write','list','find','fetch','load',
-            'save','store','cache','log','logger','logging','error','exception',
-            'request','response','context','option','options','params','args',
-            'result','output','input','data','info','meta','tmp','temp',
-            'github','gitlab','bitbucket','com','org','net','io','dev','co',
-            'vendor','node_modules','third_party','thirdparty','external','deps',
-            'gopkg','golang','python','pypi','npm','crates','maven','nuget'
-        ]);
-        return _stopTokens;
-    }
-
-    function tokenizeName(name) {
-        // Split on / \ . to get all segments, then tokenize each
-        var segments = name.split(/[\/\\.]/);
-        var tokens = [];
-        for (var s = 0; s < segments.length; s++) {
-            var seg = segments[s];
-            if (!seg) continue;
-            // Split on CamelCase/PascalCase boundaries, underscores, hyphens
-            var raw = seg.replace(/([a-z0-9])([A-Z])/g, '$1\x00$2')
-                         .replace(/([A-Z]+)([A-Z][a-z])/g, '$1\x00$2')
-                         .split(/[\x00_\-]+/);
-            for (var i = 0; i < raw.length; i++) {
-                var t = raw[i].toLowerCase();
-                // Skip single chars, pure numbers, and version tags (v1, v2, etc.)
-                if (t.length <= 1) continue;
-                if (/^\d+$/.test(t)) continue;
-                if (/^v\d+/.test(t)) continue;
-                tokens.push(t);
-            }
-        }
-        return tokens;
-    }
-
-    function detectPrefixTokens(classNames) {
-        if (!classNames || classNames.length <= 1) return new Set();
-        var tokenClassCount = {};
-        for (var i = 0; i < classNames.length; i++) {
-            var segments = classNames[i].split(/[\/\\.]/);
-            if (segments.length < 2) continue;
-            // Take all segments except the last one (namespace segments only)
-            var nsSegments = segments.slice(0, segments.length - 1);
-            var seen = {};
-            for (var s = 0; s < nsSegments.length; s++) {
-                var seg = nsSegments[s];
-                if (!seg) continue;
-                var raw = seg.replace(/([a-z0-9])([A-Z])/g, '$1\x00$2')
-                             .replace(/([A-Z]+)([A-Z][a-z])/g, '$1\x00$2')
-                             .split(/[\x00_\-]+/);
-                for (var r = 0; r < raw.length; r++) {
-                    var t = raw[r].toLowerCase();
-                    if (t.length <= 1) continue;
-                    if (!seen[t]) {
-                        seen[t] = true;
-                        tokenClassCount[t] = (tokenClassCount[t] || 0) + 1;
-                    }
-                }
-            }
-        }
-        var threshold = classNames.length * 0.8;
-        var prefixSet = new Set();
-        var keys = Object.keys(tokenClassCount);
-        for (var k = 0; k < keys.length; k++) {
-            if (tokenClassCount[keys[k]] >= threshold) {
-                prefixSet.add(keys[k]);
-            }
-        }
-        return prefixSet;
-    }
-
-    function nameCommunity(classNames) {
-        if (!classNames || classNames.length === 0) return 'Unknown';
-        var stops = getStopTokens();
-        var prefixTokens = detectPrefixTokens(classNames);
-        var freq = {};
-        var total = 0;
-        for (var i = 0; i < classNames.length; i++) {
-            var tokens = tokenizeName(classNames[i]);
-            for (var j = 0; j < tokens.length; j++) {
-                var t = tokens[j];
-                freq[t] = (freq[t] || 0) + 1;
-                total++;
-            }
-        }
-        if (total === 0) return 'Unknown';
-
-        // Score tokens
-        var scored = [];
-        var keys = Object.keys(freq);
-        for (var k = 0; k < keys.length; k++) {
-            var token = keys[k];
-            var tf = freq[token] / total;
-            var stopPenalty = stops.has(token) ? 0.2 : 1;
-            var prefixPenalty = prefixTokens.has(token) ? 0.05 : 1;
-            var lengthBonus = Math.min(token.length / 8, 1);
-            var score = tf * stopPenalty * prefixPenalty * (0.6 + 0.4 * lengthBonus);
-            scored.push([token, score]);
-        }
-        scored.sort(function(a, b) { return b[1] - a[1]; });
-
-        // Take top 2 tokens, recombine as PascalCase
-        var top = scored.slice(0, 2);
-        if (top.length === 0) return 'Unknown';
-        var label = '';
-        for (var m = 0; m < top.length; m++) {
-            var w = top[m][0];
-            label += w.charAt(0).toUpperCase() + w.slice(1);
-        }
-        return label;
-    }
-
-    function computeDisplayNames(communities, nodeMap) {
-        var names = {};
-        var commIds = Object.keys(communities);
-        commIds.forEach(function(cid) {
-            var nodeIds = communities[cid];
-            names[cid] = nameCommunity(nodeIds);
-        });
-        // Deduplicate: append index if collision
-        var seen = {};
-        commIds.forEach(function(id) {
-            var name = names[id];
-            if (seen[name] !== undefined) {
-                seen[name].push(id);
-            } else {
-                seen[name] = [id];
-            }
-        });
-        Object.keys(seen).forEach(function(name) {
-            var ids = seen[name];
-            if (ids.length > 1) {
-                for (var i = 0; i < ids.length; i++) {
-                    names[ids[i]] = name + ' (' + (i + 1) + ')';
-                }
-            }
-        });
-        return names;
-    }
-
-    // ---- Rendering functions ----
-
-    function updateMetricCards(cm) {
-        var el;
-        el = document.getElementById('metric-modularity'); if (el) el.textContent = cm.modularityQ.toFixed(2);
-        el = document.getElementById('metric-avg-size'); if (el) el.textContent = cm.avgSize.toFixed(1);
-
-        // Recompose the verdict sentence: a graph where no group grows past one
-        // node has not revealed any module, and should say so.
-        var plural = function(n) { return n === 1 ? '' : 's'; };
-        el = document.getElementById('metric-verdict-main');
-        if (el) {
-            el.textContent = cm.maxSize <= 1
-                ? 'Your code shows no natural grouping.'
-                : 'Your code splits into ' + cm.communitiesCount + ' natural group' + plural(cm.communitiesCount) + '.';
-        }
-        el = document.getElementById('metric-verdict-note');
-        if (el) {
-            el.textContent = cm.maxSize <= 1
-                ? 'Every namespace stands on its own: the dependency graph is too sparse to reveal modules.'
-                : 'The largest one holds ' + cm.maxSize + ' node' + plural(cm.maxSize) + '.';
-        }
-        el = document.getElementById('metric-density'); if (el) el.textContent = cm.graphDensity.toFixed(3);
-    }
-
-    function renderPurityTable(cm) {
-        var tbody = document.getElementById('purity-table-body');
-        if (!tbody) return;
-        var commIds = Object.keys(cm.communities).sort(function(a, b) {
-            return (cm.purityPerComm[b] || 0) - (cm.purityPerComm[a] || 0);
-        });
-        var html = '';
-        commIds.forEach(function(cid, idx) {
-            var purity = cm.purityPerComm[cid] || 0;
-            var pct = Math.round(purity * 100);
-            var bar = pct >= 80 ? 'bg-emerald-500' : pct >= 60 ? 'bg-amber-500' : 'bg-rose-500';
-            var name = cm.displayNames[cid] || cid;
-            var nsHtml = (cm.topNamespacesPerComm[cid] || []).map(function(ns) {
-                return '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 ring-1 ring-sky-200">' + escHtml(ns) + '</span>';
-            }).join('');
-            html += '<tr class="border-t hover:bg-slate-50 ' + (idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30') + '">';
-            html += '<td class="px-3 py-2 font-medium text-gray-900">' + escHtml(name) + '</td>';
-            html += '<td class="px-3 py-2"><div class="flex items-center gap-2"><div class="w-40 h-2.5 bg-gray-200 rounded"><div class="h-2.5 rounded ' + bar + '" style="width:' + pct + '%"></div></div><span class="tabular-nums text-gray-700">' + (purity * 100).toFixed(1) + '%</span></div></td>';
-            html += '<td class="px-3 py-2"><div class="flex flex-wrap gap-1">' + nsHtml + '</div></td>';
-            html += '</tr>';
-        });
-        tbody.innerHTML = html;
-    }
-
-    function escHtml(s) {
-        var d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
-    }
-
-    // ---- Build community data in format used by graph/layered/sankey views ----
-    function buildViewData(cm) {
-        var commIds = Object.keys(cm.communities).sort();
-        var communities = commIds.map(function(id) {
-            return {
-                id: id,
-                name: cm.displayNames[id] || id,
-                size: cm.communities[id].length,
-                purity: cm.purityPerComm[id] || 0,
-                level: cm.levels[id] || 0,
-                betweenness: cm.betweenness[id] || 0,
-                coupling: cm.couplingPerComm[id] || 0,
-                topNamespaces: cm.topNamespacesPerComm[id] || [],
-                topClasses: cm.topClassesPerComm[id] || []
-            };
-        });
-        var commMembers = commIds.map(function(id) {
-            return { comm: id, nodes: cm.communities[id] };
-        });
-        return {
-            communities: communities,
-            commMembers: commMembers,
-            ebc: cm.edgesBetweenCommunities,
-            matrixOrder: cm.matrixOrder,
-            boundary: cm.boundaryNodes,
-            nodeToCommunity: cm.nodeToCommunity
-        };
-    }
-
-    // ---- Main graph view rendering ----
-    function renderGraphView(vd, nodes) {
-        if (!(window.d3 && typeof d3.forceSimulation === 'function')) return;
-        var communities = vd.communities;
-        var nodeToCommunity = vd.nodeToCommunity;
-        var boundarySet = new Set(vd.boundary);
-        var nodeMap = new Map(nodes.map(function(n) { return [n.id, n]; }));
-        var indeg = new Map(), outdeg = new Map();
-        nodes.forEach(function(n) {
-            outdeg.set(n.id, (n.edges || []).length);
-            (n.edges || []).forEach(function(v) { indeg.set(v, (indeg.get(v) || 0) + 1); });
-        });
-
-        // Ensure global tooltip
-        if (!document.getElementById('graph-tooltip')) {
-            var tip = document.createElement('div');
-            tip.id = 'graph-tooltip';
-            tip.className = 'graph-tooltip';
-            tip.style.display = 'none';
-            document.body.appendChild(tip);
-        }
-        if (!window.graphTooltip) {
-            var __tooltip = function() { return document.getElementById('graph-tooltip'); };
-            window.graphTooltip = {
-                show: function(html, event) {
-                    var el = __tooltip(); if (!el) return;
-                    el.innerHTML = html; el.style.display = 'block'; el.classList.add('visible');
-                    this.move(event);
-                },
-                move: function(event) {
-                    var el = __tooltip(); if (!el) return;
-                    el.style.left = event.clientX + 'px';
-                    el.style.top = event.clientY + 'px';
-                },
-                hide: function() {
-                    var el = __tooltip(); if (!el) return;
-                    el.classList.remove('visible'); el.style.display = 'none';
-                }
-            };
-        }
-
-        // Color scale
-        var allTopNS = Array.from(new Set(communities.flatMap(function(c) { return c.topNamespaces && c.topNamespaces.length ? [c.topNamespaces[0]] : ['']; }))).sort();
-        var colorScale = function(ns) { return nsColor(ns || ''); };
-        var nsByCommunity = new Map();
-        (function() {
-            var cm2 = new Map();
-            Object.entries(nodeToCommunity).forEach(function(e) {
-                var nid = e[0], cid = e[1];
-                if (!cm2.has(cid)) cm2.set(cid, []);
-                cm2.get(cid).push(nid);
-            });
-            cm2.forEach(function(ids, cid) {
-                var counts = new Map();
-                ids.forEach(function(nid) {
-                    var ns = (nodeMap.get(nid) && nodeMap.get(nid).namespace || '').trim();
-                    if (ns) counts.set(ns, (counts.get(ns) || 0) + 1);
-                });
-                var best = '', bestC = -1;
-                counts.forEach(function(c, ns) { if (c > bestC) { bestC = c; best = ns; } });
-                if (best) nsByCommunity.set(cid, best);
-            });
-        })();
-
-        function hashColorFromId(id) {
-            return nsColor(String(id || ''));
-        }
-
-        var fillColor = function(d) {
-            var ns = (d && d.topNamespaces && d.topNamespaces.length) ? d.topNamespaces[0] : null;
-            if (ns) return colorScale(ns);
-            var inferred = nsByCommunity.get(d.id);
-            if (inferred) return colorScale(inferred);
-            return hashColorFromId(String(d.id || ''));
-        };
-
-        // Build legend
-        (function buildNsLegend() {
-            var legend = document.getElementById('legend');
-            if (!legend) return;
-            var old = legend.querySelector('.ns-legend');
-            if (old) old.remove();
-            var wrap = document.createElement('div');
-            wrap.className = 'ns-legend mt-1 overflow-auto max-h-96';
-            var title = document.createElement('div');
-            title.className = 'font-semibold mt-2';
-            title.textContent = 'Namespaces:';
-            wrap.appendChild(title);
-            var list = document.createElement('div');
-            list.className = 'flex flex-wrap gap-2 mt-1';
-            var nsList = allTopNS.filter(function(ns) { return ns && ns.trim().length > 0; });
-            if (nsList.length === 0) {
-                var it = document.createElement('div'); it.className = 'text-gray-500'; it.textContent = '(no namespace data)';
-                list.appendChild(it);
-            } else {
-                nsList.forEach(function(ns) {
-                    var item = document.createElement('div'); item.className = 'flex items-center';
-                    var dot = document.createElement('span'); dot.className = 'inline-block w-3 h-3 rounded-full mr-1';
-                    dot.style.background = colorScale(ns); dot.style.border = '1px solid rgba(0,0,0,0.2)';
-                    var label = document.createElement('span'); label.textContent = ns;
-                    item.appendChild(dot); item.appendChild(label); list.appendChild(item);
-                });
-            }
-            wrap.appendChild(list);
-            legend.appendChild(wrap);
-        })();
-
-        // Build inter-community matrix
-        var commIds = communities.map(function(c) { return c.id; });
-        var idIndex = new Map(commIds.map(function(id, i) { return [id, i]; }));
-        var nComm = commIds.length;
-        var mat = Array.from({length: nComm}, function() { return Array(nComm).fill(0); });
-        nodes.forEach(function(u) {
-            var cu = nodeToCommunity[u.id];
-            (u.edges || []).forEach(function(v) {
-                var cv = nodeToCommunity[v];
-                if (!cu || !cv) return;
-                var i = idIndex.get(cu), j = idIndex.get(cv);
-                if (i == null || j == null) return;
-                mat[i][j] += 1;
-            });
-        });
-        var commStats = new Map();
-        for (var i = 0; i < nComm; i++) {
-            var ob = d3.sum(mat[i].filter(function(_, j) { return j !== i; }));
-            var ib = 0;
-            for (var r = 0; r < nComm; r++) { if (r !== i) ib += mat[r][i]; }
-            var intern = mat[i][i];
-            var total = ib + ob + intern;
-            var coupling = total > 0 ? ob / total : 0;
-            commStats.set(commIds[i], {inbound: ib, outbound: ob, internal: intern, total: total, coupling: coupling});
-        }
-
-        // Draw graph
-        var W = 900, H = 500;
-        var svg = d3.select('#comm-graph');
-        svg.selectAll('*').remove();
-
-        var maxSize = d3.max(communities, function(d) { return d.size; }) || 1;
-        var rScale = d3.scaleSqrt().domain([0, maxSize]).range([10, 60]);
-
-        var nodesSim = communities.map(function(d) {
-            return Object.assign({}, d, { x: Math.random() * W, y: Math.random() * H, r: rScale(d.size) });
-        });
-
-        var links = [];
-        for (var i2 = 0; i2 < nComm; i2++) {
-            for (var j2 = 0; j2 < nComm; j2++) {
-                if (i2 === j2) continue;
-                var w2 = mat[i2][j2] + mat[j2][i2];
-                if (w2 > 0) links.push({source: commIds[i2], target: commIds[j2], weight: w2});
-            }
-        }
-        var maxW = d3.max(links, function(l) { return l.weight; }) || 1;
-        var widthScale = d3.scaleSqrt().domain([1, maxW]).range([0.5, 8]);
-
-        var sim = d3.forceSimulation(nodesSim)
-            .force('center', d3.forceCenter(W / 2, H / 2))
-            .force('link', d3.forceLink(links).id(function(d) { return d.id; }).distance(170).strength(function(d) { return Math.min(0.5, 0.05 + (d.weight / maxW) * 0.2); }))
-            .force('collide', d3.forceCollide(function(d) { return d.r + 10; }))
-            .force('charge', d3.forceManyBody().strength(2))
-            .stop();
-        for (var tick = 0; tick < 300; tick++) sim.tick();
-
-        var g = svg.append('g');
-        svg.call(d3.zoom().scaleExtent([0.5, 8]).on('zoom', function(event) { g.attr('transform', event.transform); }));
-
-        if (links.length === 0) {
-            g.append('text').attr('x', 12).attr('y', 18).attr('fill', '#6b7280').attr('font-size', 12).text('No inter-community links in data');
-        }
-
-        var neighbors = new Map();
-        nodesSim.forEach(function(n) { neighbors.set(n.id, new Set([n.id])); });
-        links.forEach(function(l) {
-            var s = (typeof l.source === 'object') ? l.source.id : l.source;
-            var t = (typeof l.target === 'object') ? l.target.id : l.target;
-            if (!neighbors.has(s)) neighbors.set(s, new Set([s]));
-            if (!neighbors.has(t)) neighbors.set(t, new Set([t]));
-            neighbors.get(s).add(t); neighbors.get(t).add(s);
-        });
-
-        function getX(ref) { if (ref && typeof ref === 'object') return ref.x || 0; var n = nodesSim.find(function(n) { return n.id === ref; }); return (n && n.x) || 0; }
-        function getY(ref) { if (ref && typeof ref === 'object') return ref.y || 0; var n = nodesSim.find(function(n) { return n.id === ref; }); return (n && n.y) || 0; }
-
-        var linkSel = g.selectAll('line.link').data(links).enter().append('line')
-            .attr('class', 'link')
-            .attr('x1', function(d) { return getX(d.source); }).attr('y1', function(d) { return getY(d.source); })
-            .attr('x2', function(d) { return getX(d.target); }).attr('y2', function(d) { return getY(d.target); })
-            .attr('stroke', '#9ca3af').attr('stroke-opacity', 0.8)
-            .attr('stroke-width', function(d) { return widthScale(d.weight); });
-
-        var nodeG = g.selectAll('g.comm').data(nodesSim).enter().append('g').attr('class', 'comm')
-            .attr('transform', function(d) { return 'translate(' + d.x + ',' + d.y + ')'; })
-            .style('cursor', 'pointer');
-
-        nodeG.append('circle').attr('class', 'graph-hover')
-            .attr('r', function(d) { return d.r; })
-            .attr('fill', fillColor).attr('fill-opacity', 0.85)
-            .attr('stroke', '#333').attr('stroke-width', 0.5)
-            .on('mouseenter', function(event, d) {
-                var tns = (d.topNamespaces || []).slice(0, 3).join(', ');
-                var tcs = (d.topClasses || []).slice(0, 5).join(', ');
-                var stat = commStats.get(d.id) || {coupling: 0};
-                var p = Math.round((d.purity || 0) * 100);
-                var coup = Math.round((stat.coupling || 0) * 100);
-                var html = '<strong>' + (d.name || d.id) + '</strong><br><span style="opacity:.85">Purity: ' + p + '% · Coupling: ' + coup + '%</span>' + (tns ? '<br>Top ns: ' + tns : '') + (tcs ? '<br>Top nodes: ' + tcs : '');
-                if (window.graphTooltip) window.graphTooltip.show(html, event);
-            })
-            .on('mousemove', function(event) { if (window.graphTooltip) window.graphTooltip.move(event); })
-            .on('mouseleave', function() { if (window.graphTooltip) window.graphTooltip.hide(); });
-
-        var currentFocusId = null, hoverId = null, criticalSet = new Set();
-
-        function computeBaseVisible() {
-            var onlyCrit = document.getElementById('only-critical-comms') && document.getElementById('only-critical-comms').checked;
-            if (!onlyCrit) return new Set(nodesSim.map(function(n) { return n.id; }));
-            var visible = new Set();
-            criticalSet.forEach(function(cid) { visible.add(cid); var nbrs = neighbors.get(cid); if (nbrs) nbrs.forEach(function(x) { visible.add(x); }); });
-            return visible;
-        }
-
-        function applyVisibility() {
-            var q = (document.getElementById('graph-search') && document.getElementById('graph-search').value || '').trim().toLowerCase();
-            var base = computeBaseVisible();
-            var critCb = document.getElementById('only-critical-comms');
-            var none = critCb && critCb.checked && base.size === 0;
-            d3.select('#crit-note').style('display', none ? null : 'none');
-            var activeSet = base;
-            if (q) {
-                var matchIds = new Set();
-                nodesSim.forEach(function(n) {
-                    var idStr = String(n.id || '').toLowerCase();
-                    var nsStr = (n.topNamespaces || []).join(' ').toLowerCase();
-                    var clsStr = (n.topClasses || []).join(' ').toLowerCase();
-                    if (idStr.indexOf(q) >= 0 || nsStr.indexOf(q) >= 0 || clsStr.indexOf(q) >= 0) matchIds.add(n.id);
-                });
-                activeSet = new Set(Array.from(activeSet).filter(function(x) { return matchIds.has(x); }));
-            }
-            var activeId = currentFocusId || (hoverId && !currentFocusId ? hoverId : null);
-            if (activeId) {
-                var nbrs = neighbors.get(activeId) || new Set([activeId]);
-                activeSet = new Set(Array.from(nbrs).filter(function(x) { return base.has(x); }));
-            }
-            nodeG.attr('display', function(d) { if (none) return 'none'; return activeSet.has(d.id) ? null : 'none'; });
-            nodeG.select('circle')
-                .attr('stroke', function(d) {
-                    if (!q) return '#333';
-                    var idStr = String(d.id || '').toLowerCase();
-                    var nsStr = (d.topNamespaces || []).join(' ').toLowerCase();
-                    var clsStr = (d.topClasses || []).join(' ').toLowerCase();
-                    return (idStr.indexOf(q) >= 0 || nsStr.indexOf(q) >= 0 || clsStr.indexOf(q) >= 0) ? '#10b981' : '#bbb';
-                })
-                .attr('stroke-width', function(d) {
-                    if (!q) return 0.5;
-                    var idStr = String(d.id || '').toLowerCase();
-                    var nsStr = (d.topNamespaces || []).join(' ').toLowerCase();
-                    var clsStr = (d.topClasses || []).join(' ').toLowerCase();
-                    return (idStr.indexOf(q) >= 0 || nsStr.indexOf(q) >= 0 || clsStr.indexOf(q) >= 0) ? 2.5 : 0.5;
-                });
-            linkSel.attr('display', function(l) {
-                if (none) return 'none';
-                var s = (typeof l.source === 'object') ? l.source.id : l.source;
-                var t = (typeof l.target === 'object') ? l.target.id : l.target;
-                return (activeSet.has(s) && activeSet.has(t)) ? null : 'none';
-            });
-        }
-
-        nodeG.on('mouseenter', function(event, d) { if (currentFocusId) return; hoverId = d.id; applyVisibility(); })
-             .on('mouseleave', function() { if (currentFocusId) return; hoverId = null; applyVisibility(); });
-        svg.on('click', function() { currentFocusId = null; hoverId = null; applyVisibility(); });
-
-        var gSearch = document.getElementById('graph-search');
-        if (gSearch) gSearch.addEventListener('input', applyVisibility);
-
-        g.append('text').attr('x', 12).attr('y', 36).attr('fill', '#6b7280').attr('font-size', 12).attr('id', 'crit-note').style('display', 'none').text('No critical data to display');
-
-        nodeG.append('text')
-            .attr('y', function(d) { return d.r + 12; })
-            .attr('text-anchor', 'middle').attr('font-size', 11).attr('fill', '#374151')
-            .text(function(d) { var p = Math.round((d.purity || 0) * 100); return (d.name || d.id) + ' (' + d.size + ' nodes, purity ' + p + '%)'; })
-            .each(function(d) { if (d.r < 18) this.setAttribute('display', 'none'); });
-
-        // Drill-down
-        var dd = document.getElementById('drilldown');
-        var ddTitle = document.getElementById('dd-title');
-        var ddMeta = document.getElementById('dd-meta');
-        var ddBody = document.getElementById('dd-body');
-        document.getElementById('dd-close').addEventListener('click', function() { dd.classList.add('hidden'); });
-
-        nodeG.on('click', function(event, d) {
-            event.stopPropagation();
-            currentFocusId = (currentFocusId === d.id) ? null : d.id;
-            applyVisibility();
-            ddTitle.textContent = 'Community ' + (d.name || d.id);
-            var p = Math.round((d.purity || 0) * 100);
-            var stat = commStats.get(d.id) || {coupling: 0};
-            var coup = Math.round((stat.coupling || 0) * 100);
-            ddMeta.textContent = d.size + ' nodes — purity ' + p + '% — coupling ' + coup + '% — Top ns: ' + ((d.topNamespaces || []).slice(0, 3).join(', ') || 'n/a');
-            ddBody.innerHTML = '';
-            var nids = Object.keys(nodeToCommunity).filter(function(nid) { return nodeToCommunity[nid] === d.id; }).sort();
-            var frag = document.createDocumentFragment();
-            nids.forEach(function(nid) {
-                var n = nodeMap.get(nid) || {edges: [], namespace: ''};
-                var tr = document.createElement('tr'); tr.className = 'border-t';
-                var td0 = document.createElement('td'); td0.className = 'p-1'; td0.textContent = nid; tr.appendChild(td0);
-                var td1 = document.createElement('td'); td1.className = 'p-1'; td1.textContent = n.namespace || ''; tr.appendChild(td1);
-                var td2 = document.createElement('td'); td2.className = 'p-1'; td2.textContent = boundarySet.has(nid) ? 'yes' : ''; tr.appendChild(td2);
-                var td3 = document.createElement('td'); td3.className = 'p-1'; td3.textContent = indeg.get(nid) || 0; tr.appendChild(td3);
-                var td4 = document.createElement('td'); td4.className = 'p-1'; td4.textContent = outdeg.get(nid) || 0; tr.appendChild(td4);
-                frag.appendChild(tr);
-            });
-            ddBody.appendChild(frag);
-            dd.classList.toggle('hidden', currentFocusId === null);
-        });
-
-        // Criticality
-        (function computeCriticality() {
-            var adj = new Map();
-            function addEdge(a, b) { if (!adj.has(a)) adj.set(a, new Set()); adj.get(a).add(b); }
-            nodes.forEach(function(u) { (u.edges || []).forEach(function(v) { addEdge(u.id, v); addEdge(v, u.id); }); });
-            nodes.forEach(function(u) { if (!adj.has(u.id)) adj.set(u.id, new Set()); });
-
-            var V = Array.from(adj.keys());
-            var bet = new Map(V.map(function(v) { return [v, 0]; }));
-            var SAMPLE_LIMIT = 800;
-            var srcs = V.length > SAMPLE_LIMIT ? V.slice().sort(function() { return Math.random() - 0.5; }).slice(0, SAMPLE_LIMIT) : V;
-            srcs.forEach(function(s) {
-                var S = [], P = new Map(), sigma = new Map(V.map(function(v) { return [v, 0]; }));
-                V.forEach(function(v) { P.set(v, []); });
-                sigma.set(s, 1);
-                var dist = new Map(V.map(function(v) { return [v, -1]; }));
-                dist.set(s, 0);
-                var Q = [s];
-                while (Q.length) {
-                    var v = Q.shift(); S.push(v);
-                    (adj.get(v) || new Set()).forEach(function(w) {
-                        if (dist.get(w) < 0) { Q.push(w); dist.set(w, dist.get(v) + 1); }
-                        if (dist.get(w) === dist.get(v) + 1) { sigma.set(w, sigma.get(w) + sigma.get(v)); P.get(w).push(v); }
-                    });
-                }
-                var delta = new Map(V.map(function(v) { return [v, 0]; }));
-                while (S.length) {
-                    var w = S.pop();
-                    (P.get(w) || []).forEach(function(v) { delta.set(v, delta.get(v) + (sigma.get(v) / sigma.get(w)) * (1 + delta.get(w))); });
-                    if (w !== s) bet.set(w, bet.get(w) + delta.get(w));
-                }
-            });
-            var norm = V.length > 2 ? 1 / ((V.length - 1) * (V.length - 2)) : 1;
-            V.forEach(function(v) { bet.set(v, bet.get(v) * norm); });
-
-            // Articulation points
-            var disc = new Map(), low = new Map(), parent = new Map();
-            var art = new Set();
-            var time = 0;
-            function APUtil(u) {
-                disc.set(u, ++time); low.set(u, disc.get(u));
-                var children = 0;
-                (adj.get(u) || new Set()).forEach(function(v) {
-                    if (!disc.has(v)) {
-                        parent.set(v, u); children++;
-                        APUtil(v);
-                        low.set(u, Math.min(low.get(u), low.get(v)));
-                        if ((parent.get(u) == null && children > 1) || (parent.get(u) != null && low.get(v) >= disc.get(u))) art.add(u);
-                    } else if (v !== parent.get(u)) {
-                        low.set(u, Math.min(low.get(u), disc.get(v)));
-                    }
-                });
-            }
-            V.forEach(function(u) { if (!disc.has(u)) APUtil(u); });
-
-            // Community centrality
-            var commCentrality = new Map(commIds.map(function(id) { return [id, 0]; }));
-            Object.entries(nodeToCommunity).forEach(function(e) {
-                commCentrality.set(e[1], (commCentrality.get(e[1]) || 0) + (bet.get(e[0]) || 0));
-            });
-            var ranked = commIds.map(function(id) { return {id: id, score: commCentrality.get(id) || 0}; })
-                .sort(function(a, b) { return b.score - a.score; });
-            var commRank = {};
-            ranked.forEach(function(d, i) { commRank[d.id] = i + 1; });
-
-            var topNodes = Array.from(bet.entries()).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 10);
-
-            // Highlight critical communities
-            var criticalComms = new Map();
-            topNodes.forEach(function(entry) { var cid = nodeToCommunity[entry[0]]; if (cid) criticalComms.set(cid, (criticalComms.get(cid) || 0) + 1); });
-            criticalSet = new Set(Array.from(criticalComms.keys()));
-
-            var critCb = document.getElementById('only-critical-comms');
-            if (critCb) { critCb.addEventListener('change', applyVisibility); }
-            applyVisibility();
-
-            nodeG.append('circle')
-                .attr('r', function(d) { return d.r + (criticalComms.has(d.id) ? 4 : 0); })
-                .attr('fill', 'none')
-                .attr('stroke', function(d) { return criticalComms.has(d.id) ? '#dc2626' : 'none'; })
-                .attr('stroke-width', 3).attr('opacity', 0.9);
-            nodeG.filter(function(d) { return criticalComms.has(d.id); }).append('text')
-                .attr('y', function(d) { return -d.r - 6; })
-                .attr('text-anchor', 'middle').attr('font-size', 10).attr('fill', '#dc2626')
-                .text(function(d) { return 'hot:' + criticalComms.get(d.id); });
-
-            // Suggestions list — grouped by category
-            var sugEl = document.getElementById('suggestions-list');
-            if (sugEl) {
-                var grouped = { coupling: [], purity: [], boundary: [] };
-                commIds.forEach(function(cid) {
-                    var st = commStats.get(cid);
-                    if (st && st.coupling > 0.7) {
-                        var c = communities.find(function(x) { return x.id === cid; });
-                        var name = (c && c.name) || cid;
-                        grouped.coupling.push({ location: name, why: 'High outbound coupling ratio: ' + (st.coupling * 100).toFixed(0) + '% (> 70%)' });
-                    }
-                });
-                communities.forEach(function(c) {
-                    if (c.size > 50 && c.purity < 0.6) {
-                        grouped.purity.push({ location: c.name || c.id, why: 'Large and impure: size=' + c.size + ' (>50), purity=' + (c.purity * 100).toFixed(0) + '% (<60%)' });
-                    }
-                });
-                topNodes.slice(0, 5).forEach(function(entry) {
-                    if (boundarySet.has(entry[0])) {
-                        grouped.boundary.push({ location: entry[0], why: 'High centrality + boundary crossing' });
-                    }
-                });
-
-                var totalCount = grouped.coupling.length + grouped.purity.length + grouped.boundary.length;
-                sugEl.innerHTML = '';
-                if (totalCount === 0) {
-                    var emp = document.getElementById('suggestions-empty');
-                    if (emp) emp.classList.remove('hidden');
-                } else {
-                    var empEl = document.getElementById('suggestions-empty');
-                    if (empEl) empEl.classList.add('hidden');
-                }
-
-                var cats = [
-                    { key: 'coupling', label: 'Reaching outward', color: 'amber', icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m9.86-2.54 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244"/>',
-                      explanation: 'Most of what these groups depend on lives outside them, so a change elsewhere reaches them.' },
-                    { key: 'purity', label: 'Mixed concerns', color: 'blue', icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25a2.25 2.25 0 0 1-2.25-2.25v-2.25Z"/>',
-                      explanation: 'These groups are large and hold namespaces that have little to do with each other.' },
-                    { key: 'boundary', label: 'On the boundary', color: 'purple', icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/>',
-                      explanation: 'These nodes sit between several groups, and traffic between groups goes through them.' }
-                ];
-
-                cats.forEach(function(cat) {
-                    var items = grouped[cat.key];
-                    if (items.length === 0) return;
-
-                    var section = document.createElement('div');
-                    section.className = 'mb-4';
-
-                    // Header
-                    var header = document.createElement('div');
-                    header.className = 'flex items-center gap-2 mb-2';
-                    header.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-' + cat.color + '-500" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">' + cat.icon + '</svg>'
-                        + '<span class="font-semibold text-gray-900">' + cat.label + '</span>'
-                        + '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-' + cat.color + '-100 text-' + cat.color + '-700">' + items.length + '</span>';
-                    section.appendChild(header);
-
-                    // Explanation
-                    var expl = document.createElement('p');
-                    expl.className = 'text-sm text-gray-600 mb-3';
-                    expl.textContent = cat.explanation;
-                    section.appendChild(expl);
-
-                    // Items
-                    var buildList = function(arr) {
-                        var ul = document.createElement('ul');
-                        ul.className = 'space-y-2';
-                        arr.forEach(function(item) {
-                            var li = document.createElement('li');
-                            li.className = 'flex items-start gap-2 text-sm';
-                            var badge = document.createElement('span');
-                            badge.className = 'shrink-0 px-2 py-0.5 text-xs font-medium rounded-md bg-' + cat.color + '-50 border border-' + cat.color + '-200 text-' + cat.color + '-700';
-                            badge.textContent = item.location;
-                            var span = document.createElement('span');
-                            span.className = 'text-gray-500';
-                            span.textContent = item.why;
-                            li.appendChild(badge);
-                            li.appendChild(span);
-                            ul.appendChild(li);
-                        });
-                        return ul;
-                    };
-
-                    if (items.length <= 3) {
-                        section.appendChild(buildList(items));
-                    } else {
-                        var details = document.createElement('details');
-                        details.className = 'group';
-                        var summary = document.createElement('summary');
-                        summary.className = 'cursor-pointer text-sm text-' + cat.color + '-700 hover:text-' + cat.color + '-900 font-medium';
-                        summary.textContent = 'Show all ' + items.length + ' items';
-                        details.appendChild(summary);
-                        details.appendChild(buildList(items));
-                        section.appendChild(details);
-                    }
-
-                    sugEl.appendChild(section);
-                });
-            }
-
-        })();
-    }
-
-    // ---- Export SVG as PNG ----
-    function exportSvgAsPng(sel) {
-        var svgEl = document.querySelector(sel);
-        var xml = new XMLSerializer().serializeToString(svgEl);
-        var svg64 = btoa(unescape(encodeURIComponent(xml)));
-        var img = new Image();
-        img.onload = function() {
-            var canvas = document.createElement('canvas');
-            canvas.width = svgEl.viewBox.baseVal.width; canvas.height = svgEl.viewBox.baseVal.height;
-            canvas.getContext('2d').drawImage(img, 0, 0);
-            var a = document.createElement('a'); a.download = sel.replace('#', '') + '.png'; a.href = canvas.toDataURL('image/png'); a.click();
-        };
-        img.src = 'data:image/svg+xml;base64,' + svg64;
-    }
-
-    // ---- Clustered Dependency Graph ----
-    function renderClusteredGraph(vd, nodes) {
-        if (!(window.d3 && typeof d3.forceSimulation === 'function')) return;
-        var svg = d3.select('#clustered-graph');
-        svg.selectAll('*').remove();
-        var W = 1200, H = 700;
-
-        var largeGraph = nodes.length > 500;
-        if (nodes.length > 2000) {
-            svg.append('text').attr('x', W / 2).attr('y', H / 2).attr('text-anchor', 'middle')
-                .attr('fill', '#6b7280').attr('font-size', 14)
-                .text('Graph too large (' + nodes.length + ' nodes). Adjust resolution or hide external dependencies.');
-            return;
-        }
-        if (nodes.length === 0) {
-            svg.append('text').attr('x', W / 2).attr('y', H / 2).attr('text-anchor', 'middle')
-                .attr('fill', '#6b7280').attr('font-size', 14).text('No nodes to display.');
-            return;
-        }
-
-        var nodeToCommunity = vd.nodeToCommunity;
-        var communities = vd.communities;
-        var ebc = vd.ebc || [];
-        var boundarySet = new Set(vd.boundary);
-        var nodeMap = new Map(nodes.map(function(n) { return [n.id, n]; }));
-        var indeg = new Map(), outdeg = new Map();
-        nodes.forEach(function(n) {
-            outdeg.set(n.id, (n.edges || []).length);
-            (n.edges || []).forEach(function(v) { indeg.set(v, (indeg.get(v) || 0) + 1); });
-        });
-
-        // Color scale per community (namespace identity)
-        var commIds = communities.map(function(c) { return c.id; });
-        var allTopNS = Array.from(new Set(communities.flatMap(function(c) { return c.topNamespaces && c.topNamespaces.length ? [c.topNamespaces[0]] : ['']; }))).sort();
-        var commColor = new Map();
-        communities.forEach(function(c) {
-            commColor.set(c.id, nsColor(c.topNamespaces && c.topNamespaces.length ? c.topNamespaces[0] : ''));
-        });
-
-        // --- Derived metrics: health score per community ---
-        var commMetrics = new Map();
-        var betweennessValues = communities.map(function(c) { return c.betweenness || 0; }).sort(function(a, b) { return b - a; });
-        var betweennessTop3Cutoff = betweennessValues[Math.min(2, betweennessValues.length - 1)] || 0;
-        communities.forEach(function(c) {
-            var purity = c.purity || 0;
-            var coupling = Math.max(0, Math.min(1, c.coupling || 0));
-            var betweenness = Math.max(0, Math.min(1, c.betweenness || 0));
-            var health = purity * 0.5 + (1 - coupling) * 0.3 + (1 - betweenness) * 0.2;
-            health = Math.max(0, Math.min(1, health));
-            var isHub = (c.betweenness || 0) >= betweennessTop3Cutoff && betweennessTop3Cutoff > 0;
-            commMetrics.set(c.id, {
-                purity: purity, coupling: coupling, betweenness: c.betweenness || 0,
-                health: health, isHub: isHub,
-                strokeColor: health < 0.5
-                    ? d3.interpolateRgb('#dc2626', '#78716c')(health * 2)
-                    : d3.interpolateRgb('#78716c', '#16a34a')((health - 0.5) * 2),
-                strokeWidth: 1 + coupling * 2.5,
-                dashed: purity < 0.5,
-                fillOpacity: 0.04 + health * 0.10
-            });
-        });
-
-        // Build simulation nodes
-        var simNodes = nodes.map(function(n) {
-            return { id: n.id, comm: nodeToCommunity[n.id] || '', namespace: n.namespace || '' };
-        });
-        var nodeIdToIdx = new Map(simNodes.map(function(n, i) { return [n.id, i]; }));
-
-        // Build edges
-        var simLinks = [];
-        nodes.forEach(function(u) {
-            (u.edges || []).forEach(function(v) {
-                var si = nodeIdToIdx.get(u.id), ti = nodeIdToIdx.get(v);
-                if (si != null && ti != null) {
-                    simLinks.push({ source: si, target: ti, sameComm: nodeToCommunity[u.id] === nodeToCommunity[v] });
-                }
-            });
-        });
-
-        // Custom cluster force
-        function forceCluster(strength) {
-            var ns;
-            function force(alpha) {
-                var centroids = new Map();
-                var counts = new Map();
-                ns.forEach(function(n) {
-                    var c = n.comm;
-                    if (!centroids.has(c)) { centroids.set(c, { x: 0, y: 0 }); counts.set(c, 0); }
-                    centroids.get(c).x += n.x;
-                    centroids.get(c).y += n.y;
-                    counts.set(c, counts.get(c) + 1);
-                });
-                centroids.forEach(function(v, k) {
-                    var cnt = counts.get(k);
-                    v.x /= cnt; v.y /= cnt;
-                });
-                ns.forEach(function(n) {
-                    var c = centroids.get(n.comm);
-                    if (!c) return;
-                    n.vx += (c.x - n.x) * strength * alpha;
-                    n.vy += (c.y - n.y) * strength * alpha;
-                });
-            }
-            force.initialize = function(nodes) { ns = nodes; };
-            return force;
-        }
-
-        // Force simulation
-        var simTicks = largeGraph ? 80 : 200;
-        var nodeRadius = largeGraph ? 2.5 : 4;
-        var sim = d3.forceSimulation(simNodes)
-            .alphaDecay(largeGraph ? 0.05 : 0.03)
-            .force('center', d3.forceCenter(W / 2, H / 2))
-            .force('cluster', forceCluster(largeGraph ? 0.5 : 0.3))
-            .force('link', d3.forceLink(simLinks).distance(largeGraph ? 15 : 30).strength(0.05))
-            .force('collide', d3.forceCollide(largeGraph ? 2 : 5).iterations(1))
-            .force('charge', d3.forceManyBody().strength(largeGraph ? -5 : -15).theta(largeGraph ? 1.5 : 0.9))
-            .stop();
-        for (var tick = 0; tick < simTicks; tick++) sim.tick();
-
-        // Group nodes by community
-        var commGroups = new Map();
-        simNodes.forEach(function(n) {
-            if (!commGroups.has(n.comm)) commGroups.set(n.comm, []);
-            commGroups.get(n.comm).push(n);
-        });
-
-        // Main group with zoom + label visibility tracking
-        var gMain = svg.append('g');
-        var currentZoomScale = 1;
-        var zoomBehavior = d3.zoom().scaleExtent([0.3, 10]).on('zoom', function(event) {
-            gMain.attr('transform', event.transform);
-            var newScale = event.transform.k;
-            currentZoomScale = newScale;
-        });
-        svg.call(zoomBehavior);
-
-        // SVG defs for arrowhead marker
-        var defs = svg.append('defs');
-        defs.append('marker')
-            .attr('id', 'clustered-arrow')
-            .attr('viewBox', '0 0 10 6')
-            .attr('refX', 10).attr('refY', 3)
-            .attr('markerWidth', 5).attr('markerHeight', 4)
-            .attr('orient', 'auto')
-            .append('path').attr('d', 'M0,0 L10,3 L0,6 Z').attr('fill', '#94a3b8').attr('fill-opacity', 0.6);
-
-        // Draw hulls with health encoding
-        var hullGroup = gMain.append('g').attr('class', 'hulls');
-        var hullPaths = [];
-        var hullCentroids = new Map();
-        var hullBBoxes = new Map();
-
-        commGroups.forEach(function(groupNodes, cid) {
-            var fillColor = commColor.get(cid) || '#6b7280';
-            var m = commMetrics.get(cid) || { strokeColor: '#6b7280', strokeWidth: 1, dashed: false, fillOpacity: 0.08, health: 0.5 };
-            var centroid = { x: d3.mean(groupNodes, function(n) { return n.x; }), y: d3.mean(groupNodes, function(n) { return n.y; }) };
-            hullCentroids.set(cid, centroid);
-
-            var xMin = d3.min(groupNodes, function(n) { return n.x; });
-            var xMax = d3.max(groupNodes, function(n) { return n.x; });
-            var yMin = d3.min(groupNodes, function(n) { return n.y; });
-            var yMax = d3.max(groupNodes, function(n) { return n.y; });
-            hullBBoxes.set(cid, { xMin: xMin, xMax: xMax, yMin: yMin, yMax: yMax });
-
-            if (groupNodes.length < 3) {
-                var maxR = groupNodes.length === 1 ? (nodeRadius + 4) : d3.max(groupNodes, function(n) {
-                    return Math.sqrt(Math.pow(n.x - centroid.x, 2) + Math.pow(n.y - centroid.y, 2));
-                }) + nodeRadius + 4;
-                var el = hullGroup.append('circle')
-                    .attr('cx', centroid.x).attr('cy', centroid.y).attr('r', maxR)
-                    .attr('fill', fillColor).attr('fill-opacity', m.fillOpacity)
-                    .attr('stroke', m.strokeColor).attr('stroke-opacity', 0.7).attr('stroke-width', m.strokeWidth);
-                if (m.dashed) el.attr('stroke-dasharray', '6,3');
-                hullPaths.push({ el: el, cid: cid, centroid: centroid, isCircle: true, metrics: m });
-            } else {
-                var points = groupNodes.map(function(n) { return [n.x, n.y]; });
-                var hull = d3.polygonHull(points);
-                if (hull) {
-                    var pad = nodeRadius + 4;
-                    var cx = d3.mean(hull, function(p) { return p[0]; });
-                    var cy = d3.mean(hull, function(p) { return p[1]; });
-                    var padded = hull.map(function(p) {
-                        var dx = p[0] - cx, dy = p[1] - cy;
-                        var len = Math.sqrt(dx * dx + dy * dy) || 1;
-                        return [p[0] + dx / len * pad, p[1] + dy / len * pad];
-                    });
-                    var line = d3.line().curve(d3.curveCatmullRomClosed);
-                    var el = hullGroup.append('path')
-                        .attr('d', line(padded))
-                        .attr('fill', fillColor).attr('fill-opacity', m.fillOpacity)
-                        .attr('stroke', m.strokeColor).attr('stroke-opacity', 0.7).attr('stroke-width', m.strokeWidth);
-                    if (m.dashed) el.attr('stroke-dasharray', '6,3');
-                    hullPaths.push({ el: el, cid: cid, centroid: centroid, isCircle: false, metrics: m });
-                }
-            }
-        });
-
-        // Rich multi-line labels — adaptive visibility
-        var labelGroup = gMain.append('g').attr('class', 'cluster-labels');
-        var labelL1 = []; // {el, size, cid} — L1 name labels
-        var labelDetails = []; // {el, cid} — L2/L3 detail elements
-        var totalNodes = nodes.length;
-        var sizeThreshold = Math.max(3, Math.ceil(totalNodes * 0.05)); // 5% of graph
-
-        commGroups.forEach(function(groupNodes, cid) {
-            var comm = communities.find(function(c) { return c.id === cid; }) || {};
-            var m = commMetrics.get(cid) || { strokeColor: '#6b7280', purity: 0, coupling: 0, isHub: false, health: 0.5 };
-            var centroid = hullCentroids.get(cid);
-            var displayName = comm.name || cid;
-            var size = groupNodes.length;
-            var purityPct = Math.round((m.purity || 0) * 100);
-            var isLarge = size >= sizeThreshold;
-
-            var g = labelGroup.append('g').attr('transform', 'translate(' + centroid.x + ',' + centroid.y + ')').attr('pointer-events', 'none');
-
-            // Line 1: Name — hidden by default, shown on hover over the cluster
-            var l1bg = g.append('rect')
-                .attr('rx', 3).attr('ry', 3)
-                .attr('fill', 'white').attr('fill-opacity', 0.85)
-                .attr('stroke', m.strokeColor).attr('stroke-width', 0.5).attr('stroke-opacity', 0.4)
-                .style('display', 'none');
-            var l1 = g.append('text')
-                .attr('text-anchor', 'middle').attr('dy', '-0.3em')
-                .attr('font-size', 12).attr('font-weight', '700').attr('fill', m.strokeColor)
-                .style('display', 'none')
-                .text(displayName);
-            // Size the background rect after text is rendered
-            setTimeout(function() {
-                var bbox = l1.node().getBBox();
-                l1bg.attr('x', bbox.x - 4).attr('y', bbox.y - 2).attr('width', bbox.width + 8).attr('height', bbox.height + 4);
-            }, 0);
-            labelL1.push({ el: l1, bg: l1bg, size: size, cid: cid });
-            labelL1.push({ el: l1, size: size, cid: cid });
-
-            // Line 2: Metrics (hidden until deep zoom)
-            var l2 = g.append('text')
-                .attr('text-anchor', 'middle').attr('dy', '0.9em')
-                .attr('font-size', 8).attr('fill', '#6b7280')
-                .attr('class', 'cluster-label-detail')
-                .style('display', 'none')
-                .text(size + ' packages \u00b7 ' + purityPct + '% pure');
-            labelDetails.push({ el: l2, cid: cid });
-
-            // Line 3: Tiny risk indicator dots (hidden, shown on hover/focus)
-            var riskDots = [];
-            if (m.coupling > 0.4) riskDots.push('#dc2626');
-            if (m.purity < 0.5) riskDots.push('#d97706');
-            if (m.isHub) riskDots.push('#2563eb');
-
-            if (riskDots.length > 0) {
-                var dotG = g.append('g')
-                    .attr('class', 'cluster-label-detail')
-                    .attr('transform', 'translate(0, 14)')
-                    .style('display', 'none');
-                var dotStartX = -(riskDots.length * 8) / 2;
-                riskDots.forEach(function(col, i) {
-                    dotG.append('circle')
-                        .attr('cx', dotStartX + i * 8 + 3).attr('cy', 0).attr('r', 2.5)
-                        .attr('fill', col).attr('opacity', 0.8);
-                });
-                labelDetails.push({ el: dotG, cid: cid });
-            }
-        });
-
-        function showClusterLabels(cid, nameOnly) {
-            labelL1.forEach(function(item) {
-                var show = item.cid === cid;
-                item.el.style('display', show ? null : 'none');
-                if (item.bg) item.bg.style('display', show ? null : 'none');
-            });
-            if (nameOnly) {
-                labelDetails.forEach(function(item) { item.el.style('display', 'none'); });
-            } else {
-                labelDetails.forEach(function(item) { item.el.style('display', item.cid === cid ? null : 'none'); });
-            }
-        }
-
-        function hideAllLabels() {
-            labelL1.forEach(function(item) {
-                item.el.style('display', 'none');
-                if (item.bg) item.bg.style('display', 'none');
-            });
-            labelDetails.forEach(function(item) { item.el.style('display', 'none'); });
-        }
-
-        // Aggregated arrows between communities (replaces node-to-node cross edges)
-        var arrowGroup = gMain.append('g').attr('class', 'aggregated-arrows');
-        var __tooltip = document.getElementById('graph-tooltip');
-        function showTip(html, event) { if (!__tooltip) return; __tooltip.innerHTML = html; __tooltip.style.display = 'block'; __tooltip.classList.add('visible'); __tooltip.style.left = event.clientX + 'px'; __tooltip.style.top = event.clientY + 'px'; }
-        function hideTip() { if (!__tooltip) return; __tooltip.classList.remove('visible'); __tooltip.style.display = 'none'; }
-
-        if (ebc && ebc.length > 0) {
-            var maxEdges = d3.max(ebc, function(d) { return d.edges; }) || 1;
-            var arrowWidthScale = d3.scaleSqrt().domain([1, maxEdges]).range([0.5, 2.5]);
-
-            ebc.forEach(function(link) {
-                var fromCentroid = hullCentroids.get(link.from);
-                var toCentroid = hullCentroids.get(link.to);
-                if (!fromCentroid || !toCentroid) return;
-
-                var mx = (fromCentroid.x + toCentroid.x) / 2;
-                var my = (fromCentroid.y + toCentroid.y) / 2;
-                var dx = toCentroid.x - fromCentroid.x;
-                var dy = toCentroid.y - fromCentroid.y;
-                var len = Math.sqrt(dx * dx + dy * dy) || 1;
-                var off = Math.min(30, len * 0.15);
-                var cpx = mx + (-dy / len) * off;
-                var cpy = my + (dx / len) * off;
-
-                var fromName = (communities.find(function(c) { return c.id === link.from; }) || {}).name || link.from;
-                var toName = (communities.find(function(c) { return c.id === link.to; }) || {}).name || link.to;
-
-                arrowGroup.append('path')
-                    .attr('d', 'M' + fromCentroid.x + ',' + fromCentroid.y + ' Q' + cpx + ',' + cpy + ' ' + toCentroid.x + ',' + toCentroid.y)
-                    .attr('fill', 'none')
-                    .attr('stroke', '#94a3b8').attr('stroke-opacity', 0.25)
-                    .attr('stroke-width', arrowWidthScale(link.edges))
-                    .attr('marker-end', 'url(#clustered-arrow)')
-                    .attr('data-from', link.from).attr('data-to', link.to)
-                    .style('cursor', 'pointer')
-                    .on('mouseenter', function(event) {
-                        d3.select(this).attr('stroke-opacity', 0.6).attr('stroke', '#64748b');
-                        showTip(fromName + ' \u2192 ' + toName + ': ' + link.edges + ' calls', event);
-                    })
-                    .on('mousemove', function(event) { if (__tooltip) { __tooltip.style.left = event.clientX + 'px'; __tooltip.style.top = event.clientY + 'px'; } })
-                    .on('mouseleave', function() {
-                        d3.select(this).attr('stroke-opacity', 0.25).attr('stroke', '#94a3b8');
-                        hideTip();
-                    });
-            });
-        }
-
-        // Internal edges (hidden, shown on focus)
-        var internalGroup = gMain.append('g').attr('class', 'internal-edges').style('display', 'none');
-        if (!largeGraph) {
-            var internalEdges = simLinks.filter(function(l) { return l.sameComm; });
-            internalGroup.selectAll('line').data(internalEdges).enter().append('line')
-                .attr('x1', function(d) { return simNodes[d.source.index !== undefined ? d.source.index : d.source].x; })
-                .attr('y1', function(d) { return simNodes[d.source.index !== undefined ? d.source.index : d.source].y; })
-                .attr('x2', function(d) { return simNodes[d.target.index !== undefined ? d.target.index : d.target].x; })
-                .attr('y2', function(d) { return simNodes[d.target.index !== undefined ? d.target.index : d.target].y; })
-                .attr('stroke', function(d) {
-                    var src = simNodes[d.source.index !== undefined ? d.source.index : d.source];
-                    return commColor.get(src.comm) || '#6b7280';
-                })
-                .attr('stroke-opacity', 0.3).attr('stroke-width', 0.5);
-        }
-
-
-        // Draw nodes
-        var nodeGroup = gMain.append('g').attr('class', 'clustered-nodes');
-        var nodeSel = nodeGroup.selectAll('circle').data(simNodes).enter().append('circle')
-            .attr('cx', function(d) { return d.x; }).attr('cy', function(d) { return d.y; })
-            .attr('r', nodeRadius)
-            .attr('fill', function(d) { return nsColor(d.namespace || ''); })
-            .attr('stroke', '#fff').attr('stroke-width', 0.5)
-            .style('cursor', 'pointer');
-
-        // Node tooltip + hover label
-        nodeSel.on('mouseenter', function(event, d) {
-            var commName = (communities.find(function(c) { return c.id === d.comm; }) || {}).name || d.comm;
-            var isBoundary = boundarySet.has(d.id);
-            var html = '<strong>' + d.id + '</strong><br>Namespace: ' + (d.namespace || 'n/a') +
-                '<br>Community: ' + commName +
-                '<br>In: ' + (indeg.get(d.id) || 0) + ' / Out: ' + (outdeg.get(d.id) || 0) +
-                (isBoundary ? '<br><span style="color:#0ea5e9">Boundary node</span>' : '');
-            showTip(html, event);
-            // Show full node name in SVG above the node
-            hoverLabelText.text(d.id);
-            hoverLabel.attr('transform', 'translate(' + d.x + ',' + (d.y - nodeRadius - 5) + ')').style('display', null);
-        })
-        .on('mousemove', function(event) { if (__tooltip) { __tooltip.style.left = event.clientX + 'px'; __tooltip.style.top = event.clientY + 'px'; } })
-        .on('mouseleave', function() { hideTip(); hoverLabel.style('display', 'none'); });
-
-        // Cluster interactions with enriched focus
-        var focusedCluster = null;
-        var detailPanel = document.getElementById('clustered-detail');
-        var detailContent = document.getElementById('clustered-detail-content');
-
-        function showDetailPanel(cid) {
-            if (!detailPanel || !detailContent) return;
-            var comm = communities.find(function(c) { return c.id === cid; }) || {};
-            var m = commMetrics.get(cid) || {};
-            var groupNodes = commGroups.get(cid) || [];
-            var nsPills = (comm.topNamespaces || []).slice(0, 5).map(function(ns) {
-                return '<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:4px;background:#f1f5f9;font-size:10px;color:#475569">' + ns + '</span>';
-            }).join('');
-            var boundaryInComm = groupNodes.filter(function(n) { return boundarySet.has(n.id); }).slice(0, 5);
-            var boundaryHtml = boundaryInComm.map(function(n) {
-                return '<span style="display:inline-block;padding:1px 6px;margin:1px;border-radius:4px;background:#e0f2fe;font-size:10px;color:#0369a1">' + n.id.split('/').pop().split('\\').pop() + '</span>';
-            }).join('');
-            if (boundaryInComm.length === 0) boundaryHtml = '<span style="color:#9ca3af;font-size:10px">none</span>';
-
-            detailContent.innerHTML =
-                '<div style="font-weight:700;font-size:13px;color:' + (m.strokeColor || '#374151') + ';margin-bottom:4px">' + (comm.name || cid) + '</div>' +
-                '<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-bottom:6px;font-size:11px">' +
-                '<div>Packages: <strong>' + groupNodes.length + '</strong></div>' +
-                '<div>Purity: <strong>' + Math.round((m.purity || 0) * 100) + '%</strong></div>' +
-                '<div>Coupling: <strong>' + Math.round((m.coupling || 0) * 100) + '%</strong></div>' +
-                '<div>Betweenness: <strong>' + (m.betweenness || 0).toFixed(3) + '</strong></div>' +
-                '</div>' +
-                (nsPills ? '<div style="margin-bottom:4px"><span style="font-size:10px;color:#6b7280">Namespaces:</span> ' + nsPills + '</div>' : '') +
-                '<div><span style="font-size:10px;color:#6b7280">Boundary nodes:</span> ' + boundaryHtml + '</div>';
-            detailPanel.style.display = 'block';
-            detailPanel.style.opacity = '1';
-        }
-
-        function hideDetailPanel() {
-            if (detailPanel) { detailPanel.style.display = 'none'; detailPanel.style.opacity = '0'; }
-        }
-
-        // Hover label for individual nodes (appears above the node on mouseenter)
-        var hoverLabel = gMain.append('g').attr('class', 'hover-node-label').style('display', 'none').attr('pointer-events', 'none');
-        var hoverLabelText = hoverLabel.append('text')
-            .attr('text-anchor', 'middle').attr('font-size', 8).attr('font-weight', '600').attr('fill', '#1f2937');
-
-        function highlightCluster(cid, isFocused) {
-            hullPaths.forEach(function(hp) {
-                if (hp.cid === cid) {
-                    hp.el.attr('fill-opacity', Math.min(0.25, hp.metrics.fillOpacity * 2.5)).attr('stroke-opacity', 0.9);
-                } else {
-                    hp.el.attr('fill-opacity', 0.02).attr('stroke-opacity', 0.15);
-                }
-            });
-            nodeSel.attr('opacity', function(d) { return d.comm === cid ? 1 : 0.15; });
-
-            // Highlight boundary nodes with cyan ring
-            nodeSel.each(function(d) {
-                if (d.comm === cid && boundarySet.has(d.id)) {
-                    d3.select(this).attr('r', nodeRadius * 1.8).attr('stroke', '#0ea5e9').attr('stroke-width', 2);
-                }
-            });
-
-            // Hover: show name label over the cluster; Focus/zoom: hide label (detail panel suffices)
-            if (isFocused) {
-                hideAllLabels();
-            } else {
-                showClusterLabels(cid, true);
-            }
-
-            // Fade aggregated arrows
-            arrowGroup.selectAll('path').attr('stroke-opacity', function() {
-                var from = this.getAttribute('data-from');
-                var to = this.getAttribute('data-to');
-                return (from === cid || to === cid) ? 0.7 : 0.08;
-            });
-
-            // Hide risk badges in focus mode
-
-            // Show internal edges with cross-namespace coloring
-            internalGroup.style('display', null);
-            internalGroup.selectAll('line')
-                .attr('display', function(d) {
-                    var src = simNodes[d.source.index !== undefined ? d.source.index : d.source];
-                    return src.comm === cid ? null : 'none';
-                })
-                .attr('stroke', function(d) {
-                    var src = simNodes[d.source.index !== undefined ? d.source.index : d.source];
-                    var tgt = simNodes[d.target.index !== undefined ? d.target.index : d.target];
-                    if (src.namespace !== tgt.namespace) return '#f59e0b';
-                    return commColor.get(src.comm) || '#6b7280';
-                })
-                .attr('stroke-opacity', function(d) {
-                    var src = simNodes[d.source.index !== undefined ? d.source.index : d.source];
-                    var tgt = simNodes[d.target.index !== undefined ? d.target.index : d.target];
-                    return src.namespace !== tgt.namespace ? 0.5 : 0.3;
-                });
-
-            showDetailPanel(cid);
-        }
-
-        function resetHighlight() {
-            hullPaths.forEach(function(hp) {
-                hp.el.attr('fill-opacity', hp.metrics.fillOpacity).attr('stroke-opacity', 0.7);
-            });
-            nodeSel.attr('opacity', 1).attr('r', nodeRadius).attr('stroke', '#fff').attr('stroke-width', 0.5);
-            arrowGroup.selectAll('path').attr('stroke-opacity', 0.25);
-            internalGroup.style('display', 'none');
-            hideAllLabels();
-            hideDetailPanel();
-        }
-
-        // Hover on hull — show cluster name on hover
-        hullPaths.forEach(function(hp) {
-            hp.el.style('cursor', 'pointer')
-                .on('mouseenter', function() {
-                    if (!focusedCluster) highlightCluster(hp.cid, false);
-                })
-                .on('mouseleave', function() { if (!focusedCluster) resetHighlight(); })
-                .on('click', function(event) {
-                    event.stopPropagation();
-                    focusedCluster = (focusedCluster === hp.cid) ? null : hp.cid;
-                    if (focusedCluster) {
-                        highlightCluster(focusedCluster, true);
-                        var groupNodes = commGroups.get(focusedCluster) || [];
-                        if (groupNodes.length > 0) {
-                            var xMin = d3.min(groupNodes, function(n) { return n.x; }) - 40;
-                            var xMax = d3.max(groupNodes, function(n) { return n.x; }) + 40;
-                            var yMin = d3.min(groupNodes, function(n) { return n.y; }) - 40;
-                            var yMax = d3.max(groupNodes, function(n) { return n.y; }) + 40;
-                            var bw = xMax - xMin, bh = yMax - yMin;
-                            var scale = Math.min(W / bw, H / bh) * 0.85;
-                            scale = Math.min(scale, 10);
-                            var cx = (xMin + xMax) / 2, cy = (yMin + yMax) / 2;
-                            svg.transition().duration(500).call(
-                                zoomBehavior.transform,
-                                d3.zoomIdentity.translate(W / 2 - cx * scale, H / 2 - cy * scale).scale(scale)
-                            );
-                        }
-                    } else {
-                        resetHighlight();
-                        svg.transition().duration(500).call(zoomBehavior.transform, d3.zoomIdentity);
-                    }
-                });
-        });
-
-        // Click background or Escape to reset
-        svg.on('click', function(event) {
-            if (event.target === svg.node()) {
-                focusedCluster = null;
-                resetHighlight();
-                svg.transition().duration(500).call(zoomBehavior.transform, d3.zoomIdentity);
-            }
-        });
-        d3.select(window).on('keydown.clustered', function(event) {
-            if (event.key === 'Escape' && focusedCluster) {
-                focusedCluster = null;
-                resetHighlight();
-                svg.transition().duration(500).call(zoomBehavior.transform, d3.zoomIdentity);
-            }
-        });
-        svg.on('dblclick.zoom', function() {
-            focusedCluster = null;
-            resetHighlight();
-            svg.transition().duration(500).call(zoomBehavior.transform, d3.zoomIdentity);
-        });
-
-    }
-
-
-    // ---- Layered + Sankey rendering ----
-    function renderArchViews(vd, onlyTab) {
-        if (!(window.d3 && typeof d3.forceSimulation === 'function')) return;
-        var communities = vd.communities;
-        var ebc = vd.ebc;
-
-        var __tooltip = document.getElementById('graph-tooltip');
-        function showTooltip(html, event) { if (!__tooltip) return; __tooltip.innerHTML = html; __tooltip.style.display = 'block'; __tooltip.classList.add('visible'); moveTooltip(event); }
-        function moveTooltip(event) { if (!__tooltip) return; __tooltip.style.left = event.clientX + 'px'; __tooltip.style.top = event.clientY + 'px'; }
-        function hideTooltip() { if (!__tooltip) return; __tooltip.classList.remove('visible'); __tooltip.style.display = 'none'; }
-
-        var colorScaleNs = function(ns) { return nsColor(ns || ''); };
-        var colorCoupling = function(c) { return d3.interpolateRdYlGn(1 - Math.max(0, Math.min(1, c || 0))); };
-
-        // Layered
-        if (!onlyTab || onlyTab === 'layered') (function() {
-            var svg = d3.select('#layered-map');
-            svg.selectAll('*').remove();
-            var W = 1200, H = 600, padX = 120, padY = 60;
-            var gZoom = svg.append('g').attr('class', 'zoom-layer');
-            svg.call(d3.zoom().scaleExtent([0.3, 10]).on('zoom', function(event) { gZoom.attr('transform', event.transform); }));
-            var levels = d3.group(communities, function(d) { return d.level; });
-            var maxSize = d3.max(communities, function(d) { return d.size; }) || 1;
-            var rScale = d3.scaleSqrt().domain([1, maxSize]).range([10, 45]);
-            var maxEdges = d3.max(ebc, function(d) { return d.edges; }) || 1;
-            var wScale = d3.scaleSqrt().domain([1, maxEdges]).range([1, 8]);
-            var levelKeys = Array.from(levels.keys()).sort(function(a, b) { return a - b; });
-            var pos = new Map();
-            var layerHeight = 90, layerSpacing = 40;
-            var availableHeight = H - 2 * padY;
-            var totalLayerHeight = levelKeys.length * layerHeight + (levelKeys.length - 1) * layerSpacing;
-            if (totalLayerHeight > availableHeight) {
-                if (levelKeys.length > 1) layerSpacing = Math.max(5, (availableHeight - levelKeys.length * layerHeight) / (levelKeys.length - 1));
-                totalLayerHeight = levelKeys.length * layerHeight + (levelKeys.length - 1) * layerSpacing;
-                if (totalLayerHeight > availableHeight) { layerHeight = Math.max(40, (availableHeight - (levelKeys.length - 1) * layerSpacing) / levelKeys.length); }
-            }
-            totalLayerHeight = levelKeys.length * layerHeight + (levelKeys.length - 1) * layerSpacing;
-            var startY = padY + (availableHeight - totalLayerHeight) / 2 + layerHeight / 2;
-
-            levelKeys.forEach(function(lv, li) {
-                var arr = levels.get(lv).slice().sort(function(a, b) { return d3.ascending(a.id, b.id); });
-                var layerY = startY + li * (layerHeight + layerSpacing);
-                arr.forEach(function(d, i) {
-                    var x = padX + (i + 0.5) * ((W - 2 * padX) / arr.length);
-                    pos.set(d.id, {x: x, y: layerY, r: rScale(d.size), level: lv});
-                });
-            });
-
-            var totalOut = d3.rollup(ebc, function(v) { return d3.sum(v, function(d) { return d.edges; }); }, function(d) { return d.from; });
-            var minPct = 0;
-
-            function isBottleneck(id) {
-                var vals = communities.map(function(c) { return c.betweenness; }).sort(function(a, b) { return b - a; });
-                var cutoff = vals[Math.min(9, vals.length - 1)] || 0;
-                return (communities.find(function(c) { return c.id === id; }) || {betweenness: 0}).betweenness >= cutoff;
-            }
-
-            function draw() {
-                gZoom.selectAll('*').remove();
-                levelKeys.forEach(function(lv, li) {
-                    var layerCenterY = startY + li * (layerHeight + layerSpacing);
-                    gZoom.append('rect').attr('class', 'layer-bg').attr('x', padX - 10).attr('y', layerCenterY - layerHeight / 2).attr('width', W - 2 * padX + 20).attr('height', layerHeight).attr('fill', li % 2 === 0 ? 'rgba(0,0,0,0.01)' : 'rgba(0,0,0,0.02)').attr('stroke', 'none').style('pointer-events', 'none');
-                    gZoom.append('text').attr('class', 'layer-label').attr('x', padX - 20).attr('y', layerCenterY).attr('text-anchor', 'end').attr('font-size', 12).attr('font-weight', '400').attr('fill', '#666').attr('dominant-baseline', 'middle').text('Layer ' + lv).style('pointer-events', 'none');
-                });
-
-                var filtered = ebc.filter(function(d) { return (totalOut.get(d.from) || 0) > 0; })
-                    .map(function(d) { return Object.assign({}, d, {pct: d.edges / (totalOut.get(d.from) || 1)}); })
-                    .filter(function(d) { return d.pct * 100 >= minPct; });
-                var onlyCross = document.getElementById('only-cross-layer').checked;
-                var links2 = filtered.filter(function(d) { return !onlyCross || ((communities.find(function(c) { return c.id === d.from; }) || {level:0}).level !== (communities.find(function(c) { return c.id === d.to; }) || {level:0}).level); });
-
-                gZoom.append('g').attr('class', 'links-group').selectAll('path').data(links2).enter().append('path')
-                    .attr('class', 'layered-link')
-                    .attr('d', function(d) {
-                        var s = pos.get(d.from), t = pos.get(d.to);
-                        if (!s || !t) return '';
-                        var bundle = document.getElementById('bundle-edges').checked;
-                        var mx = bundle ? s.x * 0.6 + t.x * 0.4 : (s.x + t.x) / 2;
-                        var my = bundle ? s.y * 0.6 + t.y * 0.4 : s.y;
-                        var my2 = bundle ? s.y * 0.4 + t.y * 0.6 : t.y;
-                        return 'M' + s.x + ',' + s.y + ' C' + mx + ',' + my + ' ' + mx + ',' + my2 + ' ' + t.x + ',' + t.y;
-                    })
-                    .attr('fill', 'none').attr('stroke', '#cbd5e1').attr('stroke-width', function(d) { return wScale(d.edges); })
-                    .attr('stroke-opacity', 0.4).attr('stroke-linecap', 'round').style('cursor', 'pointer')
-                    .on('mouseenter', function(event, d) {
-                        d3.select(this).transition().duration(150).attr('stroke-opacity', 0.7).attr('stroke', '#64748b');
-                        var nf = (communities.find(function(c) { return c.id === d.from; }) || {name: d.from}).name;
-                        var nt = (communities.find(function(c) { return c.id === d.to; }) || {name: d.to}).name;
-                        showTooltip(nf + ' → ' + nt + '<br>' + d.edges + ' calls (' + (d.pct * 100).toFixed(1) + '%)', event);
-                    })
-                    .on('mousemove', function(event) { moveTooltip(event); })
-                    .on('mouseleave', function() { d3.select(this).transition().duration(150).attr('stroke-opacity', 0.4).attr('stroke', '#cbd5e1'); hideTooltip(); });
-
-                var nodeG = gZoom.append('g').attr('class', 'nodes-group')
-                    .selectAll('g').data(communities).enter().append('g').attr('class', 'layered-node')
-                    .attr('transform', function(d) { var p = pos.get(d.id) || {x: 0, y: 0}; return 'translate(' + p.x + ',' + p.y + ')'; });
-
-                nodeG.append('circle').attr('class', 'node-circle')
-                    .attr('r', function(d) { return (pos.get(d.id) || {r: 10}).r; })
-                    .attr('fill', function(d) { return colorCoupling(d.coupling); }).attr('fill-opacity', 0.85)
-                    .attr('stroke', function(d) { return (document.getElementById('highlight-bottlenecks') && document.getElementById('highlight-bottlenecks').checked && isBottleneck(d.id)) ? '#ef4444' : '#e2e8f0'; })
-                    .attr('stroke-width', function(d) { return (document.getElementById('highlight-bottlenecks') && document.getElementById('highlight-bottlenecks').checked && isBottleneck(d.id)) ? 2.5 : 1.5; })
-                    .style('cursor', 'pointer')
-                    .on('mouseenter', function(event, d) {
-                        d3.select(this).transition().duration(150).attr('stroke-width', 3).attr('fill-opacity', 1);
-                        showTooltip((d.name || d.id) + '<br>Packages: ' + d.size + ' | Purity: ' + Math.round((d.purity || 0) * 100) + '% | Coupling: ' + Math.round((d.coupling || 0) * 100) + '%<br>Betweenness: ' + (d.betweenness || 0).toFixed(3), event);
-                    })
-                    .on('mousemove', function(event) { moveTooltip(event); })
-                    .on('mouseleave', function(event, d) {
-                        var isBn = document.getElementById('highlight-bottlenecks') && document.getElementById('highlight-bottlenecks').checked && isBottleneck(d.id);
-                        d3.select(this).transition().duration(150).attr('stroke-width', isBn ? 2.5 : 1.5).attr('fill-opacity', 0.85);
-                        hideTooltip();
-                    });
-
-                nodeG.append('text').attr('class', 'node-label')
-                    .attr('y', function(d) { return ((pos.get(d.id) || {r: 10}).r) + 16; })
-                    .attr('text-anchor', 'middle')
-                    .attr('font-size', function(d) { var r = (pos.get(d.id) || {r: 10}).r; return r > 30 ? 11 : r > 20 ? 10 : 9; })
-                    .attr('font-weight', '400').attr('fill', '#475569')
-                    .text(function(d) { return d.name || d.id; })
-                    .each(function(d) { if (((pos.get(d.id) || {r: 10}).r) < 16) this.setAttribute('display', 'none'); });
-            }
-
-            draw();
-            document.getElementById('min-edge-slider').addEventListener('input', function(e) { minPct = parseInt(e.target.value || '0', 10); draw(); });
-            document.getElementById('highlight-bottlenecks').addEventListener('change', draw);
-            document.getElementById('only-cross-layer').addEventListener('change', draw);
-            document.getElementById('bundle-edges').addEventListener('change', draw);
-            document.getElementById('search-comm').addEventListener('input', function() {
-                var v = (document.getElementById('search-comm').value || '').trim();
-                d3.select('#layered-map').selectAll('circle')
-                    .attr('stroke', function(d) { if (!v) return (document.getElementById('highlight-bottlenecks').checked ? (isBottleneck(d.id) ? '#dc2626' : '#333') : '#333'); return String(d.id).indexOf(v) >= 0 ? '#10b981' : '#bbb'; })
-                    .attr('stroke-width', function(d) { if (!v) return (document.getElementById('highlight-bottlenecks').checked && isBottleneck(d.id) ? 3 : 0.5); return String(d.id).indexOf(v) >= 0 ? 3 : 0.5; });
-            });
-        })();
-
-        // Sankey
-        if (!onlyTab || onlyTab === 'sankey') (function() {
-            var svg = d3.select('#sankey');
-            svg.selectAll('*').remove();
-            var W = 500, H2 = 420;
-            var g = svg.append('g');
-            svg.call(d3.zoom().scaleExtent([0.5, 8]).on('zoom', function(event) { g.attr('transform', event.transform); }));
-
-            var edgeIds = Array.from(new Set(ebc.flatMap(function(e) { return [e.from, e.to]; })));
-            var ids = edgeIds.length ? edgeIds : communities.map(function(c) { return c.id; });
-            var idIndex = new Map(ids.map(function(id, i) { return [id, i]; }));
-            var sNodes = ids.map(function(id) { return { name: id, level: Number((communities.find(function(c) { return c.id === id; }) || {level: 0}).level) || 0 }; });
-            var linksRaw = ebc.map(function(e) { return { source: idIndex.get(e.from), target: idIndex.get(e.to), value: Number(e.edges) }; });
-            var sLinks = linksRaw.filter(function(l) { return Number.isFinite(l.source) && Number.isFinite(l.target) && Number.isFinite(l.value) && l.value > 0 && l.source !== l.target; });
-
-            // Remove 2-cycles
-            (function() {
-                var best = new Map();
-                sLinks.forEach(function(l) {
-                    var a = Math.min(l.source, l.target), b = Math.max(l.source, l.target);
-                    var key = a + '-' + b;
-                    var dir = (l.source === a && l.target === b) ? 'ab' : 'ba';
-                    var cur = best.get(key);
-                    if (!cur || l.value > cur.value) best.set(key, {dir: dir, value: l.value});
-                });
-                sLinks = sLinks.filter(function(l) {
-                    var a = Math.min(l.source, l.target), b = Math.max(l.source, l.target);
-                    var dir = (l.source === a && l.target === b) ? 'ab' : 'ba';
-                    return dir === (best.get(a + '-' + b) || {}).dir;
-                });
-            })();
-
-            // Break cycles if no circular plugin
-            if (!(d3 && d3.sankeyCircular)) {
-                (function() {
-                    var n = sNodes.length;
-                    function recomputeRemaining() {
-                        var inDeg2 = new Array(n).fill(0);
-                        var outAdj2 = Array.from({length: n}, function() { return []; });
-                        sLinks.forEach(function(l, i) { if (!l._removed) { outAdj2[l.source].push(i); inDeg2[l.target]++; } });
-                        var q2 = [], removed2 = new Array(n).fill(false);
-                        for (var i = 0; i < n; i++) if (inDeg2[i] === 0) q2.push(i);
-                        while (q2.length) { var u = q2.shift(); removed2[u] = true; outAdj2[u].forEach(function(ei) { if (--inDeg2[sLinks[ei].target] === 0) q2.push(sLinks[ei].target); }); }
-                        var rem = new Set();
-                        sLinks.forEach(function(l, i) { if (!l._removed && !removed2[l.source] && !removed2[l.target]) rem.add(i); });
-                        return rem;
-                    }
-                    var pass = recomputeRemaining();
-                    while (pass.size) {
-                        var minIdx = null, minVal = Infinity;
-                        pass.forEach(function(i) { if ((Number(sLinks[i].value) || 0) < minVal) { minVal = sLinks[i].value; minIdx = i; } });
-                        if (minIdx == null) break;
-                        sLinks[minIdx]._removed = true;
-                        pass = recomputeRemaining();
-                    }
-                    sLinks = sLinks.filter(function(l) { return !l._removed; });
-                })();
-            }
-
-            if (sNodes.length === 0) { g.append('text').attr('x', 20).attr('y', 24).attr('fill', '#6b7280').text('No community data'); return; }
-
-            var colorScale = function(ns) { return nsColor(ns || ''); };
-
-            if (sLinks.length === 0) {
-                var padSX = 16, padSY = 20, hS = 16, gapS = 10;
-                g.append('text').attr('x', padSX).attr('y', padSY - 6).attr('fill', '#6b7280').attr('font-size', 12).text('No inter-community edges');
-                sNodes.forEach(function(d, i) {
-                    var y = padSY + i * (hS + gapS);
-                    g.append('rect').attr('x', padSX).attr('y', y).attr('width', 140).attr('height', hS).attr('fill', colorScale((communities.find(function(c) { return c.id === d.name; }) || {topNamespaces: ['']}).topNamespaces[0] || ''));
-                    g.append('text').attr('x', padSX + 6).attr('y', y + hS * 0.72).attr('fill', '#111827').attr('font-size', 12).text(d.name);
-                });
-                return;
-            }
-
-            var sankey = ((d3.sankeyCircular || (d3.sankey && d3.sankey.circular)) ? (d3.sankeyCircular ? d3.sankeyCircular() : d3.sankey.circular()) : d3.sankey())
-                .nodeWidth(12).nodePadding(12).extent([[10, 10], [W - 10, H2 - 10]]);
-            if (sankey.circularLinkGap) sankey.circularLinkGap(2);
-            sankey.nodeSort(function(a, b) { return d3.ascending(Number(a.level) || 0, Number(b.level) || 0); });
-
-            var graph;
-            try {
-                graph = sankey({nodes: sNodes.map(function(d) { return Object.assign({}, d); }), links: sLinks.map(function(d) { return Object.assign({}, d); })});
-            } catch (e) {
-                g.append('text').attr('x', 16).attr('y', 14).attr('fill', '#6b7280').attr('font-size', 12).text('Unable to render Sankey');
-                return;
-            }
-
-            var sankeyFocus = null;
-            function updateSankeyVisibility() {
-                var linkSel2 = g.selectAll('path');
-                var nodeSel2 = g.selectAll('rect.sankey-node');
-                var textSel2 = g.selectAll('text.sankey-label');
-                if (!sankeyFocus) {
-                    linkSel2.attr('display', null).attr('stroke-opacity', 0.5);
-                    nodeSel2.attr('display', null).attr('opacity', 1);
-                    textSel2.attr('display', function() { return this.getAttribute('data-size-hidden') === '1' ? 'none' : null; });
-                    return;
-                }
-                if (sankeyFocus.type === 'node') {
-                    var fi = sankeyFocus.index;
-                    linkSel2.each(function(d) {
-                        var s = (typeof d.source === 'object') ? d.source.index : d.source;
-                        var t = (typeof d.target === 'object') ? d.target.index : d.target;
-                        var keep = (s === fi || t === fi);
-                        d3.select(this).attr('display', keep ? null : 'none').attr('stroke-opacity', keep ? 0.7 : 0.1);
-                    });
-                    nodeSel2.each(function(nd, idx) {
-                        var keep = (idx === fi) || g.selectAll('path').filter(function(l) {
-                            var s = (typeof l.source === 'object') ? l.source.index : l.source;
-                            var t = (typeof l.target === 'object') ? l.target.index : l.target;
-                            return (s === fi && t === idx) || (t === fi && s === idx);
-                        }).size() > 0;
-                        d3.select(this).attr('opacity', keep ? 1 : 0.1);
-                    });
-                    textSel2.each(function(nd) {
-                        var idx = nd.index;
-                        var keep = (idx === fi) || g.selectAll('path').filter(function(l) {
-                            var s = (typeof l.source === 'object') ? l.source.index : l.source;
-                            var t = (typeof l.target === 'object') ? l.target.index : l.target;
-                            return (s === fi && t === idx) || (t === fi && s === idx);
-                        }).size() > 0;
-                        d3.select(this).attr('display', keep ? (this.getAttribute('data-size-hidden') === '1' ? 'none' : null) : 'none');
-                    });
-                } else if (sankeyFocus.type === 'link') {
-                    var li2 = sankeyFocus.index;
-                    linkSel2.each(function(d, i) { d3.select(this).attr('display', i === li2 ? null : 'none').attr('stroke-opacity', i === li2 ? 0.8 : 0.1); });
-                    var focused = graph.links[li2];
-                    var fs = (typeof focused.source === 'object') ? focused.source.index : focused.source;
-                    var ft = (typeof focused.target === 'object') ? focused.target.index : focused.target;
-                    nodeSel2.each(function(nd, idx) { d3.select(this).attr('opacity', (idx === fs || idx === ft) ? 1 : 0.25); });
-                    textSel2.each(function(nd) { var idx = nd.index; d3.select(this).attr('display', (idx === fs || idx === ft) ? (this.getAttribute('data-size-hidden') === '1' ? 'none' : null) : 'none'); });
-                }
-            }
-
-            g.append('g').selectAll('path').data(graph.links).enter().append('path')
-                .attr('d', d3.sankeyLinkHorizontal()).attr('fill', 'none').attr('stroke', '#9ca3af').attr('stroke-opacity', 0.5)
-                .attr('stroke-width', function(d) { return Math.max(1, d.width || 1); })
-                .on('mouseenter', function(event, d) {
-                    var sIndex = (typeof d.source === 'object') ? d.source.index : d.source;
-                    var tIndex = (typeof d.target === 'object') ? d.target.index : d.target;
-                    var tot = d3.sum(sLinks.filter(function(l) { return l.source === sIndex; }).map(function(l) { return l.value; })) || 1;
-                    showTooltip(graph.nodes[sIndex].name + ' → ' + graph.nodes[tIndex].name + ': ' + d.value + ' (' + ((d.value || 0) * 100 / tot).toFixed(1) + '%)', event);
-                })
-                .on('mousemove', function(event) { moveTooltip(event); })
-                .on('mouseleave', function() { hideTooltip(); })
-                .on('click', function(event, d) { event.stopPropagation(); sankeyFocus = {type: 'link', index: graph.links.indexOf(d)}; updateSankeyVisibility(); });
-
-            svg.on('click', function(event) { if (event.target === svg.node()) { sankeyFocus = null; updateSankeyVisibility(); } });
-
-            var n2 = g.append('g').selectAll('g').data(graph.nodes).enter().append('g');
-            n2.append('rect').attr('class', 'sankey-node')
-                .attr('x', function(d) { return d.x0; }).attr('y', function(d) { return d.y0; })
-                .attr('width', function(d) { return Math.max(1, (d.x1 || 0) - (d.x0 || 0)); })
-                .attr('height', function(d) { return Math.max(1, (d.y1 || 0) - (d.y0 || 0)); })
-                .attr('fill', function(d) { return colorScale((communities.find(function(c) { return c.id === d.name; }) || {topNamespaces: ['']}).topNamespaces[0] || ''); })
-                .on('mouseenter', function(event, d) { d3.select(this).attr('stroke', '#111827').attr('stroke-width', 2); showTooltip(d.name, event); })
-                .on('mousemove', function(event) { moveTooltip(event); })
-                .on('mouseleave', function() { d3.select(this).attr('stroke', null).attr('stroke-width', null); hideTooltip(); })
-                .on('click', function(event, d) { event.stopPropagation(); sankeyFocus = {type: 'node', index: d.index}; updateSankeyVisibility(); });
-            n2.append('text').attr('class', 'sankey-label')
-                .attr('x', function(d) { return (d.x0 || 0) - 4; }).attr('y', function(d) { return ((d.y0 || 0) + (d.y1 || 0)) / 2; })
-                .attr('dy', '0.35em').attr('text-anchor', 'end').text(function(d) { return d.name; })
-                .each(function(d) { if (((d.y1 || 0) - (d.y0 || 0)) < 16) { this.setAttribute('display', 'none'); this.setAttribute('data-size-hidden', '1'); } });
-
-            d3.select(window).on('keydown.sankeyFocus', function(event) { if (event.key === 'Escape') { sankeyFocus = null; updateSankeyVisibility(); } });
-        })();
-
-    }
-
-    // ---- D3/Sankey library loading ----
-    function loadScript(src, onload) {
-        var s = document.createElement('script'); s.src = src; s.async = true;
-        if (onload) { s.onload = onload; s.onerror = onload; }
-        document.head.appendChild(s);
-    }
-
-    var d3Ready = false, sankeyReady = false;
-
-    function ensureD3AndSankey(cb) {
-        function hasD3() { return !!(window.d3 && typeof d3.scaleOrdinal === 'function'); }
-        function ensureSankey(next) {
-            function ensureCircular() {
-                if (window.d3 && window.d3.sankeyCircular) return next();
-                loadScript('https://cdn.jsdelivr.net/npm/d3-sankey-circular@0.30.0/build/d3-sankey-circular.min.js', function() {
-                    if (!(window.d3 && (d3.sankeyCircular || (d3.sankey && d3.sankey.circular)))) {
-                        loadScript('https://unpkg.com/d3-sankey-circular@0.30.0/build/d3-sankey-circular.min.js', next);
-                    } else { next(); }
-                });
-            }
-            if (window.d3 && window.d3.sankey) return ensureCircular();
-            loadScript('https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js', ensureCircular);
-        }
-        function start() { ensureSankey(function() { sankeyReady = true; cb(); }); }
-        if (!hasD3()) { loadScript('https://cdn.jsdelivr.net/npm/d3@7', start); }
-        else { start(); }
-    }
-
-    // ---- Toggle for layered map filters + Architecture tabs ----
-    document.addEventListener('DOMContentLoaded', function() {
-        var toggleFiltersBtn = document.getElementById('toggle-layered-filters');
-        var filtersContainer = document.getElementById('layered-filters');
-        if (toggleFiltersBtn && filtersContainer) {
-            toggleFiltersBtn.addEventListener('click', function() { filtersContainer.classList.toggle('hidden'); });
-        }
-
-        // Architecture tab switching
-        var exportMap = {
-            clustered: '<button id="export-clustered" class="px-2 py-1 border rounded mr-1" onclick="document.dispatchEvent(new CustomEvent(\'export-arch\',{detail:\'#clustered-graph\'}))">Export PNG</button>',
-            layered: '<button id="export-layered" class="px-2 py-1 border rounded mr-1" onclick="document.dispatchEvent(new CustomEvent(\'export-arch\',{detail:\'#layered-map\'}))">Export PNG</button>',
-            sankey: '<button id="export-sankey" class="px-2 py-1 border rounded mr-1" onclick="document.dispatchEvent(new CustomEvent(\'export-arch\',{detail:\'#sankey\'}))">Export PNG</button>'
-        };
-        var archExportEl = document.getElementById('arch-export');
-        var tabs = document.querySelectorAll('[data-arch-tab]');
-        tabs.forEach(function(tab) {
-            tab.addEventListener('click', function() {
-                var target = tab.getAttribute('data-arch-tab');
-                tabs.forEach(function(t) { t.classList.remove('active'); });
-                tab.classList.add('active');
-                document.querySelectorAll('.arch-panel').forEach(function(p) { p.classList.remove('active'); });
-                var panel = document.getElementById('arch-panel-' + target);
-                if (panel) panel.classList.add('active');
-                if (archExportEl) archExportEl.innerHTML = exportMap[target] || '';
-                activeTab = target;
-                if (initialized) renderActiveTab();
-            });
-        });
-        document.addEventListener('export-arch', function(e) {
-            if (typeof exportSvgAsPng === 'function') exportSvgAsPng(e.detail);
         });
     });
 
-    // ---- Main orchestration ----
-    var currentCm = null;
-    var currentNodes = null;
-    var currentVd = null;
-    var initialized = false;
-
-    // Track which tabs need re-rendering after data change
-    var dirtyTabs = {};
-    var activeTab = 'clustered';
-
-    function markAllTabsDirty() {
-        dirtyTabs = { graph: true, clustered: true, layered: true, sankey: true, purity: true };
+    // ---- Zoom on a folder --------------------------------------------------
+    // The tree on the right is built from the files behind the communities.
+    // Choosing a folder redraws the map with the communities present in it,
+    // sized by what they hold there, linked by the references written there,
+    // and narrows the table down to them.
+    var dataNode = document.getElementById('data-community-files');
+    var tree = document.getElementById('community-folders-tree');
+    var pane = document.getElementById('community-folders');
+    if (!dataNode || !tree) return;
+    var data;
+    try { data = JSON.parse(dataNode.textContent); } catch (e) { return; }
+    if (!data.f || !data.f.length) { if (pane) pane.style.display = 'none'; return; }
+    // paths are stored as [directory index, file name] to keep the page light
+    if (data.dirs) {
+        data.f = data.f.map(function (entry) { return typeof entry === 'string' ? entry : (data.dirs[entry[0]] ? data.dirs[entry[0]] + '/' : '') + entry[1]; });
     }
 
-    function renderActiveTab() {
-        if (!dirtyTabs[activeTab]) return;
-        dirtyTabs[activeTab] = false;
-        if (activeTab === 'clustered' && sankeyReady) {
-            renderClusteredGraph(currentVd, currentNodes);
-        } else if (activeTab === 'graph') {
-            renderGraphView(currentVd, currentNodes);
-        } else if (activeTab === 'layered' && sankeyReady) {
-            renderArchViews(currentVd, 'layered');
-        } else if (activeTab === 'sankey' && sankeyReady) {
-            renderArchViews(currentVd, 'sankey');
-        } else if (activeTab === 'purity') {
-            renderPurityTable(currentCm);
-        }
-    }
+    // folder -> {count, per{communityId: n}}; a class counts for every folder above it
+    var folders = {};
+    var totalPerCommunity = {};
+    Object.keys(data.c).forEach(function (id) {
+        totalPerCommunity[id] = data.c[id].length;
+        data.c[id].forEach(function (fi) {
+            var parts = data.f[fi].split('/');
+            parts.pop();
+            var path = '';
+            for (var i = 0; i < parts.length; i++) {
+                path = path ? path + '/' + parts[i] : parts[i];
+                var node = folders[path] || (folders[path] = { path: path, name: parts[i], depth: i, count: 0, per: {} });
+                node.count++;
+                node.per[id] = (node.per[id] || 0) + 1;
+            }
+        });
+    });
+    var all = Object.keys(folders).sort();
+    if (!all.length) { if (pane) pane.style.display = 'none'; return; }
+    var children = {};
+    all.forEach(function (p) {
+        var parent = p.lastIndexOf('/') >= 0 ? p.slice(0, p.lastIndexOf('/')) : '';
+        (children[parent] = children[parent] || []).push(p);
+    });
+    // folders start folded; only a lone folder at the top (src/, lib/...)
+    // opens, and the chain below it as long as it has a single child
+    var expanded = {};
+    var lone = '';
+    while ((children[lone] || []).length === 1) { lone = children[lone][0]; expanded[lone] = true; }
+    var activePath = '';
+    var backSet = {};
+    (data.b || []).forEach(function (k) { backSet[k] = true; });
+    var inFolder = function (path, fileIndex) {
+        var f = data.f[fileIndex];
+        return f.indexOf(path + '/') === 0;
+    };
 
-    function recalculate() {
-        var resolution = parseFloat(document.getElementById('lpa-resolution').value) || 0;
-        var includeExt = document.getElementById('hide-external').checked;
-
-        var nodes = includeExt ? allGraphNodes : allGraphNodes.filter(function(n) { return !n.ext; });
-        var nodeSet = new Set(nodes.map(function(n) { return n.id; }));
-        var filtered = nodes.map(function(n) { return {id: n.id, namespace: n.namespace, edges: (n.edges || []).filter(function(e) { return nodeSet.has(e); }), ext: n.ext}; });
-
-        var lpaResult = labelPropagation(buildUndirectedAdj(filtered), {resolution: resolution, maxIters: 15});
-        currentCm = computeAllMetrics(filtered, lpaResult);
-        currentNodes = filtered;
-        currentVd = buildViewData(currentCm);
-
-        updateMetricCards(currentCm);
-        markAllTabsDirty();
-        renderActiveTab();
-    }
-
-    function waitForD3(cb) {
-        if (window.d3 && typeof d3.forceSimulation === 'function') return cb();
-        setTimeout(function() { waitForD3(cb); }, 50);
-    }
-
-    // Init
-    document.addEventListener('DOMContentLoaded', function() {
-        // Resolution slider display
-        var slider = document.getElementById('lpa-resolution');
-        var sliderVal = document.getElementById('lpa-resolution-value');
-        if (slider && sliderVal) {
-            slider.addEventListener('input', function() { sliderVal.textContent = slider.value; });
-        }
-
-        // Wait for D3 to be available
-        ensureD3AndSankey(function() {
-            waitForD3(function() {
-                recalculate();
-                initialized = true;
+    function render() {
+        tree.innerHTML = '';
+        function walk(parent) {
+            (children[parent] || []).forEach(function (p) {
+                var n = folders[p];
+                var kids = children[p] || [];
+                var row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'folder-row' + (p === activePath ? ' is-active' : '');
+                row.style.paddingLeft = (0.5 + n.depth * 0.8) + 'rem';
+                row.title = p;
+                row.innerHTML = '<span class="caret">' + (kids.length ? (expanded[p] ? '▾' : '▸') : '·') + '</span>' +
+                    '<span class="fname"></span><span class="fcount"></span>';
+                row.querySelector('.fname').textContent = n.name;
+                row.querySelector('.fcount').textContent = n.count;
+                row.addEventListener('click', function (e) {
+                    if (kids.length && (e.offsetX < 22 || p === activePath)) { expanded[p] = !expanded[p]; }
+                    if (p !== activePath) { expanded[p] = true; setZoom(p); } else if (!kids.length) { clearZoom(); }
+                    render();
+                });
+                tree.appendChild(row);
+                if (expanded[p]) walk(p);
             });
+        }
+        walk('');
+    }
+
+    // ---- Drawing the map of a folder --------------------------------------
+    var NS = 'http://www.w3.org/2000/svg';
+    function el(name, attrs, text) {
+        var node = document.createElementNS(NS, name);
+        Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+    function fitLabel(label, maxChars) {
+        if (maxChars < 8) maxChars = 8;
+        if (label.length <= maxChars) return label;
+        var keep = maxChars - 1, head = Math.floor(keep * 2 / 3), tail = keep - head;
+        return label.slice(0, head) + '…' + label.slice(label.length - tail);
+    }
+    function idOrder(x, y) { return (x.length - y.length) || (x < y ? -1 : x > y ? 1 : 0); }
+
+    var palette = ['#2563eb', '#7c3aed', '#0891b2', '#059669', '#d97706', '#db2777', '#4f46e5', '#0d9488', '#ca8a04', '#9333ea', '#0284c7', '#65a30d'];
+    var unitWord = data.u === 'package' ? 'packages' : 'classes';
+
+    // The folder analysed on its own, when the report carries it: the
+    // communities its code forms by itself, as analysing the folder alone
+    // would find them.
+    function localSpec(path) {
+        var local = data.d && data.d[path];
+        if (!local) return null;
+        var boxes = [], members = [], kernel = null, index = 0;
+        local.c.forEach(function (c) {
+            var name = c[0], size = c[1], shared = c[2], hint = c[3];
+            // file indices come as sorted deltas
+            var files = [], acc = 0;
+            c[4].forEach(function (d) { acc += d; files.push(acc); });
+            if (shared) {
+                kernel = { name: name, size: size, hint: hint, files: files };
+                return;
+            }
+            var id = String(index++);
+            boxes.push({ id: id, label: name, sub: size + ' ' + unitWord + (hint ? ', ' + hint : ''), color: palette[boxes.length % palette.length], size: size, hint: hint, files: files });
+        });
+        var edges = local.e.map(function (e) { return { from: String(e[0]), to: String(e[1]), weight: e[2], back: !!e[3] }; });
+        return {
+            boxes: boxes, edges: edges, kernel: kernel, verdict: local.v, unitCount: local.u,
+            kernelNote: kernel ? kernel.size + ' ' + unitWord + ' of this folder form its own shared kernel: ' + (kernel.hint || '') : '',
+            caption: 'Linked to no other community of the folder'
+        };
+    }
+
+    // The folder seen through the communities of the whole project: what
+    // stands here of each of them, and the references written here.
+    function globalSpec(path) {
+        var n = folders[path];
+        var ids = Object.keys(n.per).filter(function (id) { return id !== data.s; }).sort(idOrder);
+        var kernelHere = data.s ? (n.per[data.s] || 0) : 0;
+        var present = {};
+        ids.forEach(function (id) { present[id] = true; });
+        // too small a folder to be analysed on its own: its classes are shown
+        // in the communities of the whole project they belong to, without the
+        // arrows, which the page does not carry at that level of detail
+        var edges = [];
+        var boxes = ids.map(function (id) {
+            var meta = data.n[id] || [id, 0, '#64748b'];
+            return { id: id, label: meta[0], sub: n.per[id] + ' of ' + (totalPerCommunity[id] || meta[1]) + ' ' + unitWord + ' here', color: meta[2] };
+        });
+        return {
+            boxes: boxes, edges: edges, kernel: null, unitCount: n.count,
+            kernelNote: kernelHere > 0 ? kernelHere + ' of the ' + (totalPerCommunity[data.s] || 0) + ' ' + unitWord + ' of the shared kernel come from this folder.' : '',
+            caption: 'The communities of the project this folder\'s ' + unitWord + ' belong to'
+        };
+    }
+
+    function drawGraph(spec) {
+        var edgeList = spec.edges;
+        var maxWeight = 1;
+        edgeList.forEach(function (e) { if (e.weight > maxWeight) maxWeight = e.weight; });
+        var boxByID = {};
+        var boxList = spec.boxes.map(function (src) {
+            var width = Math.min(Math.max(Math.max(src.label.length * 7.6 + 44, src.sub.length * 6.4 + 44), 128), 380);
+            var b = { id: src.id, label: src.label, sub: src.sub, color: src.color, w: width, h: 58, layer: 0, order: 0, x: 0, y: 0, neighbours: [] };
+            boxByID[src.id] = b;
+            return b;
+        });
+        var kernelHere = spec.kernelNote ? 1 : 0;
+        edgeList.forEach(function (e) {
+            boxByID[e.from].neighbours.push(boxByID[e.to]);
+            boxByID[e.to].neighbours.push(boxByID[e.from]);
         });
 
-        // Slider and toggle handlers — with loading spinner
-        var archLoading = document.getElementById('arch-loading');
-        function recalcWithSpinner() {
-            if (!initialized) return;
-            if (archLoading) archLoading.style.display = 'flex';
-            setTimeout(function() {
-                waitForD3(function() {
-                    recalculate();
-                    if (archLoading) archLoading.style.display = 'none';
+        // layers: longest path from the sources, back edges set aside
+        var out = {}, indeg = {};
+        boxList.forEach(function (b) { out[b.id] = {}; indeg[b.id] = 0; });
+        edgeList.forEach(function (e) {
+            if (e.back || out[e.from][e.to]) return;
+            out[e.from][e.to] = true;
+            indeg[e.to]++;
+        });
+        var layerOf = {}, queue = [];
+        boxList.forEach(function (b) { if (indeg[b.id] === 0) { queue.push(b.id); layerOf[b.id] = 0; } });
+        while (queue.length) {
+            var cur = queue.shift();
+            Object.keys(out[cur]).sort(idOrder).forEach(function (m) {
+                layerOf[m] = Math.max(layerOf[m] || 0, layerOf[cur] + 1);
+                indeg[m]--;
+                if (indeg[m] === 0) queue.push(m);
+            });
+        }
+        var layerCount = 0;
+        boxList.forEach(function (b) { b.layer = layerOf[b.id] || 0; layerCount = Math.max(layerCount, b.layer + 1); });
+        var layers = [];
+        for (var li = 0; li < layerCount; li++) layers.push([]);
+        var standalone = [];
+        boxList.forEach(function (b) { if (b.neighbours.length) layers[b.layer].push(b); else standalone.push(b); });
+        layers.forEach(function (layer) { layer.forEach(function (b, i) { b.order = i; }); });
+        function sortLayer(layer) {
+            layer.sort(function (x, y) { return (x.order - y.order) || idOrder(x.id, y.id); });
+            layer.forEach(function (b, i) { b.order = i; });
+        }
+        for (var sweep = 0; sweep < 4; sweep++) {
+            layers.forEach(function (layer) {
+                layer.forEach(function (b) {
+                    var sum = 0, cnt = 0;
+                    b.neighbours.forEach(function (o) { if (o.layer !== b.layer && o.neighbours.length) { sum += o.order; cnt++; } });
+                    if (cnt) b.order = sum / cnt;
                 });
-            }, 30);
+                sortLayer(layer);
+            });
         }
-        if (slider) {
-            slider.addEventListener('change', recalcWithSpinner);
-        }
-        var toggle = document.getElementById('hide-external');
-        if (toggle) {
-            toggle.addEventListener('change', recalcWithSpinner);
-        }
-    });
 
+        // rows and positions
+        var maxRowWidth = 1080, gapX = 22, gapY = 84, rowGap = 26, paddingX = 40, paddingTop = 24, boxHeight = 58;
+        function wrapRows(list) {
+            var rows = [], cur = { boxes: [], width: 0 };
+            list.forEach(function (b) {
+                var extra = b.w + (cur.boxes.length ? gapX : 0);
+                if (cur.boxes.length && cur.width + extra > maxRowWidth) { rows.push(cur); cur = { boxes: [], width: 0 }; extra = b.w; }
+                cur.boxes.push(b);
+                cur.width += extra;
+            });
+            if (cur.boxes.length) rows.push(cur);
+            return rows;
+        }
+        var rowsOfLayer = layers.map(wrapRows);
+        var standaloneRows = wrapRows(standalone);
+        var widest = 0;
+        rowsOfLayer.concat([standaloneRows]).forEach(function (rows) { rows.forEach(function (r) { widest = Math.max(widest, r.width); }); });
+        var width = Math.max(widest, 480) + 2 * paddingX;
+        var y = paddingTop;
+        function place(rows) {
+            rows.forEach(function (r, ri) {
+                var x = paddingX + (width - 2 * paddingX - r.width) / 2;
+                r.boxes.forEach(function (b) { b.x = x; b.y = y + ri * (boxHeight + rowGap); x += b.w + gapX; });
+            });
+            if (rows.length) y += rows.length * boxHeight + (rows.length - 1) * rowGap + gapY;
+        }
+        rowsOfLayer.forEach(place);
+        if (y > paddingTop) y = y - gapY + 40;
+        var captionY = 0;
+        if (standalone.length) { captionY = y + 14; y = captionY + 18; place(standaloneRows); y = y - gapY + 8; }
+        var noteY = 0;
+        if (kernelHere > 0) { noteY = y + 8; y = noteY + 24; }
+        var height = y;
+
+        // the drawing
+        var root = el('svg', { viewBox: '0 0 ' + Math.round(width) + ' ' + Math.round(height), width: Math.round(width), height: Math.round(height), style: 'max-width:100%;height:auto', 'class': 'community-map', role: 'img' });
+        var defs = el('defs');
+        ['cm-arrow:#94a3b8', 'cm-arrow-cycle:#ef4444'].forEach(function (spec) {
+            var parts = spec.split(':');
+            var m = el('marker', { id: parts[0], viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 9, markerHeight: 9, markerUnits: 'userSpaceOnUse', orient: 'auto-start-reverse' });
+            m.appendChild(el('path', { d: 'M 0 0 L 10 5 L 0 10 z', fill: parts[1] }));
+            defs.appendChild(m);
+        });
+        root.appendChild(defs);
+        var gEdges = el('g', { 'class': 'cm-edges' });
+        edgeList.forEach(function (e) {
+            var a = boxByID[e.from], b = boxByID[e.to];
+            var x1 = a.x + a.w / 2, x2 = b.x + b.w / 2, y1, y2, d;
+            var lift = 28 + Math.abs(x2 - x1) / 12;
+            if (b.layer > a.layer) {
+                y1 = a.y + a.h; y2 = b.y; var my = (y1 + y2) / 2;
+                d = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + my + ', ' + x2 + ' ' + my + ', ' + x2 + ' ' + y2;
+            } else if (b.layer < a.layer) {
+                y1 = a.y; y2 = b.y + b.h; var my2 = (y1 + y2) / 2;
+                d = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + my2 + ', ' + x2 + ' ' + my2 + ', ' + x2 + ' ' + y2;
+            } else if (x2 >= x1) {
+                y1 = a.y; y2 = b.y;
+                d = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + (y1 - lift) + ', ' + x2 + ' ' + (y2 - lift) + ', ' + x2 + ' ' + y2;
+            } else {
+                y1 = a.y + a.h; y2 = b.y + b.h;
+                d = 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + (y1 + lift) + ', ' + x2 + ' ' + (y2 + lift) + ', ' + x2 + ' ' + y2;
+            }
+            var attrs = { 'class': 'cm-edge' + (e.back ? ' cm-edge--cycle' : ''), 'data-from': e.from, 'data-to': e.to, d: d, fill: 'none',
+                stroke: e.back ? '#ef4444' : '#94a3b8', 'stroke-width': (1 + 3 * Math.log1p(e.weight) / Math.log1p(maxWeight)).toFixed(1),
+                'stroke-opacity': 0.75, 'marker-end': 'url(#' + (e.back ? 'cm-arrow-cycle' : 'cm-arrow') + ')' };
+            if (e.back) attrs['stroke-dasharray'] = '6 4';
+            var p = el('path', attrs);
+            p.appendChild(el('title', {}, a.label + ' → ' + b.label + ': ' + e.weight + ' reference' + (e.weight === 1 ? '' : 's') + ' in this folder' + (e.back ? ' (closes a cycle)' : '')));
+            gEdges.appendChild(p);
+        });
+        root.appendChild(gEdges);
+        if (standalone.length) {
+            root.appendChild(el('line', { x1: paddingX, y1: captionY - 10, x2: width - paddingX, y2: captionY - 10, stroke: '#e2e8f0', 'stroke-width': 1 }));
+            root.appendChild(el('text', { x: paddingX, y: captionY + 4, 'font-size': 11, fill: '#64748b', 'font-family': 'var(--font-sans, system-ui, sans-serif)' }, spec.caption));
+        }
+        var gBoxes = el('g', { 'class': 'cm-boxes' });
+        boxList.forEach(function (b) {
+            var a = el('a', { href: '#community-' + b.id, 'class': 'cm-box', 'data-id': b.id });
+            var g = el('g');
+            g.appendChild(el('rect', { x: b.x, y: b.y, width: b.w, height: b.h, rx: 12, fill: 'white', stroke: '#e2e8f0', 'stroke-width': 1.5 }));
+            g.appendChild(el('rect', { x: b.x + 10, y: b.y + 12, width: 4, height: b.h - 24, rx: 2, fill: b.color }));
+            g.appendChild(el('text', { x: b.x + 22, y: b.y + 25, 'font-size': 13, 'font-weight': 600, fill: '#0f172a', 'font-family': 'var(--font-sans, system-ui, sans-serif)' }, fitLabel(b.label, Math.floor((b.w - 40) / 7.6))));
+            g.appendChild(el('text', { 'class': 'cm-meta', x: b.x + 22, y: b.y + 43, 'font-size': 11, fill: '#64748b', 'font-family': 'var(--font-sans, system-ui, sans-serif)' }, b.sub));
+            g.appendChild(el('title', {}, b.label + ': ' + b.sub));
+            a.appendChild(g);
+            gBoxes.appendChild(a);
+        });
+        root.appendChild(gBoxes);
+        if (kernelHere > 0) {
+            root.appendChild(el('text', { x: paddingX, y: noteY + 12, 'font-size': 11, fill: '#64748b', 'font-family': 'var(--font-sans, system-ui, sans-serif)' }, spec.kernelNote));
+        }
+        return { svg: root, communities: boxList.length, edges: edgeList.length };
+    }
+
+    // ---- Zoom state ---------------------------------------------------------
+    var banner = document.getElementById('focus-banner');
+    var rows = Array.prototype.slice.call(document.querySelectorAll('.comm-table tbody tr'));
+    // The members of a community are written on demand, from the files
+    // behind it: a page listing every class of every community up front
+    // would weigh more than the analysis it presents.
+    function memberNames(fileIndices) {
+        var counts = {};
+        fileIndices.forEach(function (fi) {
+            var f = data.f[fi];
+            var name = f.slice(f.lastIndexOf('/') + 1).replace(/\.[a-z0-9]+$/i, '');
+            counts[name] = (counts[name] || 0) + 1;
+        });
+        return Object.keys(counts).sort().map(function (name) { return counts[name] > 1 ? name + ' ×' + counts[name] : name; });
+    }
+    document.querySelectorAll('ul[data-lazy-members]').forEach(function (ul) {
+        var det = ul.closest('details');
+        if (!det) return;
+        det.addEventListener('toggle', function () {
+            if (!det.open || ul.children.length) return;
+            var files = data.c[ul.getAttribute('data-lazy-members')];
+            if (!files) return;
+            memberNames(files).forEach(function (name) {
+                var li = document.createElement('li');
+                li.textContent = name;
+                ul.appendChild(li);
+            });
+        });
+    });
+    var moreRows = document.getElementById('rows-more');
+    if (moreRows) {
+        moreRows.addEventListener('click', function () {
+            document.querySelectorAll('.comm-table tr.row-more').forEach(function (r) { r.hidden = false; r.classList.remove('row-more'); });
+            moreRows.remove();
+        });
+    }
+    var zoomTable = document.getElementById('zoom-table');
+    var globalTable = document.getElementById('communities-table-card');
+    function renderLocalTable(spec) {
+        if (!zoomTable) return;
+        zoomTable.innerHTML = '';
+        var list = spec.boxes.slice();
+        if (spec.kernel) list.push({ label: 'Shared kernel of the folder (' + spec.kernel.name + ')', sub: spec.kernel.size + ' ' + unitWord + (spec.kernel.hint ? ', ' + spec.kernel.hint : ''), color: '#475569', files: spec.kernel.files });
+        list.forEach(function (b) {
+            var row = document.createElement('div');
+            row.className = 'zoom-row';
+            var swatch = document.createElement('span');
+            swatch.className = 'comm-swatch';
+            swatch.style.background = b.color;
+            var body = document.createElement('div');
+            body.className = 'min-w-0';
+            var name = document.createElement('div');
+            name.className = 'comm-name';
+            name.textContent = b.label;
+            var sub = document.createElement('div');
+            sub.className = 'comm-hint';
+            sub.textContent = b.sub;
+            body.appendChild(name);
+            body.appendChild(sub);
+            if (b.files && b.files.length) {
+                var det = document.createElement('details');
+                det.className = 'members mt-1';
+                var sum = document.createElement('summary');
+                sum.textContent = b.files.length + ' member' + (b.files.length === 1 ? '' : 's');
+                det.appendChild(sum);
+                var ul = document.createElement('ul');
+                b.files.slice().sort().forEach(function (fi) {
+                    var li = document.createElement('li');
+                    var f = data.f[fi];
+                    li.textContent = f.slice(f.lastIndexOf('/') + 1).replace(/\.[a-z]+$/i, '');
+                    li.title = f;
+                    ul.appendChild(li);
+                });
+                det.appendChild(ul);
+                body.appendChild(det);
+            }
+            row.appendChild(swatch);
+            row.appendChild(body);
+            zoomTable.appendChild(row);
+        });
+        zoomTable.style.display = '';
+    }
+    function setZoom(path) {
+        activePath = path;
+        var n = folders[path];
+        var spec = localSpec(path) || globalSpec(path);
+        var drawn = drawGraph(spec);
+        wrap.innerHTML = '';
+        wrap.appendChild(drawn.svg);
+        wire(drawn.svg);
+        if (data.d && data.d[path]) {
+            renderLocalTable(spec);
+            if (globalTable) globalTable.style.display = 'none';
+        } else {
+            if (zoomTable) zoomTable.style.display = 'none';
+            if (globalTable) globalTable.style.display = '';
+        }
+        rows.forEach(function (row) {
+            var id = row.id.replace('community-', '');
+            var here = n.per[id] || 0;
+            row.classList.toggle('out-of-focus', here === 0);
+            var name = row.querySelector('.comm-name');
+            if (name) {
+                var chip = name.querySelector('.focus-chip');
+                if (!chip) { chip = document.createElement('span'); chip.className = 'focus-chip'; name.appendChild(chip); }
+                chip.textContent = here + ' of ' + (totalPerCommunity[id] || 0) + ' here';
+                chip.style.display = here > 0 ? '' : 'none';
+            }
+        });
+        if (history.replaceState) { history.replaceState(null, '', '#folder=' + encodeURIComponent(path)); }
+        document.getElementById('focus-title').textContent = path;
+        var detail;
+        if (spec.verdict) {
+            detail = 'analysed on its own: ' + spec.verdict.charAt(0).toLowerCase() + spec.verdict.slice(1) +
+                (spec.edges.length ? ' ' + spec.edges.length + ' dependenc' + (spec.edges.length === 1 ? 'y' : 'ies') + ' between them.' : '');
+        } else {
+            detail = 'too small to be analysed on its own: its ' + n.count + ' ' + unitWord + ' belong to ' + drawn.communities + ' communit' + (drawn.communities === 1 ? 'y' : 'ies') + ' of the project.';
+        }
+        document.getElementById('focus-detail').textContent = detail;
+        banner.style.display = '';
+    }
+    function clearZoom() {
+        activePath = '';
+        wrap.innerHTML = '';
+        wrap.appendChild(originalSVG);
+        wire(originalSVG);
+        if (zoomTable) zoomTable.style.display = 'none';
+        if (globalTable) globalTable.style.display = '';
+        rows.forEach(function (row) {
+            row.classList.remove('out-of-focus');
+            var chip = row.querySelector('.focus-chip');
+            if (chip) chip.style.display = 'none';
+        });
+        banner.style.display = 'none';
+        if (history.replaceState) { history.replaceState(null, '', location.pathname + location.search); }
+        render();
+    }
+    document.getElementById('focus-clear').addEventListener('click', clearZoom);
+    render();
+    // a folder named in the address (#folder=app/Billing) is zoomed on load,
+    // so that a zoom can be shared as a link
+    if (location.hash.indexOf('#folder=') === 0) {
+        var wanted = decodeURIComponent(location.hash.slice(8));
+        if (folders[wanted]) {
+            var up = wanted;
+            while (up) { expanded[up] = true; up = up.lastIndexOf('/') >= 0 ? up.slice(0, up.lastIndexOf('/')) : ''; }
+            setZoom(wanted);
+            render();
+        }
+    }
 })();
 </script>
-
-
+{% endif %}
 {% endif %}
 {% endblock %}

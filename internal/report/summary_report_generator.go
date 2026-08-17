@@ -104,9 +104,16 @@ func (v *SummaryReportGenerator) Render(files []*pb.File, projectAggregated anal
 		}
 		metric(body, "Lack of cohesion, LCOM4", byClass.Lcom4PerClass)
 		if combined.Community != nil && combined.Community.CommunitiesCount > 0 {
+			unit := "classes"
+			if combined.Community.Granularity == analyzer.GranularityNamespace {
+				unit = "packages"
+			}
 			row(body, "Communities detected", integer(combined.Community.CommunitiesCount))
-			row(body, "  largest one", fmt.Sprintf("%d components", combined.Community.MaxSize))
-			row(body, "Graph density", decimal(combined.Community.GraphDensity))
+			row(body, "  largest one", fmt.Sprintf("%d %s", combined.Community.MaxSize, unit))
+			row(body, "  dependencies kept inside", fmt.Sprintf("%d%%", int(combined.Community.InternalShare*100+0.5)))
+			if n := len(combined.Community.Cycles); n > 0 {
+				row(body, "  cycles between communities", integer(n))
+			}
 		}
 	})
 

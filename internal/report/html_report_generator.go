@@ -336,7 +336,6 @@ func (v *HtmlReportGenerator) generatePages(baseTemplateDir string, scopeDefs []
 
 	// copy each image
 	for _, file := range []string{
-		"help-community.png",
 		"logo-ast-metrics-small.png",
 		"icon-ai.webp",
 		"icon-classifier.webp",
@@ -524,6 +523,33 @@ func pruneFunction(m *pb.StmtFunction) {
 		m.Stmts.StmtDecisionSwitch = nil
 		m.Stmts.StmtExternalDependencies = nil
 	}
+}
+
+// stripIndentation drops the leading whitespace of every line of a rendered
+// page. The templates are indented for the people who write them, and that
+// indentation weighs a fifth of a large page once rendered a few hundred rows
+// deep. HTML reads a line the same with or without it; a <pre> or <textarea>
+// would not, and none of the templates carries one.
+func stripIndentation(html string) string {
+	var sb strings.Builder
+	sb.Grow(len(html))
+	start := 0
+	for start < len(html) {
+		end := strings.IndexByte(html[start:], '\n')
+		if end < 0 {
+			end = len(html)
+		} else {
+			end += start
+		}
+		line := html[start:end]
+		trimmed := strings.TrimLeft(line, " \t")
+		if trimmed != "" {
+			sb.WriteString(trimmed)
+			sb.WriteByte('\n')
+		}
+		start = end + 1
+	}
+	return sb.String()
 }
 
 func buildNodeToCommunityJSON(n2c map[string]string) string {
@@ -965,7 +991,7 @@ func (v *HtmlReportGenerator) GenerateScopePage(template string, scope scopeDef,
 		return err
 	}
 	defer file.Close()
-	file.WriteString(out)
+	file.WriteString(stripIndentation(out))
 
 	return nil
 }
@@ -1058,6 +1084,38 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 	// Usage: href="index_{{ languageName|langSlug }}.html"
 	pongo2.RegisterFilter("langSlug", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
 		return pongo2.AsValue(languageURLSlug(in.String())), nil
+	})
+
+	// communityMap draws the communities and their dependencies as an inline
+	// SVG. Usage: {{ currentView.Community|communityMap }}
+	pongo2.RegisterFilter("communityMap", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, ok := in.Interface().(*analyzer.CommunityMetrics)
+		if !ok {
+			return pongo2.AsSafeValue(""), nil
+		}
+		return pongo2.AsSafeValue(communityMapSVG(cm)), nil
+	})
+
+	// communityFiles serialises the files behind the communities, for the
+	// folder explorer of the page. Usage: {{ currentView.Community|communityFiles }}
+	pongo2.RegisterFilter("communityFiles", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, ok := in.Interface().(*analyzer.CommunityMetrics)
+		if !ok {
+			return pongo2.AsSafeValue(`{"dirs":[],"f":[],"c":{},"n":{},"b":[],"s":"","u":"class","d":{}}`), nil
+		}
+		return pongo2.AsSafeValue(communityFilesJSON(cm)), nil
+	})
+
+	// communityColor gives the color of the community at a position in the
+	// list; the shared kernel has its own. Usage: {{ i|communityColor:c.Shared }}
+	pongo2.RegisterFilter("communityColor", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		return pongo2.AsValue(communityColor(in.Integer(), param.Bool())), nil
+	})
+
+	// percent formats a share between 0 and 1 as a rounded percentage.
+	// Usage: {{ share|percent }}%
+	pongo2.RegisterFilter("percent", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		return pongo2.AsValue(int(in.Float()*100 + 0.5)), nil
 	})
 
 	// jsonEncode marshals any value to a JSON string for embedding in <script>.
@@ -1497,6 +1555,10 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 				return pongo2.AsValue(val), nil
 			}
 		case classifier.FamilyGroupedPredictions:
+			if val, exists := m[key]; exists {
+				return pongo2.AsValue(val), nil
+			}
+		case map[string]string:
 			if val, exists := m[key]; exists {
 				return pongo2.AsValue(val), nil
 			}
