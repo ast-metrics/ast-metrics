@@ -87,6 +87,22 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 		}, scopes),
 		engine.DefaultNamespaceDepth)
 
+	// A target inside the project is brought back to the namespace of the file
+	// declaring it before it is reduced. Reducing the name of the class itself
+	// would only work while that name is deeper than the depth kept: on a
+	// project rooted at App, App\Entity\User is three levels deep and would
+	// stay a node of its own beside App\Entity, as if it were a package that
+	// App\Entity depends on.
+	index := indexProject(aggregate.ConcernedFiles)
+	// The nodes the project owns: the namespaces of its own files, reduced the
+	// way the edges are. Every other node is foreign to it.
+	internalNodes := make(map[string]bool)
+	for _, file := range index.files {
+		if namespace := index.namespaceOfFile[file]; namespace != "" {
+			internalNodes[aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), namespace)] = true
+		}
+	}
+
 	for _, file := range aggregate.ConcernedFiles {
 		for _, dep := range dependenciesOf[file] {
 			if dep == nil {
@@ -95,7 +111,11 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 			// Reduce the namespaces to keep the nodes at the scale of a module
 			// rather than of a class, and the edges meaningful
 			fromNs := aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), scopes.sourceOf(dep))
-			toNs := aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), dep.Namespace)
+			target := dep.Namespace
+			if namespace, internal := index.targetNamespaceOf(dep, file); internal {
+				target = namespace
+			}
+			toNs := aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), target)
 			if fromNs == "" || toNs == "" || fromNs == toNs {
 				continue
 			}
@@ -105,11 +125,9 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 			edgesCount[fromNs][toNs]++
 		}
 	}
-
-	// Track internal sources (nodes that originate from project source files)
-	internalSources := make(map[string]bool, len(edgesCount))
+	// A source is the project's own even when its file declares no namespace.
 	for fromNs := range edgesCount {
-		internalSources[fromNs] = true
+		internalNodes[fromNs] = true
 	}
 
 	// Apply combined filtering: abs + relative threshold and top-K per source, with fallback top-1
@@ -169,12 +187,14 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 		}
 	}
 
-	// Mark external nodes (nodes that are only targets, never sources)
+	// Mark the nodes foreign to the project: frameworks, libraries and the
+	// standard library. A module of the project that depends on nothing is
+	// still the project's own.
 	if aggregate.ExternalNodes == nil {
 		aggregate.ExternalNodes = make(map[string]bool)
 	}
 	for id := range aggregate.Graph.Nodes {
-		if !internalSources[id] {
+		if !internalNodes[id] {
 			aggregate.ExternalNodes[id] = true
 		}
 	}
