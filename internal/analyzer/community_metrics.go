@@ -1,117 +1,119 @@
 package analyzer
 
 import (
+	"maps"
+	"slices"
+	"strings"
+
 	"github.com/ast-metrics/ast-metrics/internal/engine"
+	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
-type CommunitySubMetricsCalculator struct {
-}
-
-func NewCommunitySubMetricsCalculator() *CommunitySubMetricsCalculator {
-	return &CommunitySubMetricsCalculator{}
-}
-
-func (c *CommunitySubMetricsCalculator) Calculate(aggregate *Aggregated) {
-
-	files := aggregate.ConcernedFiles
-
-	aggregate.Community.TopCommittersPerCommunity = make(map[string]map[string]int)
-	aggregate.Community.BusFactorPerCommunity = make(map[string]int)
-
-	for _, file := range files {
-
-		// Find the graph node this file belongs to, by reducing its namespace the
-		// way the graph reduced the namespaces it was built from.
-		var namespace string
-		if file.Stmts != nil && len(file.Stmts.StmtNamespace) > 0 && file.Stmts.StmtNamespace[0].Name != nil {
-			namespace = file.Stmts.StmtNamespace[0].Name.Qualified
-			if namespace == "" {
-				namespace = file.Stmts.StmtNamespace[0].Name.Short
-			}
-			namespace = aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), namespace)
-		}
-
-		// If no namespace found, try using the file path
-		if namespace == "" {
-			namespace = engine.ReduceDepthOfNamespace(file.Path, 2)
-		}
-
-		// Find the community for this file
-		communityID, exists := aggregate.Community.NodeToCommunity[namespace]
-		if !exists {
+// ownersOfCommunities reads the git history of the files of each community
+// into its top committers and bus factor: the number of people who, together,
+// made half of the commits touching the community.
+//
+// A file belongs to the community holding most of its units: its classes when
+// the units are classes, its namespace otherwise.
+func ownersOfCommunities(aggregate *Aggregated, cm *CommunityMetrics, g *unitGraph) {
+	if aggregate == nil || cm == nil || len(cm.Communities) == 0 {
+		return
+	}
+	byID := map[string]*Community{}
+	for _, c := range cm.Communities {
+		byID[c.ID] = c
+	}
+	commits := map[string]map[string]int{} // community -> committer -> commits
+	for _, file := range aggregate.ConcernedFiles {
+		if file == nil || file.Stmts == nil || file.GetIsTest() || file.Commits == nil {
 			continue
 		}
-
-		if _, ok := aggregate.Community.TopCommittersPerCommunity[communityID]; !ok {
-			aggregate.Community.TopCommittersPerCommunity[communityID] = make(map[string]int)
-		}
-
-		if file.Commits == nil {
+		id := communityOfFile(file, cm, g, aggregate)
+		if id == "" {
 			continue
 		}
-
+		if commits[id] == nil {
+			commits[id] = map[string]int{}
+		}
 		for _, commit := range file.Commits.Commits {
-
-			// Exclude commits with no author or from
-			if commit.Author == "" {
+			if commit == nil || commit.Author == "" {
 				continue
 			}
-
-			if _, ok := aggregate.Community.TopCommittersPerCommunity[communityID][commit.Author]; !ok {
-				aggregate.Community.TopCommittersPerCommunity[communityID][commit.Author] = 0
-			}
-
-			aggregate.Community.TopCommittersPerCommunity[communityID][commit.Author]++
+			commits[id][commit.Author]++
 		}
 	}
-
-	// Calculate bus factor per community
-	for communityID, committers := range aggregate.Community.TopCommittersPerCommunity {
-		totalCommits := 0
-		for _, count := range committers {
-			totalCommits += count
+	for id, committers := range commits {
+		c := byID[id]
+		total := 0
+		for _, n := range committers {
+			total += n
 		}
-
-		if totalCommits == 0 {
-			aggregate.Community.BusFactorPerCommunity[communityID] = 0
+		c.CommitCount = total
+		if total == 0 {
 			continue
 		}
-
-		// Sort committers by count desc
-		type committer struct {
-			Name  string
-			Count int
+		sorted := make([]CommitterShare, 0, len(committers))
+		for _, name := range slices.Sorted(maps.Keys(committers)) {
+			sorted = append(sorted, CommitterShare{Name: name, Commits: committers[name]})
 		}
-		sortedCommitters := make([]committer, 0, len(committers))
-		for name, count := range committers {
-			sortedCommitters = append(sortedCommitters, committer{Name: name, Count: count})
-		}
-		// Sort manually to avoid importing sort if not needed, but sort package is standard
-		// Let's use a simple bubble sort or similar since lists are likely small, or just import sort.
-		// Actually, I should check if sort is imported. It is not in the original file.
-		// I'll implement a simple sort to avoid adding imports if possible, or just add the import.
-		// Adding import is better. I'll check imports first.
-		// Wait, I can't check imports in the middle of a replace.
-		// I'll implement a simple selection sort here.
-		for i := 0; i < len(sortedCommitters); i++ {
-			for j := i + 1; j < len(sortedCommitters); j++ {
-				if sortedCommitters[j].Count > sortedCommitters[i].Count {
-					sortedCommitters[i], sortedCommitters[j] = sortedCommitters[j], sortedCommitters[i]
-				}
-			}
-		}
-
-		busFactor := 0
-		currentSum := 0
-		threshold := int(float64(totalCommits) * 0.5)
-
-		for _, c := range sortedCommitters {
-			currentSum += c.Count
-			busFactor++
-			if currentSum >= threshold {
+		slices.SortStableFunc(sorted, func(x, y CommitterShare) int { return y.Commits - x.Commits })
+		sum := 0
+		for _, share := range sorted {
+			sum += share.Commits
+			c.BusFactor++
+			if 2*sum >= total {
 				break
 			}
 		}
-		aggregate.Community.BusFactorPerCommunity[communityID] = busFactor
+		if len(sorted) > 3 {
+			sorted = sorted[:3]
+		}
+		c.TopCommitters = sorted
 	}
+}
+
+// communityOfFile returns the id of the community a file belongs to, and an
+// empty string when none of its units was placed.
+func communityOfFile(file *pb.File, cm *CommunityMetrics, g *unitGraph, aggregate *Aggregated) string {
+	votes := map[string]int{}
+	if g.Language[file.GetProgrammingLanguage()] == GranularityClass {
+		for _, class := range engine.GetClassesInFile(file) {
+			if class == nil || class.Name == nil {
+				continue
+			}
+			if id, ok := cm.NodeToCommunity[class.Name.Qualified]; ok {
+				votes[id]++
+			}
+		}
+	}
+	if len(votes) == 0 {
+		namespace := namespaceOfFile(file)
+		if namespace == "" {
+			namespace = engine.ReduceDepthOfNamespace(file.Path, 2)
+		}
+		node := aggregate.NamespaceReducers.Reduce(file.GetProgrammingLanguage(), namespace)
+		if id, ok := cm.NodeToCommunity[node]; ok {
+			return id
+		}
+		return ""
+	}
+	best, bestVotes := "", 0
+	for _, id := range slices.SortedFunc(maps.Keys(votes), compareIDs) {
+		if votes[id] > bestVotes {
+			best, bestVotes = id, votes[id]
+		}
+	}
+	return best
+}
+
+// unitLabel is the short, human name of a unit: the class name, or the last
+// segment of a namespace.
+func unitLabel(unit string) string {
+	if unit == "" {
+		return ""
+	}
+	if i := strings.LastIndex(unit, "::"); i >= 0 {
+		unit = unit[:i]
+	}
+	return lastSegment(unit)
 }
