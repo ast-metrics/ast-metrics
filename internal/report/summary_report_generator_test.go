@@ -72,7 +72,8 @@ func aggregatedForTest() analyzer.ProjectAggregated {
 		Community: &analyzer.CommunityMetrics{
 			CommunitiesCount: 12,
 			MaxSize:          31,
-			GraphDensity:     0.14,
+			InternalShare:    0.82,
+			Granularity:      analyzer.GranularityClass,
 		},
 		TestQuality: &analyzer.TestQualityMetrics{
 			NbTestFiles:          4,

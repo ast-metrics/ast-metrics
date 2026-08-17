@@ -1,5 +1,7 @@
 package report
 
+import "github.com/ast-metrics/ast-metrics/internal/analyzer"
+
 // The report structure serves to maintain a standardized
 // report format.
 // This class should not be exposed to other packages, as
@@ -52,6 +54,9 @@ type report struct {
 	TopCommitters                        []contributor             `json:"topCommitters,omitempty"`
 	GitAnalysis                          []gitAnalysis             `json:"gitAnalysis,omitempty"`
 	PackageRelations                     map[string]map[string]int `json:"packageRelations,omitempty"` // counter of dependencies. Ex: A -> B -> 2
+	// Communities are the groups of classes that depend on each other more
+	// than on the rest of the code, with the findings read from them.
+	Communities *analyzer.CommunitiesExport `json:"communities,omitempty"`
 }
 
 type contributor struct {

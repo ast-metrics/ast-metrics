@@ -137,6 +137,10 @@ func (j *JsonReportGenerator) buildReport(projectAggregated analyzer.ProjectAggr
 		}
 	}
 
+	if combined.Community != nil {
+		r.Communities = analyzer.ExportCommunities(combined.Community, true)
+	}
+
 	// Other fields
 	r.NbFiles = combined.NbFiles
 	r.NbFunctions = combined.NbFunctions
