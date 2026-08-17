@@ -281,6 +281,27 @@ func (v *AnalyzeCommand) Execute() error {
 
 func buildProjectContext(pa analyzer.ProjectAggregated) ruleset.ProjectContext {
 	ctx := ruleset.ProjectContext{}
+	if cm := pa.Combined.Community; cm != nil {
+		info := &ruleset.CommunitiesInfo{Count: cm.CommunitiesCount, CrossSharePct: cm.CrossShare * 100}
+		names := map[string]string{}
+		for _, c := range cm.Communities {
+			names[c.ID] = c.ShortName
+		}
+		for _, cycle := range cm.Cycles {
+			members := make([]string, 0, len(cycle))
+			for _, id := range cycle {
+				members = append(members, names[id])
+			}
+			info.Cycles = append(info.Cycles, members)
+		}
+		for i := len(cm.Edges) - 1; i >= 0; i-- {
+			// edges come heaviest first: the lightest cuts first
+			if e := cm.Edges[i]; e.Back {
+				info.BackEdges = append(info.BackEdges, fmt.Sprintf("%s → %s (%d)", names[e.From], names[e.To], e.Weight))
+			}
+		}
+		ctx.Communities = info
+	}
 	tq := pa.Combined.TestQuality
 	if tq == nil {
 		return ctx

@@ -138,6 +138,12 @@ requirements:
       # max_afferent_coupling: 10
       # max_efferent_coupling: 10
       # min_maintainability: 70
+      # Communities: the groups of classes that depend on each other more
+      # than on the rest of the code, read from the dependency graph.
+      # Fail when two communities depend on each other, and when more than
+      # 20% of the dependencies cross from one community to another.
+      # no_community_cycles: true
+      # max_community_cross_share: 20
 
     volume:
       # Maximum number of lines of code per file
