@@ -51,6 +51,62 @@ type mapBox struct {
 
 // communityMapSVG draws the communities of cm.
 func communityMapSVG(cm *analyzer.CommunityMetrics) string {
+	return drawCommunityMap(cm, mapOptions{})
+}
+
+// mapOptions is what the zoomed-out map changes in the drawing.
+type mapOptions struct {
+	// blocks is true when the boxes are blocks of communities: they carry
+	// the ids of their members, list a few of their names, and lead nowhere
+	// but back to the map of the communities.
+	blocks bool
+	// members lists, per box, the ids of the communities it holds, and
+	// memberNames their short names, largest first.
+	members     map[string][]string
+	memberNames map[string][]string
+}
+
+// maxMemberLines is the number of member communities named inside a block
+// box; the rest is counted.
+const maxMemberLines = 3
+
+// communityBlocksSVG draws the zoomed-out map: the blocks of communities as
+// boxes, the dependencies between them added up, the shared kernel under.
+// The drawing is the same as the map of the communities, on a coarser
+// partition; nothing is recomputed on the page.
+func communityBlocksSVG(cm *analyzer.CommunityMetrics) string {
+	if cm == nil || len(cm.Blocks) == 0 {
+		return ""
+	}
+	byID := map[string]*analyzer.Community{}
+	for _, c := range cm.Communities {
+		byID[c.ID] = c
+	}
+	coarse := &analyzer.CommunityMetrics{
+		Granularity:      cm.Granularity,
+		CommunitiesCount: len(cm.Blocks),
+		Edges:            cm.BlockEdges,
+		Shared:           cm.Shared,
+		SharedShare:      cm.SharedShare,
+	}
+	opts := mapOptions{blocks: true, members: map[string][]string{}, memberNames: map[string][]string{}}
+	for _, b := range cm.Blocks {
+		coarse.Communities = append(coarse.Communities, &analyzer.Community{ID: b.ID, Name: b.Name, ShortName: b.Name, Size: b.Size, Cohesive: true})
+		opts.members[b.ID] = b.Communities
+		for _, id := range b.Communities {
+			if c := byID[id]; c != nil {
+				opts.memberNames[b.ID] = append(opts.memberNames[b.ID], c.ShortName)
+			}
+		}
+	}
+	if cm.Shared != nil {
+		coarse.Communities = append(coarse.Communities, cm.Shared)
+	}
+	return drawCommunityMap(coarse, opts)
+}
+
+// drawCommunityMap draws the boxes of cm, communities or blocks of them.
+func drawCommunityMap(cm *analyzer.CommunityMetrics, opts mapOptions) string {
 	if cm == nil || cm.CommunitiesCount == 0 {
 		return ""
 	}
@@ -166,16 +222,48 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 	)
 	metaOf := func(c *analyzer.Community) string {
 		meta := fmt.Sprintf("%d %s", c.Size, unitWord)
+		if opts.blocks {
+			if n := len(opts.members[c.ID]); n > 1 {
+				meta += fmt.Sprintf(" in %d communities", n)
+			}
+			return meta
+		}
 		if !c.Cohesive && len(c.Namespaces) > 1 {
 			meta += fmt.Sprintf(", %d namespaces", len(c.Namespaces))
 		}
 		return meta
 	}
+	// The lines written inside a block box: a few of its communities by
+	// name, the rest counted. A block of one community names nothing, its
+	// title is that community.
+	memberLinesOf := func(c *analyzer.Community) []string {
+		names := opts.memberNames[c.ID]
+		if !opts.blocks || len(names) < 2 {
+			return nil
+		}
+		lines := []string{}
+		for i, name := range names {
+			if i == maxMemberLines {
+				lines = append(lines, fmt.Sprintf("and %d more", len(names)-i))
+				break
+			}
+			lines = append(lines, name)
+		}
+		return lines
+	}
+	const memberLineHeight = 15.0
 	for _, b := range drawn {
 		w := float64(len([]rune(b.c.ShortName)))*charWidth + 44
 		w = math.Max(w, float64(len([]rune(metaOf(b.c))))*6.4+44)
+		lines := memberLinesOf(b.c)
+		for _, line := range lines {
+			w = math.Max(w, float64(len([]rune(line)))*6.4+44)
+		}
 		b.w = math.Min(math.Max(w, 128), 380)
 		b.h = boxHeight
+		if len(lines) > 0 {
+			b.h += 6 + memberLineHeight*float64(len(lines))
+		}
 	}
 
 	// Order inside each layer: barycenter of the neighbours, a few sweeps.
@@ -246,8 +334,9 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 	// that the boxes keep a readable size whatever their number.
 	const maxRowWidth = 1080.0
 	type row struct {
-		boxes []*mapBox
-		width float64
+		boxes  []*mapBox
+		width  float64
+		height float64
 	}
 	rowsOfLayer := make([][]row, layerCount)
 	maxRowWidthSeen := 0.0
@@ -279,6 +368,7 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 			}
 			current.boxes = append(current.boxes, b)
 			current.width += extra
+			current.height = math.Max(current.height, b.h)
 		}
 		if len(current.boxes) > 0 {
 			rowsOfLayer[li] = append(rowsOfLayer[li], current)
@@ -302,6 +392,7 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 			}
 			current.boxes = append(current.boxes, b)
 			current.width += extra
+			current.height = math.Max(current.height, b.h)
 		}
 		if len(current.boxes) > 0 {
 			rows = append(rows, current)
@@ -316,18 +407,20 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 	const rowGap = 26.0
 	y := float64(paddingTop)
 	place := func(rows []row) {
-		for ri, r := range rows {
+		if len(rows) == 0 {
+			return
+		}
+		rowY := y
+		for _, r := range rows {
 			x := paddingX + (width-2*paddingX-r.width)/2
 			for _, b := range r.boxes {
 				b.x = x
-				b.y = y + float64(ri)*(boxHeight+rowGap)
+				b.y = rowY
 				x += b.w + gapX
 			}
+			rowY += r.height + rowGap
 		}
-		n := float64(len(rows))
-		if n > 0 {
-			y += n*boxHeight + (n-1)*rowGap + gapY
-		}
+		y = rowY - rowGap + gapY
 	}
 	for li := range layers {
 		place(rowsOfLayer[li])
@@ -363,17 +456,34 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 	// to cut, the references they carry and the layers left once they are
 	// gone from the attributes of the drawing
 	cuts := cutsOf(cm)
-	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %.0f %.0f" width="%.0f" height="%.0f" style="max-width:100%%;height:auto" class="community-map" role="img" aria-label="Map of the communities and their dependencies" data-cuts="%d" data-cut-refs="%d" data-layers="%d">`, width, height, width, height, cuts.edges, cuts.references, layerCount)
+	ariaLabel, mapClass := "Map of the communities and their dependencies", "community-map"
+	if opts.blocks {
+		ariaLabel, mapClass = "Map of the blocks of communities and their dependencies", "community-map community-map--blocks"
+	}
+	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %.0f %.0f" width="%.0f" height="%.0f" style="max-width:100%%;height:auto" class="%s" role="img" aria-label="%s" data-cuts="%d" data-cut-refs="%d" data-layers="%d">`, width, height, width, height, mapClass, ariaLabel, cuts.edges, cuts.references, layerCount)
 	sb.WriteString(`<defs>`)
 	sb.WriteString(`<marker id="cm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker>`)
 	sb.WriteString(`<marker id="cm-arrow-cycle" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444"/></marker>`)
 	sb.WriteString(`</defs>`)
 
-	// Edges
+	// Edges. When two boxes depend on each other across layers, the two
+	// arrows are shifted apart so that neither hides the other.
 	sb.WriteString(`<g class="cm-edges">`)
+	reverse := map[[2]*mapBox]bool{}
+	for _, e := range edges {
+		reverse[[2]*mapBox{e.to, e.from}] = true
+	}
 	for _, e := range edges {
 		x1 := e.from.x + e.from.w/2
 		x2 := e.to.x + e.to.w/2
+		if reverse[[2]*mapBox{e.from, e.to}] && e.from.layer != e.to.layer {
+			shift := 7.0
+			if e.from.index > e.to.index {
+				shift = -shift
+			}
+			x1 += shift
+			x2 += shift
+		}
 		var y1, y2 float64
 		var d string
 		strokeWidth := 1.0 + 3.0*math.Log1p(float64(e.weight))/math.Log1p(float64(maxWeight))
@@ -420,6 +530,9 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 		if cm.Shared != nil {
 			caption = "Linked to no other community: they lean on the shared kernel alone, or on nothing"
 		}
+		if opts.blocks {
+			caption = strings.Replace(caption, "community", "block", 1)
+		}
 		fmt.Fprintf(&sb, `<line x1="%.0f" y1="%.1f" x2="%.0f" y2="%.1f" stroke="#e2e8f0" stroke-width="1"/>`, float64(paddingX), standaloneCaptionY-10, width-paddingX, standaloneCaptionY-10)
 		fmt.Fprintf(&sb, `<text x="%.1f" y="%.1f" font-size="11" fill="#64748b" font-family="var(--font-sans, system-ui, sans-serif)">%s</text>`, float64(paddingX), standaloneCaptionY+4, html.EscapeString(caption))
 	}
@@ -428,18 +541,31 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 	sb.WriteString(`<g class="cm-boxes">`)
 	for _, b := range drawn {
 		color := communityColor(b.index, false)
-		fmt.Fprintf(&sb, `<a href="#community-%s" class="cm-box" data-id="%s"><g>`, b.c.ID, b.c.ID)
+		if opts.blocks {
+			// a block leads nowhere but back to the map of its communities,
+			// which the page handles from the ids it carries
+			fmt.Fprintf(&sb, `<g class="cm-box cm-block" role="button" tabindex="0" data-id="%s" data-communities="%s">`, b.c.ID, strings.Join(opts.members[b.c.ID], " "))
+		} else {
+			fmt.Fprintf(&sb, `<a href="#community-%s" class="cm-box" data-id="%s"><g>`, b.c.ID, b.c.ID)
+		}
 		fmt.Fprintf(&sb, `<rect x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="12" fill="white" stroke="%s" stroke-width="1.5"/>`, b.x, b.y, b.w, b.h, "#e2e8f0")
 		fmt.Fprintf(&sb, `<rect x="%.1f" y="%.1f" width="4" height="%.1f" rx="2" fill="%s"/>`, b.x+10, b.y+12, b.h-24, color)
 		label := fitLabel(b.c.ShortName, int((b.w-40)/charWidth))
 		fmt.Fprintf(&sb, `<text x="%.1f" y="%.1f" font-size="13" font-weight="600" fill="#0f172a" font-family="var(--font-sans, system-ui, sans-serif)">%s</text>`, b.x+22, b.y+25, html.EscapeString(label))
 		meta := metaOf(b.c)
 		fmt.Fprintf(&sb, `<text class="cm-meta" x="%.1f" y="%.1f" font-size="11" fill="#64748b" font-family="var(--font-sans, system-ui, sans-serif)">%s</text>`, b.x+22, b.y+43, html.EscapeString(meta))
+		for i, line := range memberLinesOf(b.c) {
+			fmt.Fprintf(&sb, `<text class="cm-member" x="%.1f" y="%.1f" font-size="11" fill="#94a3b8" font-family="var(--font-sans, system-ui, sans-serif)">%s</text>`, b.x+22, b.y+boxHeight+float64(i)*memberLineHeight+2, html.EscapeString(fitLabel(line, int((b.w-40)/6.4))))
+		}
 		// the share of the box a folder holds, drawn by the page when the
 		// reader zooms on a folder
 		fmt.Fprintf(&sb, `<rect class="cm-focus" x="%.1f" y="%.1f" width="0" height="4" rx="2" fill="%s" data-full-width="%.1f" style="display:none"/>`, b.x+22, b.y+b.h-9, color, b.w-34)
 		fmt.Fprintf(&sb, `<title>%s: %s</title>`, html.EscapeString(b.c.Name), html.EscapeString(meta))
-		sb.WriteString(`</g></a>`)
+		if opts.blocks {
+			sb.WriteString(`</g>`)
+		} else {
+			sb.WriteString(`</g></a>`)
+		}
 	}
 	sb.WriteString(`</g>`)
 
@@ -480,7 +606,11 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 	}
 	notes := []string{}
 	if notDrawn > 0 {
-		notes = append(notes, fmt.Sprintf("%d smaller communit%s not drawn; the table lists them.", notDrawn, pluralIes(notDrawn)))
+		if opts.blocks {
+			notes = append(notes, fmt.Sprintf("%d smaller block%s not drawn.", notDrawn, pluralS(notDrawn)))
+		} else {
+			notes = append(notes, fmt.Sprintf("%d smaller communit%s not drawn; the table lists them.", notDrawn, pluralIes(notDrawn)))
+		}
 	}
 	if edgesTotal > len(edges) {
 		backs := 0

@@ -25,6 +25,29 @@ type CommunitiesExport struct {
 	Cycles           [][]string               `json:"cycles"`
 	Findings         []CommunityFindingExport `json:"findings"`
 	Actions          []CommunityActionExport  `json:"actions"`
+	// Blocks group the communities at a coarser grain, the zoomed-out map;
+	// BlockEdges are the dependencies between them. Absent when there is
+	// nothing to zoom out to.
+	Blocks     []CommunityBlockExport `json:"blocks,omitempty"`
+	BlockEdges []BlockEdgeExport      `json:"blockEdges,omitempty"`
+}
+
+// CommunityBlockExport is one block of communities.
+type CommunityBlockExport struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Communities []string `json:"communities"`
+	Size        int      `json:"size"`
+}
+
+// BlockEdgeExport is a dependency between two blocks, or between a block and
+// the shared kernel.
+type BlockEdgeExport struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Weight  int    `json:"weight"`
+	InCycle bool   `json:"inCycle"`
+	Back    bool   `json:"back"`
 }
 
 // CommunityExport is one community, the shared kernel included.
@@ -210,6 +233,12 @@ func ExportCommunities(cm *CommunityMetrics, withMembers bool) *CommunitiesExpor
 	}
 	for _, a := range cm.Actions {
 		export.Actions = append(export.Actions, CommunityActionExport{Kind: a.Kind, Title: a.Title, Detail: a.Detail, Effort: a.Effort, Communities: a.Communities, Units: a.Units})
+	}
+	for _, b := range cm.Blocks {
+		export.Blocks = append(export.Blocks, CommunityBlockExport{ID: b.ID, Name: b.Name, Communities: b.Communities, Size: b.Size})
+	}
+	for _, e := range cm.BlockEdges {
+		export.BlockEdges = append(export.BlockEdges, BlockEdgeExport{From: e.From, To: e.To, Weight: e.Weight, InCycle: e.InCycle, Back: e.Back})
 	}
 	return export
 }

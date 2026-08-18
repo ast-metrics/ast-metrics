@@ -114,6 +114,10 @@
     .community-map.after-cuts .cm-edge--cycle { display: none; }
     .map-caption { display: none; font-size: 0.8125rem; color: #334155; margin: 0.75rem 0 0; padding: 0.5rem 0.875rem; border-radius: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; }
     .map-caption.is-shown { display: block; }
+    .map-caption.map-caption--muted { background: #f8fafc; border-color: #e2e8f0; color: #475569; }
+    .community-map .cm-block:focus { outline: none; }
+    .community-map .cm-block:focus-visible rect:first-child { stroke: #2563eb; }
+    .map-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
     .finding-kind--exposed { background: #fff7ed; color: #c2410c; }
     .finding-kind--history-crossed, .finding-kind--history-loose { background: #f0fdfa; color: #0f766e; }
     .thin-bar { height: 4px; border-radius: 999px; background: #e8ecf1; overflow: hidden; margin: 0.3rem 0 0.2rem; }
@@ -289,16 +293,27 @@
                     <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="4" y="1" width="16" height="6" rx="1.5" fill="white" stroke="#94a3b8"/><rect x="4" y="11" width="16" height="6" rx="1.5" fill="white" stroke="#94a3b8"/><path d="M12 7v4" stroke="#94a3b8" stroke-width="1.5"/><path d="M24 15c12 0 12-11 3-11" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3 2" fill="none"/><path d="M31 1l-6 3 6 3z" fill="#ef4444"/></svg><span>Red dashed, climbing back up: it closes a cycle, and it is the lightest to cut</span></li>
                     <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="8" y="3" width="24" height="12" rx="2" fill="none" stroke="#64748b" stroke-dasharray="3 2"/></svg><span>Dashed grey box: the shared kernel, used by everyone, part of no community</span></li>
                     <li><svg viewBox="0 0 40 18" aria-hidden="true"><path d="M3 4h34" stroke="#e2e8f0" stroke-width="1"/><rect x="13" y="8" width="14" height="8" rx="1.5" fill="white" stroke="#94a3b8"/></svg><span>Under a line: linked to no other community</span></li>
+                    {% if cm.Blocks|length > 0 %}
+                    <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="4" y="2" width="32" height="14" rx="2" fill="white" stroke="#94a3b8"/><rect x="8" y="5" width="10" height="8" rx="1" fill="#f1f5f9" stroke="#cbd5e1"/><rect x="22" y="5" width="10" height="8" rx="1" fill="#f1f5f9" stroke="#cbd5e1"/></svg><span>Blocks: the same map one grain coarser, the communities grouped into the few pieces they form; click a block to open its communities</span></li>
+                    {% endif %}
                 </ul>
             </details>
         </div>
-        {% if cm.Cycles|length > 0 %}
-        <div class="seg shrink-0" role="tablist" aria-label="Arrows drawn">
-            <button role="tab" class="seg-item seg-item--active" data-map-mode="all" aria-selected="true">As it is</button>
-            <button role="tab" class="seg-item" data-map-mode="cuts" aria-selected="false">Only the cycles to cut</button>
-            <button role="tab" class="seg-item" data-map-mode="after" aria-selected="false">After the cuts</button>
+        <div class="map-controls shrink-0">
+            {% if cm.Cycles|length > 0 %}
+            <div class="seg" role="tablist" aria-label="Arrows drawn">
+                <button role="tab" class="seg-item seg-item--active" data-map-mode="all" aria-selected="true">As it is</button>
+                <button role="tab" class="seg-item" data-map-mode="cuts" aria-selected="false">Only the cycles to cut</button>
+                <button role="tab" class="seg-item" data-map-mode="after" aria-selected="false">After the cuts</button>
+            </div>
+            {% endif %}
+            {% if cm.Blocks|length > 0 %}
+            <div class="seg" role="tablist" aria-label="Grain of the map" id="map-level">
+                <button role="tab" class="seg-item seg-item--active" data-map-level="communities" aria-selected="true">Communities<span class="tab-count">{{ cm.CommunitiesCount }}</span></button>
+                <button role="tab" class="seg-item" data-map-level="blocks" aria-selected="false">Blocks<span class="tab-count">{{ cm|groupedBlocks }}</span></button>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
     </div>
     <div id="focus-banner" class="insight mb-4" style="display:none">
         <span class="dot" style="background:#2563eb"></span>
@@ -320,6 +335,7 @@
         </aside>
     </div>
     <p id="map-caption" class="map-caption" aria-live="polite"></p>
+    {% if cm.Blocks|length > 0 %}<div id="community-blocks-src" hidden>{{ cm|communityBlocks }}</div>{% endif %}
     <div id="zoom-table" class="zoom-table" style="display:none"></div>
     <div class="start-strip" id="actions-card">
         <div class="start-kicker">Where to start</div>
@@ -594,6 +610,15 @@
     var edges = [], boxes = [];
     var mapMode = 'all';
     var caption = document.getElementById('map-caption');
+    // the zoomed-out map, drawn by the report when there is one
+    var blocksSource = document.getElementById('community-blocks-src');
+    var blocksSVG = blocksSource ? blocksSource.querySelector('svg') : null;
+    var levelControl = document.getElementById('map-level');
+    var communitiesCount = {{ cm.CommunitiesCount }};
+    var blocksCount = {{ cm.Blocks|length }};
+    // the blocks holding several communities; the others stand apart on the map
+    var groupedBlocks = {{ cm|groupedBlocks }};
+    var mapLevel = 'communities';
 
     function wire(target) {
         svg = target;
@@ -605,6 +630,16 @@
             b.addEventListener('mouseleave', blur);
             b.addEventListener('focus', function () { focus(b.getAttribute('data-id')); });
             b.addEventListener('blur', blur);
+            // a block opens the map of the communities on its members
+            if (b.classList.contains('cm-block')) {
+                var open = function () {
+                    var ids = (b.getAttribute('data-communities') || '').split(' ').filter(Boolean);
+                    setLevel('communities');
+                    if (ids.length) focus(ids);
+                };
+                b.addEventListener('click', open);
+                b.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+            }
         });
     }
     function focus(id) {
@@ -642,14 +677,46 @@
         var cuts = parseInt(svg.getAttribute('data-cuts') || '0', 10);
         var refs = parseInt(svg.getAttribute('data-cut-refs') || '0', 10);
         var layers = parseInt(svg.getAttribute('data-layers') || '0', 10);
-        if (mapMode === 'after' && cuts > 0) {
-            caption.textContent = cuts + ' dependenc' + (cuts === 1 ? 'y' : 'ies') + (refs > cuts ? ' (' + refs + ' references)' : '') +
-                ' away from a clean layering: no cycle left, ' + layers + ' layer' + (layers === 1 ? '' : 's') + '.';
-        } else if (mapMode === 'after') {
-            caption.textContent = 'Nothing to cut here: no cycle between these communities.';
+        var zoomedOut = svg === blocksSVG;
+        var what = zoomedOut ? 'blocks' : 'communities';
+        var text = [];
+        if (zoomedOut) {
+            var apart = blocksCount - groupedBlocks;
+            text.push('Zoomed out: the ' + communitiesCount + ' communities form ' + groupedBlocks + ' block' + (groupedBlocks === 1 ? '' : 's') + ' at a coarser grain' +
+                (apart > 0 ? ', ' + apart + ' stand' + (apart === 1 ? 's' : '') + ' apart' : '') + '. Same code, same dependencies, bigger boxes.');
         }
-        caption.classList.toggle('is-shown', mapMode === 'after');
+        if (mapMode === 'after' && cuts > 0) {
+            text.push(cuts + ' dependenc' + (cuts === 1 ? 'y' : 'ies') + (refs > cuts ? ' (' + refs + ' references)' : '') +
+                ' away from a clean layering' + (zoomedOut ? ' of the blocks' : '') + ': no cycle left, ' + layers + ' layer' + (layers === 1 ? '' : 's') + '.');
+        } else if (mapMode === 'after') {
+            text.push('Nothing to cut here: no cycle between these ' + what + '.');
+        }
+        caption.textContent = text.join(' ');
+        caption.classList.toggle('map-caption--muted', zoomedOut && mapMode !== 'after');
+        caption.classList.toggle('is-shown', text.length > 0);
     }
+    // ---- Zooming out: the blocks the communities form ---------------------
+    // The report draws a second map, the communities grouped one grain
+    // coarser; the page only swaps the drawings. Nothing else on the page
+    // reads the blocks: the numbers, the findings and the table stay.
+    function setLevel(level) {
+        if (!blocksSVG) return;
+        mapLevel = level;
+        wrap.innerHTML = '';
+        wrap.appendChild(level === 'blocks' ? blocksSVG : originalSVG);
+        wire(level === 'blocks' ? blocksSVG : originalSVG);
+        document.querySelectorAll('[data-map-level]').forEach(function (b) {
+            var active = b.getAttribute('data-map-level') === level;
+            b.classList.toggle('seg-item--active', active);
+            b.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+    }
+    function showLevelControl(shown) {
+        if (levelControl) levelControl.hidden = !shown;
+    }
+    document.querySelectorAll('[data-map-level]').forEach(function (button) {
+        button.addEventListener('click', function () { setLevel(button.getAttribute('data-map-level')); });
+    });
     document.querySelectorAll('[data-map-mode]').forEach(function (button) {
         button.addEventListener('click', function () {
             mapMode = button.getAttribute('data-map-mode');
@@ -1168,6 +1235,9 @@
         var n = folders[path];
         var spec = localSpec(path) || globalSpec(path);
         var drawn = drawGraph(spec);
+        // the zoom on a folder is drawn at the grain of the communities
+        if (mapLevel !== 'communities') setLevel('communities');
+        showLevelControl(false);
         wrap.innerHTML = '';
         wrap.appendChild(drawn.svg);
         wire(drawn.svg);
@@ -1209,6 +1279,7 @@
         wrap.innerHTML = '';
         wrap.appendChild(originalSVG);
         wire(originalSVG);
+        showLevelControl(true);
         if (zoomTable) zoomTable.style.display = 'none';
         showGlobalTable(true);
         rows.forEach(function (row) {

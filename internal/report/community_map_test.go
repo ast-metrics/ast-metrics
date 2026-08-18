@@ -94,3 +94,41 @@ func TestFitLabelKeepsBothEnds(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestCommunityBlocksMapDrawsTheBlocksWithTheirMembers(t *testing.T) {
+	cm := sampleCommunities()
+	if svg := communityBlocksSVG(cm); svg != "" {
+		t.Fatalf("no blocks, no zoomed-out map, got %.60q", svg)
+	}
+	cm.Blocks = []analyzer.CommunityBlock{
+		{ID: "b0", Name: "Billing + 1", Communities: []string{"0", "1"}, Size: 20},
+		{ID: "b1", Name: "Users", Communities: []string{"2"}, Size: 5},
+	}
+	cm.BlockEdges = []analyzer.CommunityEdge{
+		{From: "b0", To: "b1", Weight: 3},
+		{From: "b0", To: analyzer.SharedID, Weight: 9, Shared: true},
+	}
+	svg := communityBlocksSVG(cm)
+	for _, expected := range []string{
+		`class="cm-box cm-block" role="button" tabindex="0" data-id="b0" data-communities="0 1"`,
+		`data-id="b1" data-communities="2"`,
+		">Billing + 1<", ">Users<",
+		"20 classes in 2 communities",
+		`class="cm-member"`, ">Billing<", ">Catalog<",
+		`data-from="b0" data-to="b1"`,
+		"Shared kernel (Shared)",
+		`data-cuts="0" data-cut-refs="0" data-layers="2"`,
+		"community-map--blocks",
+	} {
+		if !strings.Contains(svg, expected) {
+			t.Errorf("expected the zoomed-out map to contain %q", expected)
+		}
+	}
+	// a block of one community lists no member: its title is that community
+	if strings.Count(svg, `class="cm-member"`) != 2 {
+		t.Errorf("only the members of the block of two should be listed")
+	}
+	if strings.Contains(svg, `href="#community-b0"`) {
+		t.Errorf("a block leads to no community row")
+	}
+}
