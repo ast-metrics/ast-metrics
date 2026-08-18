@@ -323,6 +323,21 @@ func projectContextOf(agg analyzer.Aggregated) ruleset.ProjectContext {
 				info.BackEdges = append(info.BackEdges, fmt.Sprintf("%s → %s (%d)", names[e.From], names[e.To], e.Weight))
 			}
 		}
+		// The crossings between two communities proper: the shared kernel is
+		// meant to be used by everyone, so a reference to or from it is not
+		// one. Paths are made relative here, at the boundary, for the same
+		// reason as the test rules below.
+		for _, ref := range cm.CrossReferences {
+			from, to := cm.NodeToCommunity[ref.From], cm.NodeToCommunity[ref.To]
+			if from == analyzer.SharedID || to == analyzer.SharedID || from == to {
+				continue
+			}
+			info.CrossDependencies = append(info.CrossDependencies, ruleset.CrossDependencyInfo{
+				File: requirement.RelativeToCwd(cm.UnitFiles[ref.From]),
+				From: unitLabel(cm.Labels, ref.From),
+				To:   unitLabel(cm.Labels, ref.To),
+			})
+		}
 		ctx.Communities = info
 	}
 	tq := agg.TestQuality
@@ -363,4 +378,12 @@ func (v *AnalyzeCommand) ExecuteRunnerAnalysis(config *configuration.Configurati
 	}
 
 	return parsed, nil
+}
+
+// unitLabel gives the short name of a unit, falling back on its id.
+func unitLabel(labels map[string]string, unit string) string {
+	if label, ok := labels[unit]; ok && label != "" {
+		return label
+	}
+	return unit
 }

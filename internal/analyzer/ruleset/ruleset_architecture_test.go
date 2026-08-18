@@ -38,7 +38,7 @@ func TestArchitectureRuleset_IsEnabled_WithRules(t *testing.T) {
 		},
 	}
 	ruleset := &architectureRuleset{cfg: cfg}
-	
+
 	if !ruleset.IsEnabled() {
 		t.Error("expected ruleset to be enabled with configured rules")
 	}
@@ -51,14 +51,14 @@ func TestArchitectureRuleset_Enabled_ReturnsConfiguredRules(t *testing.T) {
 	cfg := &configuration.ConfigurationRequirements{
 		Rules: &configuration.ConfigurationRequirementsRules{
 			Architecture: &configuration.ConfigurationArchitectureRules{
-				AfferentCoupling:  &maxAfferent,
-				EfferentCoupling:  &maxEfferent,
-				Maintainability:   &minMaintainability,
+				AfferentCoupling: &maxAfferent,
+				EfferentCoupling: &maxEfferent,
+				Maintainability:  &minMaintainability,
 			},
 		},
 	}
 	ruleset := &architectureRuleset{cfg: cfg}
-	
+
 	enabled := ruleset.Enabled()
 	if len(enabled) != 3 {
 		t.Fatalf("expected 3 enabled rules, got %d", len(enabled))
@@ -80,7 +80,7 @@ func TestArchitectureRuleset_Enabled_ReturnsConfiguredRules(t *testing.T) {
 func TestArchitectureRuleset_All_ReturnsAllPossibleRules(t *testing.T) {
 	ruleset := &architectureRuleset{}
 	all := ruleset.All()
-	
+
 	if len(all) != 7 {
 		t.Fatalf("expected 7 total rules, got %d", len(all))
 	}
@@ -91,13 +91,41 @@ func TestArchitectureRuleset_All_ReturnsAllPossibleRules(t *testing.T) {
 	}
 
 	expectedRules := []string{
-		"coupling", "afferent_coupling", "efferent_coupling", 
-		"maintainability", "no_circular_dependencies", 
+		"coupling", "afferent_coupling", "efferent_coupling",
+		"maintainability", "no_circular_dependencies",
 		"max_responsibilities", "no_god_class",
 	}
 	for _, name := range expectedRules {
 		if !ruleNames[name] {
 			t.Errorf("missing expected rule: %s", name)
 		}
+	}
+}
+
+func TestArchitectureRuleset_ProjectRules_ListTheCommunityRules(t *testing.T) {
+	all := (&architectureRuleset{}).AllProjectRules()
+	names := map[string]bool{}
+	for _, rule := range all {
+		names[rule.Name()] = true
+	}
+	for _, name := range []string{"no_community_cycles", "max_community_cross_share", "no_cross_community_dependencies"} {
+		if !names[name] {
+			t.Errorf("missing project rule: %s", name)
+		}
+	}
+
+	enabled := true
+	cfg := &configuration.ConfigurationRequirements{
+		Rules: &configuration.ConfigurationRequirementsRules{
+			Architecture: &configuration.ConfigurationArchitectureRules{NoCrossCommunityDependencies: &enabled},
+		},
+	}
+	ruleset := &architectureRuleset{cfg: cfg}
+	rules := ruleset.EnabledProjectRules()
+	if len(rules) != 1 || rules[0].Name() != "no_cross_community_dependencies" {
+		t.Fatalf("expected only no_cross_community_dependencies to be enabled, got %d rules", len(rules))
+	}
+	if !ruleset.IsEnabled() {
+		t.Error("a ruleset with only project rules should count as enabled")
 	}
 }
