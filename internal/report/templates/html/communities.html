@@ -8,6 +8,7 @@
 {% else %}
 
 {% include "partials/language_tabs.html" with pageBase="communities" %}
+{% set unitWord = "classes" %}{% if cm.Granularity == "namespace" %}{% set unitWord = "packages" %}{% endif %}
 
 <style>
     /* Community map: the SVG is drawn in Go; the page only adds hover states */
@@ -80,7 +81,7 @@
     .link-detail .arrow { color: #94a3b8; }
     .members summary { cursor: pointer; font-size: 0.75rem; color: #2563eb; }
     .members summary:hover { text-decoration: underline; }
-    .members ul { margin-top: 0.5rem; columns: 2; column-gap: 1.5rem; font-size: 0.75rem; }
+    .members ul { margin-top: 0.5rem; column-width: 9rem; column-gap: 1.5rem; font-size: 0.75rem; }
     .members li { font-family: var(--font-mono); color: #334155; break-inside: avoid; padding: 0.1rem 0; }
     .members .ns-head { font-family: var(--font-sans); font-weight: 600; color: #0f172a; margin-top: 0.4rem; list-style: none; break-after: avoid; }
     .finding { display: flex; gap: 0.875rem; align-items: flex-start; padding: 0.875rem 0; border-bottom: 1px solid #f1f5f9; }
@@ -101,6 +102,81 @@
     .more-findings[open] > summary::before { content: "▾ "; }
     .share-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: #e8ecf1; margin-top: 0.75rem; }
     .share-bar > span { height: 100%; }
+    .freeze { margin-top: 0.6rem; font-size: 0.75rem; color: #475569; max-width: 30rem; line-height: 1.5; }
+    .freeze-lock { font-size: 0.7rem; margin-right: 0.15rem; }
+    .freeze-offer > summary { cursor: pointer; list-style: none; display: inline-block; padding: 0.2rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 999px; background: white; color: #334155; font-weight: 500; }
+    .freeze-offer > summary::-webkit-details-marker { display: none; }
+    .freeze-offer > summary:hover { border-color: #94a3b8; color: #0f172a; }
+    .freeze-how { margin-top: 0.5rem; max-width: 26rem; line-height: 1.5; }
+    .freeze-how p { margin: 0.25rem 0; }
+    .freeze-how pre { font-family: var(--font-mono); font-size: 0.6875rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 0.5rem 0.75rem; margin: 0.4rem 0; overflow-x: auto; }
+    .freeze code { font-family: var(--font-mono); font-size: 0.6875rem; background: #f1f5f9; padding: 0.05rem 0.3rem; border-radius: 4px; }
+    .community-map.after-cuts .cm-edge--cycle { display: none; }
+    .map-caption { display: none; font-size: 0.8125rem; color: #334155; margin: 0.75rem 0 0; padding: 0.5rem 0.875rem; border-radius: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; }
+    .map-caption.is-shown { display: block; }
+    .finding-kind--exposed { background: #fff7ed; color: #c2410c; }
+    .finding-kind--history-crossed, .finding-kind--history-loose { background: #f0fdfa; color: #0f766e; }
+    .thin-bar { height: 4px; border-radius: 999px; background: #e8ecf1; overflow: hidden; margin: 0.3rem 0 0.2rem; }
+    .thin-bar > span { display: block; height: 100%; }
+    .thin-bar--good > span { background: #22c55e; }
+    .thin-bar--warn > span { background: #f59e0b; }
+    .thin-bar--bad > span { background: #ef4444; }
+    .cell-main { font-size: 0.8125rem; color: #0f172a; font-weight: 500; }
+    .cell-sub { font-size: 0.75rem; color: #64748b; }
+    .cell-note { font-size: 0.6875rem; color: #94a3b8; margin-top: 0.3rem; }
+    .cell-note[data-tip] { cursor: help; text-decoration: underline dotted #cbd5e1; text-underline-offset: 2px; }
+    .members li.is-border { text-decoration: underline dotted #94a3b8; text-underline-offset: 3px; cursor: help; }
+    .members .entry-tag { display: inline-block; font-family: var(--font-sans); font-size: 0.5625rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #c2410c; background: #fff7ed; border-radius: 4px; padding: 0 0.3rem; margin-left: 0.3rem; vertical-align: 1px; }
+    .members .legend { font-family: var(--font-sans); font-size: 0.6875rem; color: #94a3b8; margin-top: 0.4rem; column-span: all; }
+    .comm-table.view-history .col-s, .comm-table.view-structure .col-h { display: none; }
+    /* Where to start: a compact strip under the map */
+    .start-strip { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid #f1f5f9; }
+    .start-kicker { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 0.25rem; }
+    .start-empty { font-size: 0.8125rem; color: #475569; margin: 0.25rem 0 0; }
+    .actions { list-style: none; margin: 0; padding: 0; }
+    .action-row { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.4rem 0.5rem; margin: 0 -0.5rem; border-radius: 8px; color: inherit; text-decoration: none; }
+    .action-row:hover { background: #f8fafc; }
+    .action-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; margin-top: 0.45rem; }
+    .action-dot--cut { background: #ef4444; }
+    .action-dot--move { background: #0f766e; }
+    .action-dot--gather { background: #d97706; }
+    .action-dot--invert { background: #7c3aed; }
+    .action-title { display: block; font-weight: 600; color: #0f172a; font-size: 0.875rem; line-height: 1.4; }
+    .action-row:hover .action-title { color: #1d4ed8; }
+    .action-detail { display: block; color: #64748b; font-size: 0.75rem; line-height: 1.45; margin-top: 0.05rem; }
+    .action-effort { flex-shrink: 0; align-self: flex-start; font-size: 0.6875rem; font-family: var(--font-mono); color: #475569; background: #f1f5f9; border-radius: 999px; padding: 0.15rem 0.55rem; white-space: nowrap; margin-top: 0.15rem; }
+    /* Reading the communities: one card, three tabs */
+    .seg--tabs .seg-item { font-size: 0.9375rem; padding: 0.5rem 1.1rem; }
+    .tab-count { display: inline-block; font-family: var(--font-mono); font-size: 0.6875rem; font-weight: 500; color: #64748b; background: rgba(15, 23, 42, 0.06); border-radius: 999px; padding: 0.05rem 0.45rem; margin-left: 0.4rem; vertical-align: 1px; }
+    .seg-item--active .tab-count { color: #334155; }
+    .reading-panel > .card-sub { margin-bottom: 0.75rem; }
+    .comm-row { cursor: pointer; }
+    .comm-row:hover td { background: #fafbfd; }
+    .comm-row.is-open td { border-bottom-color: transparent; }
+    .comm-row:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
+    .row-caret { color: #94a3b8; font-size: 0.7rem; width: 0.7rem; flex-shrink: 0; margin-top: 0.25rem; transition: transform 0.15s ease; display: inline-block; }
+    .comm-row.is-open .row-caret { transform: rotate(90deg); }
+    .comm-detail td { background: #f8fafc; padding: 0.875rem 1rem 1rem 2.6rem; border-bottom: 1px solid #f1f5f9; }
+    .comm-detail:target td, .comm-row:target + .comm-detail td { background: #eff6ff; }
+    .comm-table.view-history .comm-detail .col-s { display: block; }
+    .detail-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem; }
+    .detail-title { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 0.35rem; }
+    .links-line { color: #475569; }
+    @media (max-width: 900px) { .detail-grid { grid-template-columns: 1fr; } }
+    .ns-top-name { min-width: 0; }
+    .lead-more { display: inline-block; margin-left: 0.35rem; font-size: 0.8125rem; color: #64748b; text-decoration: none; white-space: nowrap; }
+    .lead-more:hover { color: #1d4ed8; text-decoration: underline; }
+    /* How to read this: a legend folded away for the returning reader */
+    .howto { font-size: 0.8125rem; color: #475569; margin-top: 0.5rem; }
+    .howto > summary { cursor: pointer; list-style: none; color: #2563eb; display: inline-block; }
+    .howto > summary::-webkit-details-marker { display: none; }
+    .howto > summary::before { content: "▸ "; color: #94a3b8; }
+    .howto[open] > summary::before { content: "▾ "; }
+    .howto-list { list-style: none; margin: 0.5rem 0 0; padding: 0.6rem 0.9rem; display: grid; grid-template-columns: 1fr; gap: 0.35rem 1.5rem; background: #f8fafc; border-radius: 10px; }
+    .howto-list li { display: flex; align-items: center; gap: 0.6rem; line-height: 1.4; }
+    .howto-list svg { width: 40px; height: 18px; flex-shrink: 0; }
+    @media (min-width: 900px) { .howto-list { grid-template-columns: 1fr 1fr; } }
+    .ns-top .ns-share { flex-shrink: 0; white-space: nowrap; }
 </style>
 
 <!-- Verdict -->
@@ -113,11 +189,8 @@
                 <span class="verdict-muted">{{ cm.VerdictNote }}</span>
             </h1>
             <p class="verdict-lead mt-4">
-                A community is a group of {% if cm.Granularity == "namespace" %}packages{% else %}classes{% endif %} that depend on each other more than on the rest of the code.
-                It is found on the dependencies alone, without reading folder names, so it shows the modules the code
-                actually forms, next to the ones the namespaces declare.
-                {% if cm.Shared %}The classes the whole codebase leans on, base classes, value objects, interfaces everybody implements,
-                are set aside as the <strong>shared kernel</strong>: they belong to every community, and to none.{% endif %}
+                Groups of {% if cm.Granularity == "namespace" %}packages{% else %}classes{% endif %} that depend on each other more than on the rest of the code, read from the dependencies alone, never from the folder names.
+                <a class="lead-more" href="https://ast-metrics.dev/metrics/community-detection/" target="_blank" rel="noopener">How this is computed &rarr;</a>
             </p>
         </div>
         {% if cm.CommunitiesCount > 0 %}
@@ -138,15 +211,26 @@
                 </div>
                 {% endif %}
                 <div>
-                    <div class="kpi-value {% if cm.CrossShare > 0.3 %}text-bad{% elif cm.CrossShare > 0.15 %}text-warn{% else %}text-good{% endif %}">{{ cm.CrossShare|percent }}%</div>
+                    {# a low cross share must not read as good when a cycle ties most communities into one block #}
+                    <div class="kpi-value {% if cm.CrossShare > 0.3 %}text-bad{% elif cm.CrossShare > 0.15 or cm.LargestCycle >= 4 %}text-warn{% else %}text-good{% endif %}">{{ cm.CrossShare|percent }}%</div>
                     <div class="kpi-label">cross from one<br>community to another
-                        <span tabindex="0" data-tip="The lower, the more independent the communities are from each other. Dependencies on the shared kernel are not counted here." class="text-slate-300">&#9432;</span>
+                        <span tabindex="0" data-tip="The lower, the more independent the communities are from each other. Dependencies on the shared kernel are not counted here.{% if cm.LargestCycle >= 4 and cm.CrossShare <= 0.3 %} Here the figure is low but {{ cm.LargestCycle }} communities depend on each other in a cycle: they still cannot be told apart.{% endif %}" class="text-slate-300">&#9432;</span>
                     </div>
                 </div>
                 {% if cm.Cycles|length > 0 %}
                 <div>
                     <div class="kpi-value text-bad">{{ cm.Cycles|length }}</div>
-                    <div class="kpi-label">cycle{% if cm.Cycles|length != 1 %}s{% endif %} between<br>communities</div>
+                    <div class="kpi-label">cycle{% if cm.Cycles|length != 1 %}s{% endif %} between<br>communities
+                        <span tabindex="0" data-tip="A cycle is a group of communities that all reach each other through their dependencies, directly or through others: none of them can be changed, tested or extracted alone. The red dashed arrows on the map are the lightest dependencies to cut to break them." class="text-slate-300">&#9432;</span>
+                    </div>
+                </div>
+                {% endif %}
+                {% if cm.HistoryAvailable and cm.HistoryCommits > 0 %}
+                <div>
+                    <div class="kpi-value {% if cm.HistoryAgreement >= 0.7 %}text-good{% elif cm.HistoryAgreement >= 0.4 %}text-warn{% else %}text-bad{% endif %}">{{ cm.HistoryAgreement|percent }}%</div>
+                    <div class="kpi-label">of the commits agree<br>with these boundaries
+                        <span tabindex="0" data-tip="Share of the commits touching several files whose files all sit in the same community: when high, the way people work matches the boundaries. Read from the {{ cm.HistoryCommits }} commits of the last year." class="text-slate-300">&#9432;</span>
+                    </div>
                 </div>
                 {% endif %}
             </div>
@@ -154,6 +238,32 @@
                 <span style="width: {{ cm.InternalShare|percent }}%; background: #22c55e"></span>
                 <span style="width: {{ cm.SharedShare|percent }}%; background: #94a3b8"></span>
                 <span style="width: {{ cm.CrossShare|percent }}%; background: #f59e0b"></span>
+            </div>
+            {% set freeze = projectAggregated.Evaluation|communityFreeze %}
+            <div class="freeze">
+                {% if freeze.Enabled and freeze.Baselined == 0 and freeze.Fresh > 0 %}
+                <span class="freeze-state">
+                    <span class="freeze-lock">&#128275;</span>
+                    Boundaries watched, not frozen yet: <a href="linters.html" class="text-bad font-semibold hover:underline">{{ freeze.Fresh }} crossing{% if freeze.Fresh != 1 %}s{% endif %}</a> fail the lint. Run <code>ast-metrics baseline</code> to accept them and catch only the new ones.
+                </span>
+                {% elif freeze.Enabled %}
+                <span class="freeze-state">
+                    <span class="freeze-lock">&#128274;</span>
+                    Boundaries frozen: {{ freeze.Baselined }} crossing{% if freeze.Baselined != 1 %}s{% endif %} in the baseline,
+                    {% if freeze.Fresh > 0 %}<a href="linters.html" class="text-bad font-semibold hover:underline">{{ freeze.Fresh }} new since</a>{% else %}<span class="text-good">none new since</span>{% endif %}.
+                    <span tabindex="0" data-tip="The rule no_cross_community_dependencies fails on every dependency crossing from one community to another, the shared kernel left aside. The ones accepted with `ast-metrics baseline` are frozen; a new one fails `ast-metrics lint`.{% if scopeKind != "all" %} Counted over the whole project, not this scope alone.{% endif %}" class="text-slate-300">&#9432;</span>
+                </span>
+                {% else %}
+                <details class="freeze-offer">
+                    <summary>Freeze these boundaries</summary>
+                    <div class="freeze-how">
+                        <p>Every dependency crossing from a community to another becomes a lint error; the ones already there are accepted once, and only a new crossing fails from then on.</p>
+                        {# the page strips leading spaces: the indentation is written as entities #}
+                        <pre>requirements:&#10;&#160;&#160;rules:&#10;&#160;&#160;&#160;&#160;architecture:&#10;&#160;&#160;&#160;&#160;&#160;&#160;no_cross_community_dependencies: true</pre>
+                        <p>Then <code>ast-metrics baseline</code> to accept today's crossings: new crossings will then fail <code>ast-metrics lint</code>.</p>
+                    </div>
+                </details>
+                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -164,19 +274,29 @@
 <!-- Map -->
 <div class="soft-card animate-fade-in-up mb-6">
     <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
             <h2 class="card-title">The map</h2>
             <p class="card-sub">
-                Arrows point from a community to the ones it depends on, thicker for more references.
-                Communities nobody depends on sit at the top, the ones everything rests on at the bottom;
-                <span class="text-bad font-medium">a red dashed arrow goes against that flow: it closes a cycle</span>.
-                Hover a community to follow its dependencies, click it for the details.
+                Arrows point to what a community depends on, thicker for more references.
+                <span class="text-bad font-medium">A red dashed arrow is the one to cut to break a cycle.</span>
             </p>
+            <details class="howto" data-howto>
+                <summary>How to read this</summary>
+                <ul class="howto-list">
+                    <li><svg viewBox="0 0 40 18" aria-hidden="true"><path d="M3 9h28" stroke="#94a3b8" stroke-width="1.5" fill="none"/><path d="M28 5l6 4-6 4z" fill="#94a3b8"/></svg><span>A depends on B</span></li>
+                    <li><svg viewBox="0 0 40 18" aria-hidden="true"><path d="M3 9h28" stroke="#94a3b8" stroke-width="4" fill="none"/><path d="M28 3l8 6-8 6z" fill="#94a3b8"/></svg><span>Thicker: more references</span></li>
+                    <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="12" y="1" width="16" height="6" rx="1.5" fill="white" stroke="#94a3b8"/><rect x="12" y="11" width="16" height="6" rx="1.5" fill="white" stroke="#94a3b8"/><path d="M20 7v3" stroke="#94a3b8" stroke-width="1.5"/></svg><span>What nobody depends on sits at the top, what everything rests on at the bottom</span></li>
+                    <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="4" y="1" width="16" height="6" rx="1.5" fill="white" stroke="#94a3b8"/><rect x="4" y="11" width="16" height="6" rx="1.5" fill="white" stroke="#94a3b8"/><path d="M12 7v4" stroke="#94a3b8" stroke-width="1.5"/><path d="M24 15c12 0 12-11 3-11" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3 2" fill="none"/><path d="M31 1l-6 3 6 3z" fill="#ef4444"/></svg><span>Red dashed, climbing back up: it closes a cycle, and it is the lightest to cut</span></li>
+                    <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="8" y="3" width="24" height="12" rx="2" fill="none" stroke="#64748b" stroke-dasharray="3 2"/></svg><span>Dashed grey box: the shared kernel, used by everyone, part of no community</span></li>
+                    <li><svg viewBox="0 0 40 18" aria-hidden="true"><path d="M3 4h34" stroke="#e2e8f0" stroke-width="1"/><rect x="13" y="8" width="14" height="8" rx="1.5" fill="white" stroke="#94a3b8"/></svg><span>Under a line: linked to no other community</span></li>
+                </ul>
+            </details>
         </div>
         {% if cm.Cycles|length > 0 %}
         <div class="seg shrink-0" role="tablist" aria-label="Arrows drawn">
-            <button role="tab" class="seg-item seg-item--active" data-map-mode="all" aria-selected="true">All dependencies</button>
+            <button role="tab" class="seg-item seg-item--active" data-map-mode="all" aria-selected="true">As it is</button>
             <button role="tab" class="seg-item" data-map-mode="cuts" aria-selected="false">Only the cycles to cut</button>
+            <button role="tab" class="seg-item" data-map-mode="after" aria-selected="false">After the cuts</button>
         </div>
         {% endif %}
     </div>
@@ -199,16 +319,53 @@
             <div class="community-folders-tree" id="community-folders-tree"></div>
         </aside>
     </div>
+    <p id="map-caption" class="map-caption" aria-live="polite"></p>
     <div id="zoom-table" class="zoom-table" style="display:none"></div>
+    <div class="start-strip" id="actions-card">
+        <div class="start-kicker">Where to start</div>
+        {% if cm.Actions|length == 0 %}
+        <p class="start-empty">Nothing urgent: the communities are separated cleanly.</p>
+        {% else %}
+        <ol class="actions">
+            {% for a in cm.Actions %}
+            <li>
+                <a class="action-row" href="#community-{{ a.Communities|first }}" data-communities="{% for id in a.Communities %}{% if forloop.Counter0 > 0 %} {% endif %}{{ id }}{% endfor %}">
+                    <span class="action-dot action-dot--{{ a.Kind }}" title="{% if a.Kind == "cut" %}Cut a dependency{% elif a.Kind == "move" %}Move code{% elif a.Kind == "gather" %}Gather the entries{% elif a.Kind == "invert" %}Invert a dependency{% else %}{{ a.Kind }}{% endif %}"></span>
+                    <span class="min-w-0 flex-1">
+                        <span class="action-title">{{ a.Title }}</span>
+                        <span class="action-detail">{{ a.Detail }}</span>
+                    </span>
+                    {% if a.Effort %}<span class="action-effort">{{ a.Effort }}</span>{% endif %}
+                </a>
+            </li>
+            {% endfor %}
+        </ol>
+        {% endif %}
+    </div>
     <script id="data-community-files" type="application/json">{{ cm|communityFiles }}</script>
 </div>
 
-<!-- Findings -->
-<div class="soft-card animate-fade-in-up mb-6">
-    <div class="mb-2">
-        <h2 class="card-title">What stands out</h2>
-        <p class="card-sub">Read from the map: cycles first, then the shared kernel, then where the folders and the dependencies disagree.</p>
+<!-- Reading the communities: what stands out, the table, the history -->
+{% set withHistory = cm.HistoryAvailable and cm.HistoryCommits > 0 %}
+<div class="soft-card animate-fade-in-up mb-6" id="reading-card">
+    <div class="seg seg--tabs mb-4" role="tablist" aria-label="Reading the communities">
+        <button type="button" role="tab" class="seg-item seg-item--active" data-panel="findings" aria-selected="true" aria-controls="panel-findings">What stands out<span class="tab-count">{{ cm.Findings|length }}</span></button>
+        <button type="button" role="tab" class="seg-item" data-panel="communities" aria-selected="false" aria-controls="panel-communities">Communities<span class="tab-count">{{ cm.CommunitiesCount }}</span></button>
+        {% if withHistory %}<button type="button" role="tab" class="seg-item" data-panel="history" aria-selected="false" aria-controls="panel-communities">History</button>{% endif %}
     </div>
+    <details class="howto mb-4" data-howto>
+        <summary>How to read this</summary>
+        <ul class="howto-list">
+            <li><svg viewBox="0 0 40 18" aria-hidden="true"><path d="M4 5h32M4 9h22M4 13h28" stroke="#94a3b8" stroke-width="1.5"/></svg><span>A finding is one thing the analysis noticed, most important first</span></li>
+            <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="4" y="3" width="32" height="12" rx="3" fill="#fef2f2"/><text x="20" y="12" text-anchor="middle" font-size="7" font-weight="600" fill="#b91c1c" letter-spacing="0.5">CYCLE</text></svg><span>The pill says which kind</span></li>
+            <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="6" y="4" width="28" height="10" rx="2" fill="#fff7ed"/><text x="20" y="11.5" text-anchor="middle" font-size="6.5" font-weight="600" fill="#c2410c" letter-spacing="0.5">ENTRY</text></svg><span>A class the rest of the code reaches: the de facto API of its community</span></li>
+            <li><svg viewBox="0 0 40 18" aria-hidden="true"><text x="20" y="11" text-anchor="middle" font-size="9" font-family="monospace" fill="#334155">Name</text><path d="M7 14.5h26" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="1.5 2"/></svg><span>Dotted name: a mobile member, it moves to another community when the detection is tuned differently</span></li>
+            <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="3" y="4" width="14" height="10" rx="2" fill="white" stroke="#94a3b8"/><rect x="23" y="4" width="14" height="10" rx="2" fill="white" stroke="#94a3b8"/><circle cx="20" cy="9" r="3" fill="#0f766e"/></svg><span>Changes together: two communities touched by the same commits, history disagrees with the boundary</span></li>
+            <li><svg viewBox="0 0 40 18" aria-hidden="true"><path d="M4 14L12 8l7 3 8-6 5 4" stroke="#94a3b8" stroke-width="1.5" fill="none"/><circle cx="12" cy="8" r="1.8" fill="#64748b"/><circle cx="19" cy="11" r="1.8" fill="#64748b"/><circle cx="27" cy="5" r="1.8" fill="#64748b"/><circle cx="32" cy="9" r="1.8" fill="#64748b"/></svg><span>Confidence and mobile members come from running the detection at four other resolutions</span></li>
+        </ul>
+    </details>
+    <div class="reading-panel" id="panel-findings" role="tabpanel">
+    <p class="card-sub">Cycles first, then the shared kernel, then where the folders{% if cm.HistoryAvailable %}, the commits{% endif %} and the dependencies disagree.</p>
     {% if cm.Findings|length == 0 %}
     <div class="insight insight--good mt-3"><span class="dot sev-good"></span><div>Nothing stands out: the communities are independent from each other and each stays inside its namespace.</div></div>
     {% else %}
@@ -216,8 +373,8 @@
         {% for f in cm.Findings %}
         {% if forloop.Counter == 7 %}<details class="more-findings"><summary>{% with cm.Findings|length as n %}Show {{ n - 6 }} more{% endwith %}</summary>{% endif %}
         <div class="finding" id="finding-{{ forloop.Counter }}">
-            <span class="finding-kind finding-kind--{{ f.Kind }}">
-                {% if f.Kind == "cycle" %}cycle{% elif f.Kind == "shared" %}shared kernel{% elif f.Kind == "shared-leak" %}kernel leak{% elif f.Kind == "split" %}split folder{% elif f.Kind == "spread" %}spread{% elif f.Kind == "layered" %}layers{% elif f.Kind == "bridge" %}bridge{% else %}{{ f.Kind }}{% endif %}
+            <span class="finding-kind finding-kind--{{ f.Kind }}" tabindex="0" data-tip="{% if f.Kind == "cycle" %}Communities that reach each other through their dependencies: none can be changed, tested or extracted alone.{% elif f.Kind == "shared" %}The classes the whole codebase leans on, set aside from every community.{% elif f.Kind == "shared-leak" %}The shared kernel depends on the code that uses it: those references should be inverted or moved out, or the kernel cannot change alone.{% elif f.Kind == "split" %}A folder whose classes fall in several communities: its name promises a unit the dependencies do not form.{% elif f.Kind == "spread" %}A community filed in several folders: one module scattered across the tree.{% elif f.Kind == "layered" %}The namespaces name layers (controllers, repositories…) while the dependencies group the code by feature: the folders and the modules disagree.{% elif f.Kind == "bridge" %}A class carrying most of the traffic between two communities: the seam between them.{% elif f.Kind == "exposed" %}A community reached from everywhere: no member acts as its entry, so it has no real boundary.{% elif f.Kind == "history-crossed" %}Two communities the same commits keep touching: the way people work disagrees with the boundary.{% elif f.Kind == "history-loose" %}A community whose members change with other code more than with each other: it is not worked on as one thing.{% else %}{{ f.Kind }}{% endif %}">
+                {% if f.Kind == "cycle" %}cycle{% elif f.Kind == "shared" %}shared kernel{% elif f.Kind == "shared-leak" %}kernel leak{% elif f.Kind == "split" %}split folder{% elif f.Kind == "spread" %}spread{% elif f.Kind == "layered" %}layers vs features{% elif f.Kind == "bridge" %}bridge{% elif f.Kind == "exposed" %}no boundary{% elif f.Kind == "history-crossed" %}changes together{% elif f.Kind == "history-loose" %}never as a whole{% else %}{{ f.Kind }}{% endif %}
             </span>
             <div class="min-w-0">
                 <div class="finding-title">{{ f.Title }}</div>
@@ -228,26 +385,35 @@
         {% endfor %}
     </div>
     {% endif %}
-</div>
-
-<!-- Communities -->
-<div class="soft-card animate-fade-in-up mb-6" id="communities-table-card">
-    <div class="mb-4">
-        <h2 class="card-title">The communities</h2>
-        <p class="card-sub">
-            Largest first. "Filed under" says where the members sit in the namespaces: a full bar means the folders and the dependencies agree, a bar in several shades means the community cuts across them.
-        </p>
     </div>
+    <div class="reading-panel" id="panel-communities" role="tabpanel" hidden>
+            <p class="card-sub" id="table-sub-structure">
+                Largest first. Open a row for its members, its namespaces and its links.
+            </p>
+            {% if withHistory %}
+            <p class="card-sub" id="table-sub-history" hidden>
+                Largest first. What the commits of the last year say of each community.
+            </p>
+            {% endif %}
+    <p class="text-sm text-slate-500" id="table-zoomed-note" hidden>The folder zoomed on is drawn on its own under the map, with the communities its code forms by itself. <button type="button" class="text-blue-700 hover:underline" data-clear-zoom>Show everything</button></p>
+    <div id="communities-table-card">
     <div class="overflow-x-auto">
-        <table class="comm-table">
+        <table class="comm-table view-structure">
             <thead>
             <tr>
-                <th style="width: 24%">Community</th>
-                <th style="width: 5%">Size</th>
-                <th style="width: 21%">Filed under</th>
-                <th style="width: 18%">Depends on</th>
-                <th style="width: 18%">Used by</th>
-                {% if currentView.CommitCountForPeriod > 0 %}<th style="width: 14%">Owners</th>{% endif %}
+                <th style="width: 30%">Community</th>
+                <th class="col-s" style="width: 7%">Size</th>
+                <th class="col-s" style="width: 24%">Filed under</th>
+                <th class="col-s" style="width: 17%">Boundary <span tabindex="0" data-tip="How many members the rest of the code reaches. A community entered through a few members has a boundary; one reached from everywhere is a bag of {{ unitWord }}. Under it, whether the members stay put when the detection is tuned differently." class="text-slate-300 font-normal">&#9432;</span></th>
+                <th class="col-s" style="width: 22%">Links <span tabindex="0" data-tip="How many communities this one depends on, and how many depend on it, the shared kernel included. Open the row to see which." class="text-slate-300 font-normal">&#9432;</span></th>
+                {% if withHistory %}
+                <th class="col-h" style="width: 10%">Commits</th>
+                <th class="col-h" style="width: 18%">Changes as a whole <span tabindex="0" data-tip="Share of the commits touching several files of the project, and at least one of this community, that stayed inside it (the shared kernel allowed). High: the community is worked on as one thing. Low: its members change with other people's code more than with each other." class="text-slate-300 font-normal">&#9432;</span></th>
+                <th class="col-h" style="width: 24%">Changes with <span tabindex="0" data-tip="The other communities the same commits touch, most often first, with the share of this community's commits they take." class="text-slate-300 font-normal">&#9432;</span></th>
+                <th class="col-h" style="width: 18%">Owners</th>
+                {% elif currentView.CommitCountForPeriod > 0 %}
+                <th style="width: 14%">Owners</th>
+                {% endif %}
             </tr>
             </thead>
             <tbody>
@@ -255,25 +421,20 @@
             {% set rowColor = forloop.Counter0|communityColor:c.Shared %}
             {# the references behind each link are written for the communities shown first: the smaller ones, folded away, keep the page light #}
             {% set detailed = forloop.Counter0 < 40 or c.Shared %}
-            <tr id="community-{{ c.ID }}"{% if forloop.Counter0 >= 40 and not c.Shared %} class="row-more" hidden{% endif %}>
+            {% set folded = forloop.Counter0 >= 40 and not c.Shared %}
+            <tr id="community-{{ c.ID }}" class="comm-row{% if folded %} row-more{% endif %}" data-id="{{ c.ID }}" tabindex="0" aria-expanded="false" aria-controls="community-{{ c.ID }}-detail"{% if folded %} hidden{% endif %}>
                 <td>
                     <div class="flex items-start gap-2">
+                        <span class="row-caret" aria-hidden="true">▸</span>
                         <span class="comm-swatch" style="background: {{ rowColor }}"></span>
                         <div class="min-w-0">
                             <div class="comm-name">{{ c.ShortName }}</div>
-                            {% if c.Hint %}<div class="comm-hint" title="The classes carrying the most dependencies inside the community">{{ c.Hint }}</div>{% endif %}
-                            <details class="members mt-1">
-                                <summary>{{ c.Size }} member{% if c.Size != 1 %}s{% endif %}{% if c.Externals|length > 0 %}, relies on {{ c.Externals|length }} external package{% if c.Externals|length != 1 %}s{% endif %}{% endif %}</summary>
-                                {% if c.Externals|length > 0 %}
-                                <div class="comm-hint mt-2">Relies on {% for e in c.Externals %}{% if forloop.Counter0 > 0 %}, {% endif %}<span class="ident">{{ e.Namespace }}</span>{% endfor %}</div>
-                                {% endif %}
-                                <ul data-lazy-members="{{ c.ID }}">{% if cm.Granularity == "namespace" %}{% for u in c.Units %}<li>{{ cm.Labels|getMapValue:u|default:u }}</li>{% endfor %}{% endif %}</ul>
-                            </details>
+                            {% if c.Hint %}<div class="comm-hint" title="The {{ unitWord }} carrying the most dependencies inside the community">{{ c.Hint }}</div>{% endif %}
                         </div>
                     </div>
                 </td>
-                <td class="font-mono text-slate-700 whitespace-nowrap">{{ c.Size }}</td>
-                <td>
+                <td class="col-s font-mono text-slate-700 whitespace-nowrap">{{ c.Size }}</td>
+                <td class="col-s">
                     {% with c.Namespaces|first as top %}
                     <div class="ns-top">
                         <span class="ns-top-name" title="{{ top.Namespace }}">{% if top.Label %}{{ top.Label }}{% else %}(no namespace){% endif %}</span>
@@ -283,34 +444,62 @@
                     <div class="ns-meter" title="{% for ns in c.Namespaces %}{% if forloop.Counter0 < 6 %}{% if forloop.Counter0 > 0 %}, {% endif %}{% if ns.Label %}{{ ns.Label }}{% else %}(no namespace){% endif %} {{ ns.Share|percent }}%{% endif %}{% endfor %}">
                         {% for ns in c.Namespaces %}{% if forloop.Counter0 < 5 %}<span style="width: {{ ns.Share|percent }}%; background: {{ rowColor }}; opacity: {% if forloop.Counter0 == 0 %}1{% elif forloop.Counter0 == 1 %}0.55{% elif forloop.Counter0 == 2 %}0.4{% else %}0.28{% endif %}"></span>{% endif %}{% endfor %}
                     </div>
-                    {% if c.Namespaces|length > 1 %}
-                    <div class="ns-others">
-                        {% for ns in c.Namespaces %}{% if forloop.Counter0 > 0 and forloop.Counter0 < 4 %}<span title="{{ ns.Namespace }}">{% if ns.Label %}{{ ns.Label }}{% else %}(no namespace){% endif %} <span class="ns-share">{{ ns.Share|percent }}%</span></span>{% endif %}{% endfor %}
-                        {% if c.Namespaces|length > 4 %}{% with c.Namespaces|length as n %}<span class="ns-share">+{{ n - 4 }} more</span>{% endwith %}{% endif %}
-                    </div>
+                    {% if c.Namespaces|length > 1 %}{% with c.Namespaces|length as n %}<div class="cell-note">and {{ n - 1 }} other namespace{% if n != 2 %}s{% endif %}</div>{% endwith %}{% endif %}
+                </td>
+                <td class="col-s">
+                    {% if c.Shared %}<span class="text-slate-400" title="The shared kernel is reached from everywhere by definition">—</span>{% else %}
+                    {% if c.ExposedCount == 0 %}
+                    <div class="cell-main text-slate-400">no entry</div>
+                    <div class="cell-sub">nothing reaches in</div>
+                    {% else %}
+                    <div class="cell-main" tabindex="0" data-tip="{{ unitWord|capfirst }} the rest of the code reaches: {{ c.Exposed|communityLabels:cm }}{% if c.ExposedCount > 5 %}…{% endif %}">{{ c.ExposedCount }} entr{% if c.ExposedCount == 1 %}y{% else %}ies{% endif %}</div>
+                    <div class="cell-sub">of {{ c.Size }} {{ unitWord }}</div>
+                    <div class="thin-bar {% if c.ExposedShare <= 0.25 %}thin-bar--good{% elif c.ExposedShare <= 0.5 %}thin-bar--warn{% else %}thin-bar--bad{% endif %}"><span style="width: {{ c.ExposedShare|percent }}%"></span></div>
+                    {% endif %}
+                    {% if c.Confidence >= 0.9 %}
+                    <div class="cell-note" tabindex="0" data-tip="Its members stay together when the detection is tuned differently: the boundary is not an accident of the settings">settled</div>
+                    {% elif c.Border|length > 0 %}
+                    <div class="cell-note" tabindex="0" data-tip="These members move to another community when the detection is tuned differently: they sit on the edge. {{ c.Border|communityLabels:cm }}{% if c.Border|length > 5 %}…{% endif %}">{{ c.Border|length }} mobile</div>
+                    {% endif %}
                     {% endif %}
                 </td>
-                <td class="link-list">
-                    {% if c.Uses|length == 0 %}<span class="text-slate-400">nothing</span>{% endif %}
-                    {% for l in c.Uses %}{% if forloop.Counter0 < 5 %}
-                    {% if detailed %}<details class="link-detail">
-                        <summary><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></summary>
-                        <ul>{% for d in l.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul>
-                    </details>{% else %}<div><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></div>{% endif %}
-                    {% endif %}{% endfor %}
-                    {% if c.Uses|length > 5 %}{% with c.Uses|length as n %}<div class="text-slate-400">+{{ n - 5 }} more</div>{% endwith %}{% endif %}
+                <td class="col-s">
+                    <div class="cell-sub links-line">
+                        {% if c.Uses|length == 0 and c.UsedBy|length == 0 %}<span class="text-slate-400">linked to nothing</span>{% else %}
+                        {% if c.Uses|length > 0 %}uses <span class="font-mono text-slate-700">{{ c.Uses|length }}</span>{% else %}uses none{% endif %}
+                        <span class="text-slate-300">·</span>
+                        {% if c.UsedBy|length > 0 %}used by <span class="font-mono text-slate-700">{{ c.UsedBy|length }}</span>{% else %}used by none{% endif %}
+                        {% endif %}
+                    </div>
                 </td>
-                <td class="link-list">
-                    {% if c.UsedBy|length == 0 %}<span class="text-slate-400">nobody</span>{% endif %}
-                    {% for l in c.UsedBy %}{% if forloop.Counter0 < 5 %}
-                    {% if detailed %}<details class="link-detail">
-                        <summary><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></summary>
-                        <ul>{% for d in l.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul>
-                    </details>{% else %}<div><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></div>{% endif %}
-                    {% endif %}{% endfor %}
-                    {% if c.UsedBy|length > 5 %}{% with c.UsedBy|length as n %}<div class="text-slate-400">+{{ n - 5 }} more</div>{% endwith %}{% endif %}
+                {% if withHistory %}
+                <td class="col-h">
+                    {% if c.HistoryCommits == 0 %}<span class="text-slate-400">untouched</span>{% else %}
+                    <div class="cell-main font-mono">{{ c.HistoryCommits }}</div>
+                    <div class="cell-sub">this year</div>
+                    {% endif %}
                 </td>
-                {% if currentView.CommitCountForPeriod > 0 %}
+                <td class="col-h">
+                    {% if c.HistoryMultiFileCommits < 5 %}<span class="text-slate-400" title="Fewer than 5 commits touch several files here: too few to tell">—</span>{% else %}
+                    <div class="cell-main">{{ c.HistoryCohesion|percent }}%</div>
+                    <div class="cell-sub">of {{ c.HistoryMultiFileCommits }} multi-file commits stayed inside</div>
+                    <div class="thin-bar {% if c.HistoryCohesion >= 0.5 %}thin-bar--good{% elif c.HistoryCohesion >= 0.2 %}thin-bar--warn{% else %}thin-bar--bad{% endif %}"><span style="width: {{ c.HistoryCohesion|percent }}%"></span></div>
+                    {% endif %}
+                </td>
+                <td class="col-h link-list">
+                    {% if c.ChangesWith|length == 0 %}<span class="text-slate-400">nothing else</span>{% endif %}
+                    {% for cc in c.ChangesWith %}{% if forloop.Counter0 < 3 %}
+                    <div{% if cc.Pair.From %} tabindex="0" data-tip="Most often {{ cc.Pair.From }} with {{ cc.Pair.To }}, {{ cc.Pair.Weight }} commit{% if cc.Pair.Weight != 1 %}s{% endif %} changing both"{% endif %}><a href="#community-{{ cc.ID }}" class="hover:underline">{{ cc.Name }}</a> <span class="w">{{ cc.Share|percent }}%</span></div>
+                    {% endif %}{% endfor %}
+                    {% if c.ChangesWith|length > 3 %}{% with c.ChangesWith|length as n %}<div class="text-slate-400">and {{ n - 3 }} more</div>{% endwith %}{% endif %}
+                </td>
+                <td class="col-h link-list">
+                    {% if c.CommitCount == 0 %}<span class="text-slate-400">no commits</span>{% else %}
+                    <div>bus factor <span class="font-mono font-semibold {% if c.BusFactor <= 1 %}text-bad{% elif c.BusFactor == 2 %}text-warn{% else %}text-good{% endif %}">{{ c.BusFactor }}</span></div>
+                    {% for t in c.TopCommitters %}<div class="truncate" title="{{ t.Name }}">{{ t.Name }} <span class="w">{{ t.Commits }}</span></div>{% endfor %}
+                    {% endif %}
+                </td>
+                {% elif currentView.CommitCountForPeriod > 0 %}
                 <td class="link-list">
                     {% if c.CommitCount == 0 %}<span class="text-slate-400">no commits</span>{% else %}
                     <div>bus factor <span class="font-mono font-semibold {% if c.BusFactor <= 1 %}text-bad{% elif c.BusFactor == 2 %}text-warn{% else %}text-good{% endif %}">{{ c.BusFactor }}</span></div>
@@ -318,6 +507,53 @@
                     {% endif %}
                 </td>
                 {% endif %}
+            </tr>
+            {# the detail panel of the row: every namespace, the links with the references behind them, the members #}
+            <tr id="community-{{ c.ID }}-detail" class="comm-detail{% if folded %} row-more{% endif %}" data-for="{{ c.ID }}" hidden>
+                <td colspan="10">
+                    <div class="detail-grid">
+                        <div>
+                            <div class="detail-title">Filed under</div>
+                            <div class="ns-meter" style="margin-top: 0.15rem">
+                                {% for ns in c.Namespaces %}{% if forloop.Counter0 < 8 %}<span style="width: {{ ns.Share|percent }}%; background: {{ rowColor }}; opacity: {% if forloop.Counter0 == 0 %}1{% elif forloop.Counter0 == 1 %}0.55{% elif forloop.Counter0 == 2 %}0.4{% else %}0.28{% endif %}"></span>{% endif %}{% endfor %}
+                            </div>
+                            <div>
+                                {% for ns in c.Namespaces %}{% if forloop.Counter0 < 12 %}<span class="ns-chip" title="{{ ns.Namespace }}">{% if ns.Label %}{{ ns.Label }}{% else %}(no namespace){% endif %} <span class="ns-share">{{ ns.Share|percent }}%</span></span>{% endif %}{% endfor %}
+                                {% if c.Namespaces|length > 12 %}{% with c.Namespaces|length as n %}<span class="cell-note whitespace-nowrap">and {{ n - 12 }} more</span>{% endwith %}{% endif %}
+                            </div>
+                        </div>
+                        <div class="link-list">
+                            <div class="detail-title">Depends on</div>
+                            {% if c.Uses|length == 0 %}<span class="text-slate-400">nothing</span>{% endif %}
+                            {% for l in c.Uses %}{% if forloop.Counter0 < 8 %}
+                            {% if detailed and l.Details|length > 0 %}<details class="link-detail">
+                                <summary><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></summary>
+                                <ul>{% for d in l.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul>
+                            </details>{% else %}<div><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></div>{% endif %}
+                            {% endif %}{% endfor %}
+                            {% if c.Uses|length > 8 %}{% with c.Uses|length as n %}<div class="text-slate-400">and {{ n - 8 }} more</div>{% endwith %}{% endif %}
+                        </div>
+                        <div class="link-list">
+                            <div class="detail-title">Used by</div>
+                            {% if c.UsedBy|length == 0 %}<span class="text-slate-400">nobody</span>{% endif %}
+                            {% for l in c.UsedBy %}{% if forloop.Counter0 < 8 %}
+                            {% if detailed and l.Details|length > 0 %}<details class="link-detail">
+                                <summary><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></summary>
+                                <ul>{% for d in l.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul>
+                            </details>{% else %}<div><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></div>{% endif %}
+                            {% endif %}{% endfor %}
+                            {% if c.UsedBy|length > 8 %}{% with c.UsedBy|length as n %}<div class="text-slate-400">and {{ n - 8 }} more</div>{% endwith %}{% endif %}
+                        </div>
+                    </div>
+                    {% if c.Externals|length > 0 %}
+                    <div class="comm-hint mt-3">Relies on {% for e in c.Externals %}{% if forloop.Counter0 > 0 %}, {% endif %}<span class="ident">{{ e.Namespace }}</span>{% endfor %}</div>
+                    {% endif %}
+                    <details class="members mt-2">
+                        <summary>{{ c.Size }} member{% if c.Size != 1 %}s{% endif %}</summary>
+                        <ul data-lazy-members="{{ c.ID }}">{% if cm.Granularity == "namespace" %}{% for u in c.Units %}<li{% if u in c.Border %} class="is-border" title="Mobile member: it moves to another community when the detection is tuned differently"{% endif %}>{{ cm.Labels|getMapValue:u|default:u }}{% if not c.Shared and u in c.Exposed %}<span class="entry-tag" title="Entry: reached from outside the community, the de facto API">entry</span>{% endif %}</li>{% endfor %}
+                        {% if c.Exposed|length > 0 or c.Border|length > 0 %}<li class="legend">{% if c.Exposed|length > 0 and not c.Shared %}entry: reached from outside the community{% endif %}{% if c.Border|length > 0 %}{% if c.Exposed|length > 0 and not c.Shared %}; {% endif %}dotted: moves at another resolution{% endif %}</li>{% endif %}{% endif %}</ul>
+                    </details>
+                </td>
             </tr>
             {% endfor %}
             </tbody>
@@ -332,10 +568,23 @@
         stand apart from these communities: they neither use nor are used by another part of the project, or barely so.
     </p>
     {% endif %}
+    </div>
+    </div>
 </div>
 
 <script>
 (function () {
+    // ---- How to read this: open on the first visit, folded from then on -----
+    (function () {
+        var howtos = document.querySelectorAll('details[data-howto]');
+        var seen = true;
+        try {
+            seen = !!localStorage.getItem('am-communities-howto');
+            if (!seen) localStorage.setItem('am-communities-howto', '1');
+        } catch (e) { seen = true; }
+        if (!seen) howtos.forEach(function (d) { d.open = true; });
+    })();
+
     // ---- The map: hovering a community lights up its dependencies -------
     var wrap = document.getElementById('community-map-wrap');
     if (!wrap) return;
@@ -343,13 +592,14 @@
     if (!svg) return;
     var originalSVG = svg;
     var edges = [], boxes = [];
-    var cutsOnly = false;
+    var mapMode = 'all';
+    var caption = document.getElementById('map-caption');
 
     function wire(target) {
         svg = target;
         edges = Array.prototype.slice.call(svg.querySelectorAll('.cm-edge'));
         boxes = Array.prototype.slice.call(svg.querySelectorAll('.cm-box'));
-        svg.classList.toggle('cuts-only', cutsOnly);
+        applyMode();
         boxes.forEach(function (b) {
             b.addEventListener('mouseenter', function () { focus(b.getAttribute('data-id')); });
             b.addEventListener('mouseleave', blur);
@@ -358,11 +608,12 @@
         });
     }
     function focus(id) {
+        var ids = Array.isArray(id) ? id : [id];
         svg.classList.add('is-focused');
         var lit = {};
-        lit[id] = true;
+        ids.forEach(function (i) { lit[i] = true; });
         edges.forEach(function (e) {
-            var on = e.getAttribute('data-from') === id || e.getAttribute('data-to') === id;
+            var on = ids.indexOf(e.getAttribute('data-from')) >= 0 || ids.indexOf(e.getAttribute('data-to')) >= 0;
             e.classList.toggle('is-lit', on);
             if (on) { lit[e.getAttribute('data-from')] = true; lit[e.getAttribute('data-to')] = true; }
         });
@@ -374,18 +625,128 @@
         boxes.forEach(function (b) { b.classList.remove('is-lit'); });
     }
     wire(originalSVG);
+    document.querySelectorAll('.action-row[data-communities]').forEach(function (row) {
+        var ids = row.getAttribute('data-communities').split(' ').filter(Boolean);
+        if (!ids.length) return;
+        row.addEventListener('mouseenter', function () { focus(ids); });
+        row.addEventListener('mouseleave', blur);
+    });
 
-    // The switch between every arrow and the ones closing a cycle.
+    // The switch between every arrow, the ones closing a cycle, and the map
+    // once they are cut. The drawing carries what the last view says: how
+    // many dependencies to cut, and how many layers are left without them.
+    function applyMode() {
+        svg.classList.toggle('cuts-only', mapMode === 'cuts');
+        svg.classList.toggle('after-cuts', mapMode === 'after');
+        if (!caption) return;
+        var cuts = parseInt(svg.getAttribute('data-cuts') || '0', 10);
+        var refs = parseInt(svg.getAttribute('data-cut-refs') || '0', 10);
+        var layers = parseInt(svg.getAttribute('data-layers') || '0', 10);
+        if (mapMode === 'after' && cuts > 0) {
+            caption.textContent = cuts + ' dependenc' + (cuts === 1 ? 'y' : 'ies') + (refs > cuts ? ' (' + refs + ' references)' : '') +
+                ' away from a clean layering: no cycle left, ' + layers + ' layer' + (layers === 1 ? '' : 's') + '.';
+        } else if (mapMode === 'after') {
+            caption.textContent = 'Nothing to cut here: no cycle between these communities.';
+        }
+        caption.classList.toggle('is-shown', mapMode === 'after');
+    }
     document.querySelectorAll('[data-map-mode]').forEach(function (button) {
         button.addEventListener('click', function () {
-            cutsOnly = button.getAttribute('data-map-mode') === 'cuts';
-            svg.classList.toggle('cuts-only', cutsOnly);
+            mapMode = button.getAttribute('data-map-mode');
+            applyMode();
             document.querySelectorAll('[data-map-mode]').forEach(function (other) {
                 var active = other === button;
                 other.classList.toggle('seg-item--active', active);
                 other.setAttribute('aria-selected', active ? 'true' : 'false');
             });
         });
+    });
+
+    // The three readings of the last card: what stands out, the table of
+    // the communities as the dependencies see them, the same table as the
+    // commits see it. One tab shows one panel; the two table tabs share
+    // the panel and switch its columns.
+    var table = document.querySelector('.comm-table');
+    var tabs = Array.prototype.slice.call(document.querySelectorAll('[data-panel]'));
+    var currentTab = 'findings';
+    function showTab(name) {
+        if (!tabs.some(function (t) { return t.getAttribute('data-panel') === name; })) return;
+        currentTab = name;
+        var findings = document.getElementById('panel-findings'), comm = document.getElementById('panel-communities');
+        if (findings) findings.hidden = name !== 'findings';
+        if (comm) comm.hidden = name === 'findings';
+        if (table) {
+            table.classList.toggle('view-structure', name !== 'history');
+            table.classList.toggle('view-history', name === 'history');
+        }
+        var subS = document.getElementById('table-sub-structure'), subH = document.getElementById('table-sub-history');
+        if (subS) subS.hidden = name === 'history';
+        if (subH) subH.hidden = name !== 'history';
+        tabs.forEach(function (t) {
+            var active = t.getAttribute('data-panel') === name;
+            t.classList.toggle('seg-item--active', active);
+            t.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+    }
+    tabs.forEach(function (t) { t.addEventListener('click', function () { showTab(t.getAttribute('data-panel')); }); });
+    var moreRows = document.getElementById('rows-more');
+    if (moreRows) {
+        moreRows.addEventListener('click', function () {
+            document.querySelectorAll('.comm-table tr.row-more').forEach(function (r) { if (r.classList.contains('comm-row')) r.hidden = false; r.classList.remove('row-more'); });
+            moreRows.remove();
+        });
+    }
+    // ---- The detail panel of a row -----------------------------------------
+    // Each community row hides a second row holding its namespaces, its
+    // links and its members. Clicking the row, a box of the map or a link
+    // to the community opens it.
+    function panelOf(id) { return document.getElementById('community-' + id + '-detail'); }
+    function setOpen(id, open) {
+        var row = document.getElementById('community-' + id), panel = panelOf(id);
+        if (!row || !panel) return;
+        if (open && row.classList.contains('row-more')) {
+            var more = document.getElementById('rows-more');
+            if (more) more.click();
+        }
+        panel.hidden = !open;
+        row.classList.toggle('is-open', open);
+        row.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    function openCommunity(id, scroll) {
+        if (currentTab === 'findings') showTab('communities');
+        setOpen(id, true);
+        var row = document.getElementById('community-' + id);
+        if (row && scroll) row.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    document.querySelectorAll('.comm-table tr.comm-row').forEach(function (row) {
+        row.addEventListener('click', function (e) {
+            if (e.target.closest('a, summary, button, [data-tip]')) return;
+            setOpen(row.getAttribute('data-id'), row.getAttribute('aria-expanded') !== 'true');
+        });
+        row.addEventListener('keydown', function (e) {
+            if (e.target !== row || (e.key !== 'Enter' && e.key !== ' ')) return;
+            e.preventDefault();
+            setOpen(row.getAttribute('data-id'), row.getAttribute('aria-expanded') !== 'true');
+        });
+    });
+    // a link to a community, from the map, a panel or the address, opens its panel
+    function openFromHash() {
+        var m = /^#community-([^-]+)$/.exec(location.hash);
+        if (m) openCommunity(m[1], false);
+        else if (/^#finding-/.test(location.hash)) showTab('findings');
+    }
+    window.addEventListener('hashchange', openFromHash);
+    openFromHash();
+    document.addEventListener('click', function (e) {
+        var a = e.target.closest('a[href^="#community-"]');
+        if (!a) return;
+        var id = a.getAttribute('href').slice('#community-'.length);
+        // the map is redrawn on zoom: its boxes are wired here, not one by one
+        if (a.classList.contains('cm-box') && !document.getElementById('community-' + id)) return;
+        openCommunity(id, false);
+    });
+    document.addEventListener('click', function (e) {
+        if (e.target.closest('a[href^="#finding-"]')) showTab('findings');
     });
 
     // ---- Zoom on a folder --------------------------------------------------
@@ -630,7 +991,10 @@
         var height = y;
 
         // the drawing
-        var root = el('svg', { viewBox: '0 0 ' + Math.round(width) + ' ' + Math.round(height), width: Math.round(width), height: Math.round(height), style: 'max-width:100%;height:auto', 'class': 'community-map', role: 'img' });
+        var cutCount = 0, cutRefs = 0;
+        edgeList.forEach(function (e) { if (e.back) { cutCount++; cutRefs += e.weight; } });
+        var root = el('svg', { viewBox: '0 0 ' + Math.round(width) + ' ' + Math.round(height), width: Math.round(width), height: Math.round(height), style: 'max-width:100%;height:auto', 'class': 'community-map', role: 'img',
+            'data-cuts': cutCount, 'data-cut-refs': cutRefs, 'data-layers': layerCount });
         var defs = el('defs');
         ['cm-arrow:#94a3b8', 'cm-arrow-cycle:#ef4444'].forEach(function (spec) {
             var parts = spec.split(':');
@@ -691,42 +1055,70 @@
 
     // ---- Zoom state ---------------------------------------------------------
     var banner = document.getElementById('focus-banner');
-    var rows = Array.prototype.slice.call(document.querySelectorAll('.comm-table tbody tr'));
+    var rows = Array.prototype.slice.call(document.querySelectorAll('.comm-table tbody tr.comm-row'));
     // The members of a community are written on demand, from the files
     // behind it: a page listing every class of every community up front
     // would weigh more than the analysis it presents.
-    function memberNames(fileIndices) {
-        var counts = {};
+    // Each member is named after its file; the ones the rest of the code
+    // reaches are tagged as entries, the ones another resolution moves
+    // elsewhere are dotted.
+    function memberNames(fileIndices, exposed, border) {
+        var counts = {}, isEntry = {}, isBorder = {};
+        var exposedSet = {}, borderSet = {};
+        (exposed || []).forEach(function (fi) { exposedSet[fi] = true; });
+        (border || []).forEach(function (fi) { borderSet[fi] = true; });
         fileIndices.forEach(function (fi) {
             var f = data.f[fi];
             var name = f.slice(f.lastIndexOf('/') + 1).replace(/\.[a-z0-9]+$/i, '');
             counts[name] = (counts[name] || 0) + 1;
+            if (exposedSet[fi]) isEntry[name] = true;
+            if (borderSet[fi]) isBorder[name] = true;
         });
-        return Object.keys(counts).sort().map(function (name) { return counts[name] > 1 ? name + ' ×' + counts[name] : name; });
+        return Object.keys(counts).sort().map(function (name) {
+            return { label: counts[name] > 1 ? name + ' ×' + counts[name] : name, entry: !!isEntry[name], border: !!isBorder[name] };
+        });
     }
     document.querySelectorAll('ul[data-lazy-members]').forEach(function (ul) {
         var det = ul.closest('details');
         if (!det) return;
         det.addEventListener('toggle', function () {
             if (!det.open || ul.children.length) return;
-            var files = data.c[ul.getAttribute('data-lazy-members')];
+            var id = ul.getAttribute('data-lazy-members');
+            var files = data.c[id];
             if (!files) return;
-            memberNames(files).forEach(function (name) {
+            var exposed = (data.x || {})[id], border = (data.m || {})[id];
+            var shared = id === data.s;
+            var members = memberNames(files, shared ? [] : exposed, border);
+            var entries = 0, borders = 0;
+            members.forEach(function (m) {
                 var li = document.createElement('li');
-                li.textContent = name;
+                li.textContent = m.label;
+                if (m.border) { li.className = 'is-border'; li.title = 'Mobile member: it moves to another community when the detection is tuned differently'; borders++; }
+                if (m.entry) {
+                    var tag = document.createElement('span');
+                    tag.className = 'entry-tag';
+                    tag.title = 'Entry: reached from outside the community, the de facto API';
+                    tag.textContent = 'entry';
+                    li.appendChild(tag);
+                    entries++;
+                }
                 ul.appendChild(li);
             });
+            if (entries || borders) {
+                var legend = document.createElement('li');
+                legend.className = 'legend';
+                legend.textContent = (entries ? 'entry: reached from outside the community' : '') + (entries && borders ? '; ' : '') + (borders ? 'dotted: moves at another resolution' : '');
+                ul.appendChild(legend);
+            }
         });
     });
-    var moreRows = document.getElementById('rows-more');
-    if (moreRows) {
-        moreRows.addEventListener('click', function () {
-            document.querySelectorAll('.comm-table tr.row-more').forEach(function (r) { r.hidden = false; r.classList.remove('row-more'); });
-            moreRows.remove();
-        });
-    }
     var zoomTable = document.getElementById('zoom-table');
     var globalTable = document.getElementById('communities-table-card');
+    var zoomedNote = document.getElementById('table-zoomed-note');
+    function showGlobalTable(shown) {
+        if (globalTable) globalTable.style.display = shown ? '' : 'none';
+        if (zoomedNote) zoomedNote.hidden = shown;
+    }
     function renderLocalTable(spec) {
         if (!zoomTable) return;
         zoomTable.innerHTML = '';
@@ -781,15 +1173,17 @@
         wire(drawn.svg);
         if (data.d && data.d[path]) {
             renderLocalTable(spec);
-            if (globalTable) globalTable.style.display = 'none';
+            showGlobalTable(false);
         } else {
             if (zoomTable) zoomTable.style.display = 'none';
-            if (globalTable) globalTable.style.display = '';
+            showGlobalTable(true);
         }
         rows.forEach(function (row) {
             var id = row.id.replace('community-', '');
             var here = n.per[id] || 0;
             row.classList.toggle('out-of-focus', here === 0);
+            var panel = row.nextElementSibling;
+            if (panel && panel.classList.contains('comm-detail')) panel.classList.toggle('out-of-focus', here === 0);
             var name = row.querySelector('.comm-name');
             if (name) {
                 var chip = name.querySelector('.focus-chip');
@@ -816,9 +1210,11 @@
         wrap.appendChild(originalSVG);
         wire(originalSVG);
         if (zoomTable) zoomTable.style.display = 'none';
-        if (globalTable) globalTable.style.display = '';
+        showGlobalTable(true);
         rows.forEach(function (row) {
             row.classList.remove('out-of-focus');
+            var panel = row.nextElementSibling;
+            if (panel && panel.classList.contains('comm-detail')) panel.classList.remove('out-of-focus');
             var chip = row.querySelector('.focus-chip');
             if (chip) chip.style.display = 'none';
         });
@@ -827,6 +1223,7 @@
         render();
     }
     document.getElementById('focus-clear').addEventListener('click', clearZoom);
+    document.querySelectorAll('[data-clear-zoom]').forEach(function (b) { b.addEventListener('click', clearZoom); });
     render();
     // a folder named in the address (#folder=app/Billing) is zoomed on load,
     // so that a zoom can be shared as a link

@@ -358,8 +358,12 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 	}
 
 	var sb strings.Builder
-	// drawn at its natural size, shrunk by the page when it is wider than it
-	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %.0f %.0f" width="%.0f" height="%.0f" style="max-width:100%%;height:auto" class="community-map" role="img" aria-label="Map of the communities and their dependencies">`, width, height, width, height)
+	// drawn at its natural size, shrunk by the page when it is wider than it;
+	// the "after the cuts" view of the page reads the number of dependencies
+	// to cut, the references they carry and the layers left once they are
+	// gone from the attributes of the drawing
+	cuts := cutsOf(cm)
+	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %.0f %.0f" width="%.0f" height="%.0f" style="max-width:100%%;height:auto" class="community-map" role="img" aria-label="Map of the communities and their dependencies" data-cuts="%d" data-cut-refs="%d" data-layers="%d">`, width, height, width, height, cuts.edges, cuts.references, layerCount)
 	sb.WriteString(`<defs>`)
 	sb.WriteString(`<marker id="cm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker>`)
 	sb.WriteString(`<marker id="cm-arrow-cycle" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444"/></marker>`)
@@ -496,6 +500,23 @@ func communityMapSVG(cm *analyzer.CommunityMetrics) string {
 	}
 	sb.WriteString(`</svg>`)
 	return sb.String()
+}
+
+// mapCuts counts the dependencies to cut to leave no cycle: the back edges
+// between communities, and the references they carry.
+type mapCuts struct {
+	edges, references int
+}
+
+func cutsOf(cm *analyzer.CommunityMetrics) mapCuts {
+	out := mapCuts{}
+	for _, e := range cm.Edges {
+		if e.Back && !e.Shared {
+			out.edges++
+			out.references += e.Weight
+		}
+	}
+	return out
 }
 
 // kernelSegment is one namespace of the shared kernel, for the bar under it.

@@ -25,7 +25,7 @@ func ownersOfCommunities(aggregate *Aggregated, cm *CommunityMetrics, g *unitGra
 	}
 	commits := map[string]map[string]int{} // community -> committer -> commits
 	for _, file := range aggregate.ConcernedFiles {
-		if file == nil || file.Stmts == nil || file.GetIsTest() || file.Commits == nil {
+		if file == nil || file.Stmts == nil || file.GetIsTest() || file.Commits == nil || isTestSupportPath(file.Path) {
 			continue
 		}
 		id := communityOfFile(file, cm, g, aggregate)

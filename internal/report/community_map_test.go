@@ -44,6 +44,9 @@ func TestCommunityMapDrawsBoxesEdgesAndTheKernel(t *testing.T) {
 		`class="cm-edge cm-edge--cycle" data-from="1" data-to="0"`,
 		"Shared kernel (Shared)",
 		"12 classes",
+		// what the "after the cuts" view says: one back edge of one
+		// reference, and two layers once it is gone
+		`data-cuts="1" data-cut-refs="1" data-layers="2"`,
 	} {
 		if !strings.Contains(svg, expected) {
 			t.Errorf("expected the map to contain %q", expected)

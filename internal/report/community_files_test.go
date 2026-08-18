@@ -15,6 +15,8 @@ func TestCommunityFilesJSONCarriesFilesAndCommunities(t *testing.T) {
 		`App\Catalog\Item`:    "/p/src/Catalog/Item.php",
 	}
 	cm.Communities[0].Units = []string{`App\Billing\Invoice`, `App\Billing\Payer`}
+	cm.Communities[0].Exposed = []string{`App\Billing\Invoice`}
+	cm.Communities[0].Border = []string{`App\Billing\Payer`}
 	cm.Communities[1].Units = []string{`App\Catalog\Item`}
 	cm.NodeToCommunity = map[string]string{`App\Billing\Invoice`: "0", `App\Billing\Payer`: "0", `App\Catalog\Item`: "1"}
 	cm.Folders = []analyzer.FolderCommunities{{
@@ -28,6 +30,8 @@ func TestCommunityFilesJSONCarriesFilesAndCommunities(t *testing.T) {
 		Files       [][2]interface{}          `json:"f"`
 		Units       map[string][]int          `json:"c"`
 		Communities map[string][3]interface{} `json:"n"`
+		Exposed     map[string][]int          `json:"x"`
+		Border      map[string][]int          `json:"m"`
 		Back        []string                  `json:"b"`
 		Shared      string                    `json:"s"`
 		Folders     map[string]struct {
@@ -44,6 +48,10 @@ func TestCommunityFilesJSONCarriesFilesAndCommunities(t *testing.T) {
 	}
 	if len(out.Units["0"]) != 2 || len(out.Units["1"]) != 1 {
 		t.Errorf("units per community: %v", out.Units)
+	}
+	// the members list marks the entries and the mobile members by file
+	if len(out.Exposed["0"]) != 1 || out.Exposed["0"][0] != 0 || len(out.Border["0"]) != 1 || out.Border["0"][0] != 1 {
+		t.Errorf("exposed and border members: %v %v", out.Exposed, out.Border)
 	}
 	if out.Communities["0"][0] != "Billing" || out.Shared != "shared" || len(out.Back) != 1 || out.Back[0] != "1>0" {
 		t.Errorf("metadata: %v %q %v", out.Communities, out.Shared, out.Back)
