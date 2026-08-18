@@ -14,7 +14,12 @@ type CommunitiesExport struct {
 	SharedShare      float64                  `json:"sharedShare"`
 	CrossShare       float64                  `json:"crossShare"`
 	Modularity       float64                  `json:"modularity"`
+	Confidence       float64                  `json:"confidence"`
+	LargestCycle     int                      `json:"largestCycle"`
 	CohesiveCount    int                      `json:"cohesiveCount"`
+	HistoryAvailable bool                     `json:"historyAvailable"`
+	HistoryCommits   int                      `json:"historyCommits"`
+	HistoryAgreement float64                  `json:"historyAgreement"`
 	Communities      []CommunityExport        `json:"communities"`
 	Edges            []CommunityEdgeExport    `json:"edges"`
 	Cycles           [][]string               `json:"cycles"`
@@ -23,23 +28,49 @@ type CommunitiesExport struct {
 
 // CommunityExport is one community, the shared kernel included.
 type CommunityExport struct {
-	ID            string                 `json:"id"`
-	Name          string                 `json:"name"`
-	ShortName     string                 `json:"shortName"`
-	Shared        bool                   `json:"shared,omitempty"`
-	Size          int                    `json:"size"`
-	Cohesive      bool                   `json:"cohesive"`
-	Namespaces    []NamespaceShareExport `json:"namespaces"`
-	Hubs          []string               `json:"hubs,omitempty"`
-	Members       []string               `json:"members,omitempty"`
-	Uses          []CommunityLinkExport  `json:"uses,omitempty"`
-	UsedBy        []CommunityLinkExport  `json:"usedBy,omitempty"`
-	Externals     []ExternalUseExport    `json:"externals,omitempty"`
-	Internal      int                    `json:"internalReferences"`
-	Outbound      int                    `json:"outboundReferences"`
-	Inbound       int                    `json:"inboundReferences"`
-	BusFactor     int                    `json:"busFactor,omitempty"`
-	TopCommitters []CommitterExport      `json:"topCommitters,omitempty"`
+	ID         string                 `json:"id"`
+	Name       string                 `json:"name"`
+	ShortName  string                 `json:"shortName"`
+	Shared     bool                   `json:"shared,omitempty"`
+	Size       int                    `json:"size"`
+	Cohesive   bool                   `json:"cohesive"`
+	Namespaces []NamespaceShareExport `json:"namespaces"`
+	Hubs       []string               `json:"hubs,omitempty"`
+	Members    []string               `json:"members,omitempty"`
+	Uses       []CommunityLinkExport  `json:"uses,omitempty"`
+	UsedBy     []CommunityLinkExport  `json:"usedBy,omitempty"`
+	Externals  []ExternalUseExport    `json:"externals,omitempty"`
+	Internal   int                    `json:"internalReferences"`
+	Outbound   int                    `json:"outboundReferences"`
+	Inbound    int                    `json:"inboundReferences"`
+	// ExposedCount is the number of members used from outside the community,
+	// ExposedShare that number over the size; Exposed lists them, most used
+	// first, when the members are listed. ForeignUsesCount is the number of
+	// units of other communities this one uses, the shared kernel left out.
+	ExposedCount     int      `json:"exposedCount"`
+	ExposedShare     float64  `json:"exposedShare"`
+	Exposed          []string `json:"exposed,omitempty"`
+	ForeignUsesCount int      `json:"foreignUsesCount"`
+	// Border lists the members another resolution of the detection places
+	// elsewhere, when the members are listed; Confidence is the share of the
+	// members every resolution keeps here.
+	Border        []string          `json:"border,omitempty"`
+	Confidence    float64           `json:"confidence"`
+	BusFactor     int               `json:"busFactor,omitempty"`
+	TopCommitters []CommitterExport `json:"topCommitters,omitempty"`
+	// History: the commits of the year touching the community, the share of
+	// its multi-file commits staying inside it, and the communities the same
+	// commits reach.
+	HistoryCommits  int              `json:"historyCommits"`
+	HistoryCohesion float64          `json:"historyCohesion"`
+	ChangesWith     []CoChangeExport `json:"changesWith,omitempty"`
+}
+
+type CoChangeExport struct {
+	ID      string  `json:"id"`
+	Name    string  `json:"name"`
+	Commits int     `json:"commits"`
+	Share   float64 `json:"share"`
 }
 
 type NamespaceShareExport struct {
@@ -107,7 +138,12 @@ func ExportCommunities(cm *CommunityMetrics, withMembers bool) *CommunitiesExpor
 		SharedShare:      cm.SharedShare,
 		CrossShare:       cm.CrossShare,
 		Modularity:       cm.Modularity,
+		Confidence:       cm.Confidence,
+		LargestCycle:     cm.LargestCycle,
 		CohesiveCount:    cm.CohesiveCount,
+		HistoryAvailable: cm.HistoryAvailable,
+		HistoryCommits:   cm.HistoryCommits,
+		HistoryAgreement: cm.HistoryAgreement,
 		Communities:      make([]CommunityExport, 0, len(cm.Communities)),
 		Edges:            make([]CommunityEdgeExport, 0, len(cm.Edges)),
 		Cycles:           cm.Cycles,
@@ -132,6 +168,11 @@ func ExportCommunities(cm *CommunityMetrics, withMembers bool) *CommunitiesExpor
 			ID: c.ID, Name: c.Name, ShortName: c.ShortName, Shared: c.Shared, Size: c.Size, Cohesive: c.Cohesive,
 			Hubs: c.Hubs, Internal: c.InternalWeight, Outbound: c.OutWeight, Inbound: c.InWeight, BusFactor: c.BusFactor,
 			Uses: links(c.Uses), UsedBy: links(c.UsedBy),
+			ExposedCount: c.ExposedCount, ExposedShare: c.ExposedShare, ForeignUsesCount: c.ForeignUsesCount, Confidence: c.Confidence,
+			HistoryCommits: c.HistoryCommits, HistoryCohesion: c.HistoryCohesion,
+		}
+		for _, cc := range c.ChangesWith {
+			item.ChangesWith = append(item.ChangesWith, CoChangeExport{ID: cc.ID, Name: cc.Name, Commits: cc.Commits, Share: cc.Share})
 		}
 		for _, s := range c.Namespaces {
 			item.Namespaces = append(item.Namespaces, NamespaceShareExport{Namespace: s.Namespace, Count: s.Count, Share: s.Share})
@@ -144,6 +185,8 @@ func ExportCommunities(cm *CommunityMetrics, withMembers bool) *CommunitiesExpor
 		}
 		if withMembers {
 			item.Members = c.Units
+			item.Exposed = c.Exposed
+			item.Border = c.Border
 		}
 		export.Communities = append(export.Communities, item)
 	}

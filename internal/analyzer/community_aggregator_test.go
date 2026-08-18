@@ -278,3 +278,168 @@ func TestStripRootHandlesAOneLevelRoot(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestNameOfCommunityPrefersTheNamespaceThenTheWordThenTheHub(t *testing.T) {
+	cases := []struct {
+		name   string
+		shares []NamespaceShare
+		units  []string
+		hubs   []string
+		want   string
+	}{
+		{
+			name:   "one namespace holding half of it",
+			shares: []NamespaceShare{{Namespace: `App\Billing`, Share: 0.5}, {Namespace: `App\Catalog`, Share: 0.3}, {Namespace: `App\Users`, Share: 0.2}},
+			units:  []string{"Invoice", "InvoiceLine", "Product", "User"},
+			hubs:   []string{"Invoice"},
+			want:   `App\Billing`,
+		},
+		{
+			name:   "a word the classes share when the namespaces are layers",
+			shares: []NamespaceShare{{Namespace: `App\Controller`, Share: 0.4}, {Namespace: `App\Entity`, Share: 0.4}, {Namespace: `App\Form`, Share: 0.2}},
+			units:  []string{"InvoiceController", "Invoice", "InvoiceType", "InvoiceLine", "Address"},
+			hubs:   []string{"Invoice", "InvoiceController"},
+			want:   "Invoice",
+		},
+		{
+			name:   "the hub when the classes share no word",
+			shares: []NamespaceShare{{Namespace: `App\Component\Gamification`, Share: 0.4}, {Namespace: `App\Component\Admin`, Share: 0.35}, {Namespace: `App\Component\Log`, Share: 0.25}},
+			units:  []string{"GithubOrganization", "Badge", "AdminPanel", "LogEventVisit", "Reward"},
+			hubs:   []string{"GithubOrganization", "LogEventVisit"},
+			want:   "GithubOrganization",
+		},
+		{
+			name:   "two namespaces at most when there is no hub",
+			shares: []NamespaceShare{{Namespace: `App\Gamification`, Share: 0.4}, {Namespace: `App\Admin`, Share: 0.35}, {Namespace: `App\Log`, Share: 0.25}},
+			units:  []string{"GithubOrganization", "Badge", "AdminPanel", "LogEventVisit", "Reward"},
+			want:   `App\Gamification + App\Admin`,
+		},
+		{
+			name:   "code outside any namespace is named by its word",
+			shares: []NamespaceShare{{Namespace: "", Share: 1}},
+			units:  []string{"UserRepository", "UserService", "Mailer"},
+			hubs:   []string{"UserService"},
+			want:   "User",
+		},
+		{
+			name:   "code outside any namespace with no word is named by its hub",
+			shares: []NamespaceShare{{Namespace: "", Share: 1}},
+			units:  []string{"Repository", "Service", "Mailer"},
+			hubs:   []string{"Service"},
+			want:   "Service",
+		},
+	}
+	for _, c := range cases {
+		if got := nameOfCommunity(c.shares, c.units, c.hubs); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestDisambiguateNamesJoinsTheSecondHubToACommunityNamedAfterItsHub(t *testing.T) {
+	communities := []*Community{
+		{ID: "0", Name: "GithubOrganization", Hint: "GithubOrganization, Badge, Reward"},
+		{ID: "1", Name: "GithubOrganization", Hint: "GithubOrganization, LogEventVisit"},
+		{ID: "2", Name: `App\Billing`, Hint: "Invoice, InvoiceLine"},
+		{ID: "3", Name: `App\Billing`, Hint: "Payment, Refund"},
+		{ID: "4", Name: `App\Billing`, Hint: ""},
+		{ID: "5", Name: "Shared", Shared: true, Hint: "Model"},
+		{ID: "6", Name: "Shared", Hint: "Model"},
+	}
+	disambiguateNames(communities)
+	want := []string{"GithubOrganization", "GithubOrganization · LogEventVisit", `App\Billing`, `App\Billing (Payment)`, `App\Billing #4`, "Shared", "Shared"}
+	for i, c := range communities {
+		if c.Name != want[i] {
+			t.Errorf("community %s: got %q, want %q", c.ID, c.Name, want[i])
+		}
+	}
+}
+
+func TestTopLevelCodeAmongClassesIsNamedByItsPackage(t *testing.T) {
+	// A project of classes where three packages of top-level code depend on
+	// each other, the way buildUnitGraph files a Go package among PHP
+	// classes: the unit is the package path, filed under its parent.
+	packages := []string{
+		"github.com/acme/tool/internal/engine/dependency",
+		"github.com/acme/tool/internal/analyzer/graph",
+		"github.com/acme/tool/internal/report/html",
+	}
+	g := &unitGraph{
+		Namespace:   map[string]string{},
+		IsClass:     map[string]bool{},
+		IsInterface: map[string]bool{},
+		IsFile:      map[string]bool{},
+		Out:         map[string]map[string]int{},
+		In:          map[string]map[string]int{},
+		Externals:   map[string]map[string]int{},
+		Granularity: GranularityClass,
+		Language:    map[string]string{"Golang": GranularityNamespace},
+	}
+	link := func(a, b string, w int) {
+		if g.Out[a] == nil {
+			g.Out[a] = map[string]int{}
+		}
+		if g.In[b] == nil {
+			g.In[b] = map[string]int{}
+		}
+		g.Out[a][b] = w
+		g.In[b][a] = w
+	}
+	for _, p := range packages {
+		g.Namespace[p] = parentNamespace(p)
+	}
+	link(packages[0], packages[1], 3)
+	link(packages[1], packages[2], 2)
+	link(packages[0], packages[2], 1)
+	g.Units = append([]string{}, packages...)
+	g.Total = 3
+
+	cm := computeCommunities(g, nil)
+	if cm.CommunitiesCount != 1 {
+		t.Fatalf("expected one community, got %d", cm.CommunitiesCount)
+	}
+	if got := cm.Labels[packages[0]]; got != "engine/dependency (top-level code)" {
+		t.Errorf("label should strip the root and mark the code, got %q", got)
+	}
+	name := cm.Communities[0].Name
+	if strings.Contains(name, "Code)") || strings.Contains(name, "Level") {
+		t.Errorf("the mark of top-level code must not be split into a name: %q", name)
+	}
+	if !strings.HasSuffix(name, " (top-level code)") {
+		t.Errorf("the community should be named after the package at its heart, got %q", name)
+	}
+	if token := dominantToken(labelsOf(packages, cm.Labels)); token != "" {
+		t.Errorf("packages sharing no word must yield no token, got %q", token)
+	}
+}
+
+func TestVerdictNamesABlobWhenOneCycleHoldsMostCommunities(t *testing.T) {
+	cases := []struct {
+		count  int
+		cycles [][]string
+		want   string
+	}{
+		{5, [][]string{{"0", "1", "2", "3"}}, "4 of them form one indissociable block: none can change without the others."},
+		{10, [][]string{{"0", "1", "2", "3"}}, "4 of them form one indissociable block: none can change without the others."},
+		{12, [][]string{{"0", "1", "2", "3"}}, "4 of them depend on each other in 1 cycle."},
+		{5, [][]string{{"0", "1"}, {"2", "3", "4"}}, "5 of them depend on each other in 2 cycles."},
+		{4, [][]string{{"0", "1", "2"}}, "3 of them depend on each other in 1 cycle."},
+	}
+	for _, c := range cases {
+		cm := &CommunityMetrics{Granularity: GranularityClass, CommunitiesCount: c.count, Cycles: c.cycles}
+		if _, note := verdictOf(cm); note != c.want {
+			t.Errorf("%d communities, cycles %v: got %q, want %q", c.count, c.cycles, note, c.want)
+		}
+	}
+}
+
+func TestLargestCycleIsMeasured(t *testing.T) {
+	sources := append(
+		phpTightModule(`App\Billing`, map[string][]string{"A": {`App\Catalog\D`}, "B": {`App\Catalog\C`}}),
+		phpTightModule(`App\Catalog`, map[string][]string{"A": {`App\Billing\D`}})...,
+	)
+	cm := communitiesOf(t, sources...)
+	if cm.LargestCycle != 2 {
+		t.Errorf("expected a cycle of 2, got %d", cm.LargestCycle)
+	}
+}
