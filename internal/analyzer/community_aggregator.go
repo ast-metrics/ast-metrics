@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 
 	graph "github.com/ast-metrics/ast-metrics/internal/analyzer/graph"
 )
@@ -50,6 +51,14 @@ type CommunityMetrics struct {
 	CrossShare    float64
 	// Modularity is Newman's Q of the partition.
 	Modularity float64
+	// Confidence is the share of the units that stay with their community
+	// when the detection is run again at other resolutions, weighted by the
+	// size of the communities, the shared kernel left out. 1 when nothing
+	// moves, 0 when it was not computed (a folder analysed on its own).
+	Confidence float64
+	// LargestCycle is the number of communities of the largest cycle, 0 when
+	// there is none.
+	LargestCycle int
 	// Root is the namespace prefix every unit shares, empty when there is
 	// none. Short names strip it.
 	Root string
@@ -73,6 +82,14 @@ type CommunityMetrics struct {
 	CohesiveCount int
 	// Shared is the shared kernel, nil when none stands out.
 	Shared *Community
+	// History: HistoryAvailable is true when the files carry any git data,
+	// HistoryCommits is the number of distinct commits touching a placed
+	// unit, and HistoryAgreement the share of the commits touching several
+	// files whose files all stay in one community (the shared kernel
+	// allowed): how far the history agrees with the boundaries.
+	HistoryAvailable bool
+	HistoryCommits   int
+	HistoryAgreement float64
 }
 
 // Community is a group of units that depend on each other more than on the
@@ -112,11 +129,42 @@ type Community struct {
 	OutWeight      int
 	InWeight       int
 	SharedWeight   int
+	// Exposed lists the members referenced from outside the community, from
+	// another community or from the shared kernel, the most referenced first:
+	// the surface the community offers to the rest of the code. ExposedShare
+	// is ExposedCount over Size. Not computed for the shared kernel, which is
+	// exposed by definition.
+	Exposed      []string
+	ExposedCount int
+	ExposedShare float64
+	// ForeignUses lists the units of other communities this one references,
+	// the shared kernel left out, the most referenced first, at most ten;
+	// ForeignUsesCount counts them all.
+	ForeignUses      []string
+	ForeignUsesCount int
+	// Border lists the members that another resolution of the detection
+	// places in another community, sorted: the units the map is least sure
+	// about. Confidence is the share of the members every resolution keeps
+	// here, 1 when no resolution moves any of them, 0 when it was not
+	// computed (a folder analysed on its own).
+	Border     []string
+	Confidence float64
 	// Owners: bus factor and the committers weighing the most, when git data
 	// is available.
 	BusFactor     int
 	TopCommitters []CommitterShare
 	CommitCount   int
+	// History: what the commits of the year say of the community.
+	// HistoryCommits is the number of distinct commits touching at least one
+	// of its files, HistoryMultiFileCommits the ones among them touching
+	// several analysed files, and HistoryCohesion the share of those staying
+	// inside the community (the shared kernel allowed), 0 when they are too
+	// few to mean anything. ChangesWith lists the other communities the same
+	// commits touch, the most often first, at most five.
+	HistoryCommits          int
+	HistoryMultiFileCommits int
+	HistoryCohesion         float64
+	ChangesWith             []CommunityCoChange
 }
 
 // NamespaceShare is the part of a community drawn from one namespace.
@@ -185,8 +233,8 @@ type CommunityEdge struct {
 
 // CommunityFinding is an observation about the communities, in plain words.
 type CommunityFinding struct {
-	// Kind is one of "cycle", "shared", "shared-leak", "split", "spread",
-	// "layered", "bridge".
+	// Kind is one of "cycle", "shared", "shared-leak", "exposed", "split",
+	// "spread", "layered", "bridge", "history-crossed", "history-loose".
 	Kind string
 	// Title states the observation; Detail gives the figures behind it and
 	// what it usually means.
@@ -231,9 +279,23 @@ const (
 	spreadMinUnits = 5
 	// A bridge is a unit that reaches this many other communities.
 	bridgeMinCommunities = 2
+	// A community of at least spreadMinUnits units has no boundary once this
+	// share of its members is used from outside.
+	exposedMinShare = 0.5
+	// At most this many foreign units are listed per community.
+	maxForeignUses = 10
+	// A cycle holding at least this many communities and this share of them
+	// is one block rather than one cycle among others.
+	blobMinCommunities = 4
+	blobMinShare       = 0.34
 	// At most this many findings of each kind.
 	maxFindingsPerKind = 5
 )
+
+// borderResolutions are the other resolutions the detection is run at to tell
+// the units a community is sure of from the ones on its border: a little
+// coarser and a little finer than the map itself.
+var borderResolutions = []float64{0.7, 0.85, 1.2, 1.4}
 
 // CommunityAggregator finds the communities of the project.
 type CommunityAggregator struct{}
@@ -277,7 +339,7 @@ func computeCommunities(g *unitGraph, aggregate *Aggregated) *CommunityMetrics {
 	// units the whole codebase leans on land in one community or another by
 	// chance and would tie it to every other.
 	shared := sharedKernelOf(g)
-	partition := louvainOn(g, shared)
+	partition := louvainOn(g, shared, 1)
 	membership := make(map[string]int, len(partition.Community))
 	maps.Copy(membership, partition.Community)
 	membership = foldSmallCommunities(g, membership)
@@ -353,23 +415,11 @@ func computeCommunities(g *unitGraph, aggregate *Aggregated) *CommunityMetrics {
 		c.Hint = strings.Join(labelsOf(c.Hubs, cm.Labels), ", ")
 		c.Externals = externalsOf(c.Units, g)
 	}
-	// In a layered application most communities cut across the namespaces,
-	// which name the layers; a community is then better named after the
-	// feature its classes share than after the layers it crosses.
-	layered := cm.Granularity == GranularityClass && cm.CommunitiesCount >= 3 && (cm.CommunitiesCount-cm.CohesiveCount)*2 >= cm.CommunitiesCount
 	for _, c := range communities {
 		if cm.Granularity == GranularityNamespace {
 			c.Name = nameOfPackageCommunity(c.Units, cm.Root, labelsOf(c.Hubs, cm.Labels))
 		} else {
-			hubNamespaces := make([]string, 0, len(c.Hubs))
-			for _, hub := range c.Hubs {
-				if g.IsClass[hub] {
-					hubNamespaces = append(hubNamespaces, parentNamespace(hub))
-				} else {
-					hubNamespaces = append(hubNamespaces, g.Namespace[hub])
-				}
-			}
-			c.Name = nameOfCommunity(c.Namespaces, cm.Root, labelsOf(c.Units, cm.Labels), labelsOf(c.Hubs, cm.Labels), hubNamespaces, layered)
+			c.Name = nameOfCommunity(c.Namespaces, labelsOf(c.Units, cm.Labels), labelsOf(c.Hubs, cm.Labels))
 		}
 	}
 	disambiguateNames(communities)
@@ -477,13 +527,21 @@ func computeCommunities(g *unitGraph, aggregate *Aggregated) *CommunityMetrics {
 		}
 	}
 	markBackEdges(cm)
+	for _, cycle := range cm.Cycles {
+		cm.LargestCycle = max(cm.LargestCycle, len(cycle))
+	}
+	surfaceOfCommunities(cm, g)
 
 	cm.Verdict, cm.VerdictNote = verdictOf(cm)
 	if aggregate == nil {
 		return cm
 	}
+	// The border of each community costs four more detections: a folder
+	// analysed on its own goes without it.
+	borderOfCommunities(cm, g, shared)
 	ownersOfCommunities(aggregate, cm, g)
-	cm.Findings = findingsOf(cm, g, weights)
+	historyOf(aggregate, cm, g)
+	cm.Findings = withHistoryFindings(findingsOf(cm, g, weights), historyFindingsOf(cm))
 
 	// The suggestions page files the findings with the other observations.
 	if aggregate.Suggestions == nil {
@@ -616,9 +674,9 @@ func commonDirectoryOfPaths(paths []string) string {
 	return strings.Join(prefix, "/")
 }
 
-// louvainOn detects the communities of the unit graph, the excluded units and
-// their edges left out.
-func louvainOn(g *unitGraph, excluded map[string]bool) graph.Partition {
+// louvainOn detects the communities of the unit graph at the given
+// resolution, the excluded units and their edges left out.
+func louvainOn(g *unitGraph, excluded map[string]bool, resolution float64) graph.Partition {
 	units := make([]string, 0, len(g.Units))
 	for _, unit := range g.Units {
 		if !excluded[unit] {
@@ -637,7 +695,7 @@ func louvainOn(g *unitGraph, excluded map[string]bool) graph.Partition {
 			edges = append(edges, graph.WeightedEdge{A: a, B: b, Weight: float64(g.Out[a][b])})
 		}
 	}
-	return graph.Louvain(units, edges, 1)
+	return graph.Louvain(units, edges, resolution)
 }
 
 // sharedKernelOf returns the units the whole codebase leans on: a base
@@ -859,81 +917,44 @@ func externalsOf(units []string, g *unitGraph) []ExternalUse {
 	return uses
 }
 
-// nameOfCommunity derives a name from the namespaces the members come from:
-// the namespace holding most of them, the two or three namespaces holding most
-// of them together, the word its members share when they come from many
-// namespaces alike, the way a feature cutting across the layers of an
-// application does (User, Invoice, Tag), the prefix they share when it says
-// more than the root, or the units at its heart.
-func nameOfCommunity(shares []NamespaceShare, root string, unitLabels []string, hubLabels []string, hubNamespaces []string, layered bool) string {
+// nameOfCommunity derives a name for a community of classes: the namespace
+// holding most of them, else the word its members share, the way a feature
+// cutting across the layers of an application does (User, Invoice, Tag),
+// else the unit at its heart. A sum of namespaces ("Admin + Billing + …")
+// says where the members were filed, not what they do together, and is kept
+// as a last resort, two namespaces at most.
+func nameOfCommunity(shares []NamespaceShare, unitLabels []string, hubLabels []string) string {
 	if len(shares) == 0 {
 		return "unnamed"
 	}
-	if shares[0].Namespace == "" {
-		// code outside any namespace: the folders say nothing, the names of
-		// the classes might
-		if token := dominantToken(unitLabels); token != "" {
-			return token
-		}
-		names := hubLabels
-		if len(names) > 2 {
-			names = names[:2]
-		}
-		if len(names) > 0 {
-			return strings.Join(names, " & ")
-		}
-		return "(no namespace)"
-	}
-	if shares[0].Share >= singleNameShare || len(shares) == 1 {
+	if shares[0].Namespace != "" && (shares[0].Share >= singleNameShare || len(shares) == 1) {
 		return namespaceLabel(shares[0].Namespace)
-	}
-	if layered {
-		if token := dominantToken(unitLabels); token != "" {
-			return token
-		}
-	}
-	// two or three namespaces holding most of it together, each with more
-	// than a lone unit
-	sum := 0.0
-	for i := 0; i < 3 && i < len(shares) && shares[i].Count >= 2; i++ {
-		sum += shares[i].Share
-		if i >= 1 && sum >= cohesiveShare {
-			names := make([]string, 0, i+1)
-			for _, s := range shares[:i+1] {
-				names = append(names, namespaceLabel(s.Namespace))
-			}
-			return strings.Join(names, " + ")
-		}
 	}
 	if token := dominantToken(unitLabels); token != "" {
 		return token
 	}
-	namespaces := make([]string, 0, len(shares))
-	for _, s := range shares {
-		namespaces = append(namespaces, s.Namespace)
+	if len(hubLabels) > 0 {
+		return hubLabels[0]
 	}
-	if prefix := commonPrefixOfNamespaces(namespaces); prefix != "" && len(prefix) > len(root) {
-		return prefix + " (" + fmt.Sprintf("%d namespaces", len(shares)) + ")"
+	if len(shares) >= 2 && shares[0].Namespace != "" && shares[1].Namespace != "" {
+		return namespaceLabel(shares[0].Namespace) + " + " + namespaceLabel(shares[1].Namespace)
 	}
-	// the units at the heart of the community: the namespace they share
-	// when it says more than the root (Console for a Kernel and its
-	// Commands), else their names
-	if prefix := commonPrefixOfNamespaces(hubNamespaces); prefix != "" && len(prefix) > len(root) && !slices.Contains(hubNamespaces, "") {
-		return prefix
+	return namespaceLabel(shares[0].Namespace)
+}
+
+// topLevelCodeMark is appended to the label of a namespace unit standing
+// among classes.
+const topLevelCodeMark = " (top-level code)"
+
+// isWord tells whether a token is made of letters and digits only: a bracket
+// or a dot left by a label cannot name a community.
+func isWord(token string) bool {
+	for _, r := range token {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return false
+		}
 	}
-	// the two largest namespaces, and a mark that there is more: it says
-	// where the bulk of the community lives, which two class names do not
-	if len(shares) >= 2 && shares[0].Namespace != "" && shares[1].Namespace != "" && shares[0].Share+shares[1].Share >= 0.3 {
-		return namespaceLabel(shares[0].Namespace) + " + " + namespaceLabel(shares[1].Namespace) + " + …"
-	}
-	names := hubLabels
-	if len(names) > 2 {
-		names = names[:2]
-	}
-	if len(names) > 0 {
-		return strings.Join(names, " & ")
-	}
-	return namespaceLabel(shares[0].Namespace) + " + " + fmt.Sprintf("%d more", len(shares)-1)
+	return true
 }
 
 // labelOfUnit is the short name of a unit: the class name, or the package
@@ -952,7 +973,7 @@ func labelOfUnit(unit string, g *unitGraph, root string) string {
 	}
 	if g.Granularity == GranularityClass {
 		// a namespace among classes: the code written outside any class
-		return stripRoot(unit, root) + " (top-level code)"
+		return stripRoot(unit, root) + topLevelCodeMark
 	}
 	return stripRoot(unit, root)
 }
@@ -1018,13 +1039,15 @@ func dominantToken(labels []string) string {
 	count := map[string]int{}
 	for _, label := range labels {
 		seen := map[string]bool{}
-		name := label
+		// a file or a package of top-level code is named by its path and a
+		// mark of what it is: the mark says nothing about the feature
+		name := strings.TrimSuffix(label, topLevelCodeMark)
 		if strings.HasSuffix(name, " (file)") {
 			name = strings.TrimSuffix(name, " (file)")
 			name = strings.TrimSuffix(name, filepath.Ext(name))
 		}
 		for _, token := range splitCamel(lastSegment(name)) {
-			if len(token) < 3 || nameTokenStopList[token] || seen[token] {
+			if len(token) < 3 || nameTokenStopList[token] || seen[token] || !isWord(token) {
 				continue
 			}
 			seen[token] = true
@@ -1082,10 +1105,13 @@ func splitCamel(name string) []string {
 	return tokens
 }
 
-// disambiguateNames tells apart the communities drawn from the same
-// namespaces: the largest keeps the plain name, the others are told by the
-// unit at their heart.
+// disambiguateNames tells apart the communities bearing the same name: the
+// largest keeps the plain name, the others are told by the units at their
+// heart. A community named after its first hub takes its second hub beside
+// it ("GithubOrganization · LogEventVisit"); one named after a namespace or a
+// word takes its first hub in brackets ("Billing (Invoice)").
 func disambiguateNames(communities []*Community) {
+	taken := map[string]bool{}
 	byName := map[string][]*Community{}
 	for _, c := range communities {
 		if c.Shared {
@@ -1094,26 +1120,37 @@ func disambiguateNames(communities []*Community) {
 		}
 		byName[c.Name] = append(byName[c.Name], c)
 	}
-	for _, same := range byName {
-		if len(same) < 2 {
+	// communities come largest first, and the names are visited in that
+	// order too, so that a name freed by nobody is claimed the same way each
+	// time
+	for _, c := range communities {
+		same := byName[c.Name]
+		if c.Shared || len(same) < 2 || same[0] == c {
+			taken[c.Name] = true
 			continue
 		}
-		// communities come largest first
-		for _, c := range same[1:] {
-			if c.Hint != "" {
-				c.Name = c.Name + " (" + firstOf(c.Hint) + ")"
-			} else {
-				c.Name = c.Name + " #" + c.ID
-			}
+		hubs := hubsOfHint(c.Hint)
+		candidate := ""
+		switch {
+		case len(hubs) >= 2 && c.Name == hubs[0]:
+			candidate = hubs[0] + " · " + hubs[1]
+		case len(hubs) >= 1 && c.Name != hubs[0]:
+			candidate = c.Name + " (" + hubs[0] + ")"
 		}
+		if candidate == "" || taken[candidate] {
+			candidate = c.Name + " #" + c.ID
+		}
+		c.Name = candidate
+		taken[candidate] = true
 	}
 }
 
-func firstOf(hint string) string {
-	if i := strings.Index(hint, ", "); i > 0 {
-		return hint[:i]
+// hubsOfHint reads the hub labels back from a hint.
+func hubsOfHint(hint string) []string {
+	if hint == "" {
+		return nil
 	}
-	return hint
+	return strings.Split(hint, ", ")
 }
 
 // markBackEdges flags the edges that, cut, would leave the community graph
@@ -1360,7 +1397,7 @@ func findingsOf(cm *CommunityMetrics, g *unitGraph, weights map[string]map[strin
 		hubs := labelsOf(cm.Shared.Hubs, cm.Labels)
 		findings = append(findings, CommunityFinding{
 			Kind:  "shared",
-			Title: fmt.Sprintf("%d %s are shared by the whole codebase", cm.Shared.Size, unitWord),
+			Title: fmt.Sprintf("%s shared by the whole codebase", plural(cm.Shared.Size, unitOne(unitWord)+" is", unitWord+" are")),
 			Detail: fmt.Sprintf("%s and the others form the de facto shared kernel: %d communities lean on them and %d%% of all dependencies lead there. This is expected of a kernel; what matters is that it stays small, stable and free of any single feature's rules.",
 				joinNames(hubs), len(cm.Shared.UsedBy), int(cm.SharedShare*100+0.5)),
 			Communities: []string{SharedID},
@@ -1394,7 +1431,39 @@ func findingsOf(cm *CommunityMetrics, g *unitGraph, weights map[string]map[strin
 		}
 	}
 
-	// 3. Split namespaces: a folder whose classes go their separate ways.
+	// 3. Communities without a boundary: most of their members are used
+	// from outside, so that no few classes carry the entries.
+	exposed := []*Community{}
+	for _, c := range cm.Communities {
+		if !c.Shared && c.Size >= spreadMinUnits && c.ExposedShare >= exposedMinShare {
+			exposed = append(exposed, c)
+		}
+	}
+	slices.SortStableFunc(exposed, func(x, y *Community) int { return y.ExposedCount - x.ExposedCount })
+	for i, c := range exposed {
+		if i >= maxFindingsPerKind {
+			break
+		}
+		top := c.Exposed
+		if len(top) > 3 {
+			top = top[:3]
+		}
+		entries := make([]string, 0, len(top))
+		for _, unit := range top {
+			entries = append(entries, fmt.Sprintf("%s (reached from %s)", cm.Labels[unit], plural(communitiesReaching(unit, cm, g), "community", "communities")))
+		}
+		findings = append(findings, CommunityFinding{
+			Kind:  "exposed",
+			Title: fmt.Sprintf("%s has no boundary: %d of its %d %s are used from outside", c.ShortName, c.ExposedCount, c.Size, unitWord),
+			Detail: fmt.Sprintf("A module can be extracted, or given an interface, only when a few %s carry its entries; here %d%% of them do, and the rest of the code reaches anywhere into it. The most used are %s. Gathering the entries behind a few of them would give the module an edge.",
+				unitWord, int(c.ExposedShare*100+0.5), joinNames(entries)),
+			Communities: []string{c.ID},
+			Units:       top,
+			Category:    "coupling",
+		})
+	}
+
+	// 4. Split namespaces: a folder whose classes go their separate ways.
 	// The shared kernel does not count as a way: a folder holding the kernel
 	// and a feature is the ordinary shape of a Shared namespace.
 	if cm.CommunitiesCount >= 2 {
@@ -1477,7 +1546,7 @@ func findingsOf(cm *CommunityMetrics, g *unitGraph, weights map[string]map[strin
 		}
 	}
 
-	// 4. Spread communities: one group of code across several folders. A
+	// 5. Spread communities: one group of code across several folders. A
 	// namespace already reported as split is left out of the count: the
 	// finding above tells that story, and every community it lends a few
 	// classes to would otherwise repeat it.
@@ -1587,7 +1656,7 @@ func findingsOf(cm *CommunityMetrics, g *unitGraph, weights map[string]map[strin
 		}
 	}
 
-	// 5. Bridges: units carrying the traffic between communities without
+	// 6. Bridges: units carrying the traffic between communities without
 	// being shared by all.
 	if cm.CommunitiesCount >= 3 {
 		type bridge struct {
@@ -1702,11 +1771,20 @@ func verdictOf(cm *CommunityMetrics) (string, string) {
 	}
 	verdict := fmt.Sprintf("Your code forms %d communities.", cm.CommunitiesCount)
 	if cm.Shared != nil {
-		verdict = fmt.Sprintf("Your code forms %d communities around a shared kernel of %d %s.", cm.CommunitiesCount, cm.Shared.Size, unitWord)
+		verdict = fmt.Sprintf("Your code forms %d communities around a shared kernel of %s.", cm.CommunitiesCount, plural(cm.Shared.Size, unitOne(unitWord), unitWord))
 	}
 	spread := cm.CommunitiesCount - cm.CohesiveCount
 	switch {
 	case len(cm.Cycles) > 0:
+		// one cycle holding a good part of the communities is a blob, and is
+		// said as such rather than counted among the cycles
+		largest := 0
+		for _, cycle := range cm.Cycles {
+			largest = max(largest, len(cycle))
+		}
+		if largest >= blobMinCommunities && float64(largest) >= blobMinShare*float64(cm.CommunitiesCount) {
+			return verdict, fmt.Sprintf("%d of them form one indissociable block: none can change without the others.", largest)
+		}
 		caught := 0
 		for _, cycle := range cm.Cycles {
 			caught += len(cycle)
@@ -1719,6 +1797,14 @@ func verdictOf(cm *CommunityMetrics) (string, string) {
 	default:
 		return verdict, fmt.Sprintf("%d stay within one namespace, %d cross namespace boundaries.", cm.CohesiveCount, spread)
 	}
+}
+
+// unitOne gives the singular of "classes" or "packages".
+func unitOne(unitWord string) string {
+	if unitWord == "packages" {
+		return "package"
+	}
+	return "class"
 }
 
 func plural(n int, one, many string) string {

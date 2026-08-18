@@ -10,7 +10,7 @@ import (
 
 func getCommunitiesTool() mcp.Tool {
 	return mcp.NewTool("get_communities",
-		mcp.WithDescription("Get the communities of the project: groups of classes (or packages) that depend on each other more than on the rest of the code, detected on the dependency graph regardless of folders. Returns each community with its name, members, the namespaces it draws from, what it uses and what uses it, its owners; the dependencies between communities; the cycles; and findings in plain words (cycles, namespaces split across communities, communities spread across namespaces, bridge classes)."),
+		mcp.WithDescription("Get the communities of the project: groups of classes (or packages) that depend on each other more than on the rest of the code, detected on the dependency graph regardless of folders. Returns each community with its name, members, the namespaces it draws from, what it uses and what uses it, its owners; the dependencies between communities; the cycles; and findings in plain words (cycles, namespaces split across communities, communities spread across namespaces, bridge classes, and what the git history says: communities that change together, communities that never change as a whole)."),
 		mcp.WithBoolean("force_refresh", mcp.Description("Force re-analysis ignoring cache")),
 		mcp.WithBoolean("with_members", mcp.Description("List every member of every community (can be long); default lists the hubs only")),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
