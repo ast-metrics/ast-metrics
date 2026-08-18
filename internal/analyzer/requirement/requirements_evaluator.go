@@ -48,6 +48,9 @@ type EvaluationResult struct {
 	Succeeded         bool
 	// Baselined is the number of violations silenced by Baseline.
 	Baselined int
+	// BaselinedByRule counts the violations silenced by Baseline, per rule
+	// name, so a report can say how many entries of one rule are frozen.
+	BaselinedByRule map[string]int
 }
 
 // method to get number of errors by severity
@@ -170,7 +173,7 @@ func (r *RequirementsEvaluator) Evaluate(files []*pb.File, projectAggregated Pro
 				rule.CheckProject(
 					projectAggregated.ProjectCtx,
 					func(err RequirementError) {
-						evaluation.Errors = append(evaluation.Errors, RuleOutcome{Severity: err.Severity, Rule: rule.Name(), Message: err.Message})
+						evaluation.Errors = append(evaluation.Errors, RuleOutcome{Severity: err.Severity, Rule: rule.Name(), Message: err.Message, File: err.File, Line: err.Line})
 					},
 					func(ok string) {
 						sev, msg := parseSeverityFromMessage(ok)
@@ -182,7 +185,7 @@ func (r *RequirementsEvaluator) Evaluate(files []*pb.File, projectAggregated Pro
 	}
 
 	if r.Baseline != nil {
-		evaluation.Errors, evaluation.Baselined = r.Baseline.Filter(evaluation.Errors)
+		evaluation.Errors, evaluation.Baselined, evaluation.BaselinedByRule = r.Baseline.FilterByRule(evaluation.Errors)
 	}
 
 	if len(evaluation.Errors) > 0 {

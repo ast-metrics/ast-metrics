@@ -144,6 +144,10 @@ requirements:
       # 20% of the dependencies cross from one community to another.
       # no_community_cycles: true
       # max_community_cross_share: 20
+      # Freeze the architecture: fail on every dependency crossing from one
+      # community to another. Run "ast-metrics baseline" once to accept the
+      # current ones, only new crossings fail afterwards.
+      # no_cross_community_dependencies: true
 
     volume:
       # Maximum number of lines of code per file

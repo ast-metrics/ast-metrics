@@ -84,6 +84,7 @@ func (a *architectureRuleset) AllProjectRules() []ProjectRule {
 	return []ProjectRule{
 		NewNoCommunityCyclesRule(nil),
 		NewMaxCommunityCrossShareRule(nil),
+		NewNoCrossCommunityDependenciesRule(nil),
 	}
 }
 
@@ -99,6 +100,9 @@ func (a *architectureRuleset) EnabledProjectRules() []ProjectRule {
 	}
 	if arch.MaxCommunityCrossShare != nil {
 		rules = append(rules, NewMaxCommunityCrossShareRule(arch.MaxCommunityCrossShare))
+	}
+	if arch.NoCrossCommunityDependencies != nil && *arch.NoCrossCommunityDependencies {
+		rules = append(rules, NewNoCrossCommunityDependenciesRule(arch.NoCrossCommunityDependencies))
 	}
 	return rules
 }

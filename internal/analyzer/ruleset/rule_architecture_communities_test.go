@@ -66,3 +66,42 @@ func TestMaxCommunityCrossShareRule(t *testing.T) {
 		t.Errorf("no threshold, no error")
 	}
 }
+
+func TestNoCrossCommunityDependenciesRuleReportsEachCrossingInOrder(t *testing.T) {
+	enabled := true
+	rule := NewNoCrossCommunityDependenciesRule(&enabled)
+	ctx := ProjectContext{Communities: &CommunitiesInfo{Count: 2, CrossDependencies: []CrossDependencyInfo{
+		{File: "src/Billing/B.php", From: "B", To: "C"},
+		{File: "src/Billing/A.php", From: "A", To: "D"},
+	}}}
+	errors, successes := collectProject(rule, ctx)
+	if len(successes) != 0 || len(errors) != 2 {
+		t.Fatalf("expected two errors and no success, got %d/%d", len(errors), len(successes))
+	}
+	if errors[0].File != "src/Billing/A.php" || errors[1].File != "src/Billing/B.php" {
+		t.Errorf("errors should be sorted by file: %+v", errors)
+	}
+	if errors[0].Code != "no_cross_community_dependencies" || errors[0].Severity != issue.SeverityLow {
+		t.Errorf("unexpected code or severity: %+v", errors[0])
+	}
+	if errors[0].Message != "A depends on D, which sits in another community" {
+		t.Errorf("unexpected message: %s", errors[0].Message)
+	}
+}
+
+func TestNoCrossCommunityDependenciesRuleIsQuietWithoutCrossingsOrWhenDisabled(t *testing.T) {
+	enabled := true
+	errors, successes := collectProject(NewNoCrossCommunityDependenciesRule(&enabled), ProjectContext{Communities: &CommunitiesInfo{Count: 3}})
+	if len(errors) != 0 || len(successes) != 1 {
+		t.Errorf("no crossing: expected one success, got %d errors, %d successes", len(errors), len(successes))
+	}
+	errors, successes = collectProject(NewNoCrossCommunityDependenciesRule(&enabled), ProjectContext{})
+	if len(errors) != 0 || len(successes) != 1 {
+		t.Errorf("no analysis: expected one success, got %d errors, %d successes", len(errors), len(successes))
+	}
+	crossing := []CrossDependencyInfo{{File: "a.php", From: "A", To: "B"}}
+	errors, successes = collectProject(NewNoCrossCommunityDependenciesRule(nil), ProjectContext{Communities: &CommunitiesInfo{Count: 2, CrossDependencies: crossing}})
+	if len(errors) != 0 || len(successes) != 0 {
+		t.Errorf("disabled rule should stay silent, got %d errors, %d successes", len(errors), len(successes))
+	}
+}
