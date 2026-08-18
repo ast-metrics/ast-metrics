@@ -24,6 +24,7 @@ type CommunitiesExport struct {
 	Edges            []CommunityEdgeExport    `json:"edges"`
 	Cycles           [][]string               `json:"cycles"`
 	Findings         []CommunityFindingExport `json:"findings"`
+	Actions          []CommunityActionExport  `json:"actions"`
 }
 
 // CommunityExport is one community, the shared kernel included.
@@ -119,6 +120,16 @@ type CommunityFindingExport struct {
 	Units       []string `json:"units,omitempty"`
 }
 
+// CommunityActionExport is one thing to do first, derived from the findings.
+type CommunityActionExport struct {
+	Kind        string   `json:"kind"`
+	Title       string   `json:"title"`
+	Detail      string   `json:"detail"`
+	Effort      string   `json:"effort"`
+	Communities []string `json:"communities,omitempty"`
+	Units       []string `json:"units,omitempty"`
+}
+
 // ExportCommunities lays the community metrics out for the JSON report and
 // the MCP tools. Members are listed when withMembers is set: they are the
 // bulk of the payload.
@@ -148,6 +159,7 @@ func ExportCommunities(cm *CommunityMetrics, withMembers bool) *CommunitiesExpor
 		Edges:            make([]CommunityEdgeExport, 0, len(cm.Edges)),
 		Cycles:           cm.Cycles,
 		Findings:         make([]CommunityFindingExport, 0, len(cm.Findings)),
+		Actions:          make([]CommunityActionExport, 0, len(cm.Actions)),
 	}
 	if export.Cycles == nil {
 		export.Cycles = [][]string{}
@@ -195,6 +207,9 @@ func ExportCommunities(cm *CommunityMetrics, withMembers bool) *CommunitiesExpor
 	}
 	for _, f := range cm.Findings {
 		export.Findings = append(export.Findings, CommunityFindingExport{Kind: f.Kind, Title: f.Title, Detail: f.Detail, Communities: f.Communities, Units: f.Units})
+	}
+	for _, a := range cm.Actions {
+		export.Actions = append(export.Actions, CommunityActionExport{Kind: a.Kind, Title: a.Title, Detail: a.Detail, Effort: a.Effort, Communities: a.Communities, Units: a.Units})
 	}
 	return export
 }

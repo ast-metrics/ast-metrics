@@ -30,6 +30,9 @@ type CommunityMetrics struct {
 	Cycles [][]string
 	// Findings are the observations worth reading, most important first.
 	Findings []CommunityFinding
+	// Actions are the few things to do first, at most three, the most
+	// valuable first, derived from the findings.
+	Actions []CommunityAction
 
 	// CommunitiesCount is the number of communities, the shared kernel left
 	// out.
@@ -290,6 +293,11 @@ const (
 	blobMinShare       = 0.34
 	// At most this many findings of each kind.
 	maxFindingsPerKind = 5
+	// A kernel drawing at least this share of the dependencies, or holding
+	// this share of the units, is the centre of gravity of the code rather
+	// than a kernel.
+	kernelHeavyShare     = 0.25
+	kernelHeavyUnitShare = 0.10
 )
 
 // borderResolutions are the other resolutions the detection is run at to tell
@@ -542,6 +550,7 @@ func computeCommunities(g *unitGraph, aggregate *Aggregated) *CommunityMetrics {
 	ownersOfCommunities(aggregate, cm, g)
 	historyOf(aggregate, cm, g)
 	cm.Findings = withHistoryFindings(findingsOf(cm, g, weights), historyFindingsOf(cm))
+	cm.Actions = actionsOf(cm)
 
 	// The suggestions page files the findings with the other observations.
 	if aggregate.Suggestions == nil {
@@ -920,7 +929,9 @@ func externalsOf(units []string, g *unitGraph) []ExternalUse {
 // nameOfCommunity derives a name for a community of classes: the namespace
 // holding most of them, else the word its members share, the way a feature
 // cutting across the layers of an application does (User, Invoice, Tag),
-// else the unit at its heart. A sum of namespaces ("Admin + Billing + …")
+// else the unit at its heart. A shared word naming a layer (Repository,
+// Handler) takes the namespace holding most of the members beside it
+// ("Repository · Component\Scm"), so that the reader recognizes the code. A sum of namespaces ("Admin + Billing + …")
 // says where the members were filed, not what they do together, and is kept
 // as a last resort, two namespaces at most.
 func nameOfCommunity(shares []NamespaceShare, unitLabels []string, hubLabels []string) string {
@@ -931,6 +942,11 @@ func nameOfCommunity(shares []NamespaceShare, unitLabels []string, hubLabels []s
 		return namespaceLabel(shares[0].Namespace)
 	}
 	if token := dominantToken(unitLabels); token != "" {
+		// a layer word alone (Repository, Handler) says what kind of classes
+		// they are, not which: the namespace holding most of them says where
+		if looksLikeLayer(token) && shares[0].Namespace != "" {
+			return token + " · " + namespaceLabel(shares[0].Namespace)
+		}
 		return token
 	}
 	if len(hubLabels) > 0 {
@@ -1395,11 +1411,16 @@ func findingsOf(cm *CommunityMetrics, g *unitGraph, weights map[string]map[strin
 	// 2. The shared kernel, and what it depends on.
 	if cm.Shared != nil {
 		hubs := labelsOf(cm.Shared.Hubs, cm.Labels)
+		detail := fmt.Sprintf("%s and the others form the de facto shared kernel: %d communities lean on them and %d%% of all dependencies lead there. This is expected of a kernel; what matters is that it stays small, stable and free of any single feature's rules.",
+			joinNames(hubs), len(cm.Shared.UsedBy), int(cm.SharedShare*100+0.5))
+		if kernelIsCentreOfGravity(cm) {
+			detail = fmt.Sprintf("%s and the others form the de facto shared kernel. That is more than a kernel: %d%% of all dependencies lead to these %d %s, which makes them the centre of gravity of the code. Anything changing there reaches %s.",
+				joinNames(hubs), int(cm.SharedShare*100+0.5), cm.Shared.Size, unitWord, plural(len(cm.Shared.UsedBy), "community", "communities"))
+		}
 		findings = append(findings, CommunityFinding{
-			Kind:  "shared",
-			Title: fmt.Sprintf("%s shared by the whole codebase", plural(cm.Shared.Size, unitOne(unitWord)+" is", unitWord+" are")),
-			Detail: fmt.Sprintf("%s and the others form the de facto shared kernel: %d communities lean on them and %d%% of all dependencies lead there. This is expected of a kernel; what matters is that it stays small, stable and free of any single feature's rules.",
-				joinNames(hubs), len(cm.Shared.UsedBy), int(cm.SharedShare*100+0.5)),
+			Kind:        "shared",
+			Title:       fmt.Sprintf("%s shared by the whole codebase", plural(cm.Shared.Size, unitOne(unitWord)+" is", unitWord+" are")),
+			Detail:      detail,
 			Communities: []string{SharedID},
 			Units:       cm.Shared.Hubs,
 			Category:    "boundary",
@@ -1748,11 +1769,24 @@ var layerNames = map[string]bool{
 	"factories": true, "mapper": true, "mappers": true, "provider": true, "providers": true, "middleware": true,
 	"exception": true, "exceptions": true, "interface": true, "interfaces": true, "contract": true, "contracts": true,
 	"data": true, "core": true, "common": true, "shared": true, "support": true, "lib": true, "libs": true,
+	"manager": true, "managers": true, "message": true, "messages": true, "request": true, "requests": true,
+	"response": true, "responses": true, "trait": true, "traits": true, "test": true, "tests": true,
 }
 
-// looksLikeLayer tells whether a namespace is named after a technical layer.
+// looksLikeLayer tells whether a namespace, or a word of a class name, names
+// a technical layer.
 func looksLikeLayer(namespace string) bool {
 	return layerNames[strings.ToLower(lastSegment(namespace))]
+}
+
+// kernelIsCentreOfGravity tells whether the shared kernel is too heavy to be
+// called a kernel: it draws kernelHeavyShare of the dependencies, or holds
+// kernelHeavyUnitShare of the placed units.
+func kernelIsCentreOfGravity(cm *CommunityMetrics) bool {
+	if cm.Shared == nil || cm.UnitCount == 0 {
+		return false
+	}
+	return cm.SharedShare >= kernelHeavyShare || float64(cm.Shared.Size) >= kernelHeavyUnitShare*float64(cm.UnitCount)
 }
 
 // verdictOf writes the sentence the page opens on.
@@ -1790,6 +1824,8 @@ func verdictOf(cm *CommunityMetrics) (string, string) {
 			caught += len(cycle)
 		}
 		return verdict, fmt.Sprintf("%d of them depend on each other in %s.", caught, plural(len(cm.Cycles), "cycle", "cycles"))
+	case kernelIsCentreOfGravity(cm):
+		return verdict, fmt.Sprintf("The kernel is the centre of gravity: %d%% of the dependencies lead to its %s.", int(cm.SharedShare*100+0.5), plural(cm.Shared.Size, unitOne(unitWord), unitWord))
 	case spread == 0:
 		return verdict, "Each one stays inside a single namespace: the folders match the dependencies."
 	case spread >= (cm.CommunitiesCount+1)/2:

@@ -188,6 +188,61 @@ func TestABaseClassEverybodyExtendsIsTheSharedKernel(t *testing.T) {
 	}
 }
 
+func TestAHeavyKernelIsCalledTheCentreOfGravity(t *testing.T) {
+	// Four modules leaning on a kernel of three classes, each used from two
+	// classes of every module: the kernel draws more than a quarter of the
+	// dependencies.
+	sources := []string{
+		"<?php\nnamespace App\\Shared;\n\nabstract class Model {}\n",
+		"<?php\nnamespace App\\Shared;\n\nfinal class Clock {}\n",
+		"<?php\nnamespace App\\Shared;\n\nfinal class Id {}\n",
+	}
+	for _, module := range []string{`App\Billing`, `App\Catalog`, `App\Shipping`, `App\Users`} {
+		sources = append(sources, phpTightModule(module, map[string][]string{
+			"A": {`App\Shared\Model`, `App\Shared\Clock`, `App\Shared\Id`},
+			"B": {`App\Shared\Model`, `App\Shared\Clock`, `App\Shared\Id`},
+		})...)
+	}
+	cm := communitiesOf(t, sources...)
+	if cm.Shared == nil || cm.Shared.Size != 3 {
+		t.Fatalf("expected a kernel of 3 classes, got %s", cm.Verdict)
+	}
+	if !kernelIsCentreOfGravity(cm) {
+		t.Fatalf("a kernel drawing %.0f%% of the dependencies is the centre of gravity", cm.SharedShare*100)
+	}
+	shared := findingsOfKind(cm, "shared")
+	if len(shared) != 1 {
+		t.Fatalf("expected the shared finding, got %+v", cm.Findings)
+	}
+	if !strings.Contains(shared[0].Detail, "That is more than a kernel:") || !strings.Contains(shared[0].Detail, "lead to these 3 classes, which makes them the centre of gravity of the code. Anything changing there reaches 4 communities.") {
+		t.Errorf("a heavy kernel is said as such: %s", shared[0].Detail)
+	}
+	if strings.Contains(shared[0].Detail, "This is expected of a kernel") {
+		t.Errorf("a heavy kernel is not expected: %s", shared[0].Detail)
+	}
+	if !strings.Contains(cm.VerdictNote, "centre of gravity") {
+		t.Errorf("without a cycle, the verdict note names the centre of gravity: %s", cm.VerdictNote)
+	}
+}
+
+func TestASmallKernelIsExpected(t *testing.T) {
+	sources := []string{
+		"<?php\nnamespace App\\Shared;\n\nabstract class Model {}\n",
+	}
+	for _, module := range []string{`App\Billing`, `App\Catalog`, `App\Shipping`, `App\Users`} {
+		sources = append(sources, phpTightModule(module, nil)...)
+		sources = append(sources, fmt.Sprintf("<?php\nnamespace %s;\n\nuse App\\Shared\\Model;\n\nfinal class Entity extends Model { public function __construct(A $a) {} }\n", module))
+	}
+	cm := communitiesOf(t, sources...)
+	shared := findingsOfKind(cm, "shared")
+	if len(shared) != 1 || !strings.Contains(shared[0].Detail, "This is expected of a kernel") {
+		t.Errorf("a small kernel is expected: %+v", shared)
+	}
+	if strings.Contains(cm.VerdictNote, "centre of gravity") {
+		t.Errorf("a small kernel is no centre of gravity: %s", cm.VerdictNote)
+	}
+}
+
 func TestAFeatureCuttingAcrossLayersIsNamedAfterItsWord(t *testing.T) {
 	// A layered application: the classes about invoices sit in three
 	// namespaces and depend on each other.
@@ -315,6 +370,13 @@ func TestNameOfCommunityPrefersTheNamespaceThenTheWordThenTheHub(t *testing.T) {
 			want:   `App\Gamification + App\Admin`,
 		},
 		{
+			name:   "a layer word takes the namespace holding most of the classes beside it",
+			shares: []NamespaceShare{{Namespace: `App\Component\Scm`, Share: 0.4}, {Namespace: `App\Component\Github`, Share: 0.35}, {Namespace: `App\Message`, Share: 0.25}},
+			units:  []string{"GitRepoRepository", "OrganizationRepository", "PullRequestRepository", "CommitRepository", "SyncMessage"},
+			hubs:   []string{"GitRepoRepository"},
+			want:   `Repository · App\Component\Scm`,
+		},
+		{
 			name:   "code outside any namespace is named by its word",
 			shares: []NamespaceShare{{Namespace: "", Share: 1}},
 			units:  []string{"UserRepository", "UserService", "Mailer"},
@@ -345,9 +407,11 @@ func TestDisambiguateNamesJoinsTheSecondHubToACommunityNamedAfterItsHub(t *testi
 		{ID: "4", Name: `App\Billing`, Hint: ""},
 		{ID: "5", Name: "Shared", Shared: true, Hint: "Model"},
 		{ID: "6", Name: "Shared", Hint: "Model"},
+		{ID: "7", Name: `Repository · App\Scm`, Hint: "GitRepoRepository, CommitRepository"},
+		{ID: "8", Name: `Repository · App\Scm`, Hint: "OrganizationRepository"},
 	}
 	disambiguateNames(communities)
-	want := []string{"GithubOrganization", "GithubOrganization · LogEventVisit", `App\Billing`, `App\Billing (Payment)`, `App\Billing #4`, "Shared", "Shared"}
+	want := []string{"GithubOrganization", "GithubOrganization · LogEventVisit", `App\Billing`, `App\Billing (Payment)`, `App\Billing #4`, "Shared", "Shared", `Repository · App\Scm`, `Repository · App\Scm (OrganizationRepository)`}
 	for i, c := range communities {
 		if c.Name != want[i] {
 			t.Errorf("community %s: got %q, want %q", c.ID, c.Name, want[i])
