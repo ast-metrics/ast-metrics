@@ -729,6 +729,7 @@
 
                     <a href="index{{ scopeSuffix }}.html"
                        class="nav-link {% if page == 'index.html' %}nav-link--active{% endif %}"
+                               title="The verdict and the scores at a glance. Start here."
                        {% if page == 'index.html' %}aria-current="page"{% endif %}>
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h12A2.25 2.25 0 0 1 20.25 6v3H3.75V6ZM3.75 12h7.5v8.25H6A2.25 2.25 0 0 1 3.75 18v-6ZM14.25 12h6v6A2.25 2.25 0 0 1 18 20.25h-3.75V12Z" />
@@ -752,13 +753,13 @@
                             </svg>
                         </summary>
                         <div class="nav-sublist">
-                            <a href="explorer{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'explorer.html' %}nav-sublink--active{% endif %}"
+                            <a href="explorer{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'explorer.html' %}nav-sublink--active{% endif %}" title="Every file, with its size, complexity and risk."
                                {% if page == 'explorer.html' %}aria-current="page"{% endif %}>Files</a>
-                            <a href="classes{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'classes.html' %}nav-sublink--active{% endif %}"
+                            <a href="classes{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'classes.html' %}nav-sublink--active{% endif %}" title="Every class, with its metrics."
                                {% if page == 'classes.html' %}aria-current="page"{% endif %}>Classes</a>
-                            <a href="testquality{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'testquality.html' %}nav-sublink--active{% endif %}"
+                            <a href="testquality{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'testquality.html' %}nav-sublink--active{% endif %}" title="How isolated and how traceable the tests are."
                                {% if page == 'testquality.html' %}aria-current="page"{% endif %}>Tests</a>
-                            <a href="metrics{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'metrics.html' %}nav-sublink--active{% endif %}"
+                            <a href="metrics{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'metrics.html' %}nav-sublink--active{% endif %}" title="Every metric with its definition. For the curious."
                                {% if page == 'metrics.html' %}aria-current="page"{% endif %}>All metrics</a>
                         </div>
                     </details>
@@ -775,11 +776,11 @@
                             </svg>
                         </summary>
                         <div class="nav-sublist">
-                            <a href="dependencies{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'dependencies.html' %}nav-sublink--active{% endif %}"
+                            <a href="dependencies{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'dependencies.html' %}nav-sublink--active{% endif %}" title="Who depends on whom, package by package."
                                {% if page == 'dependencies.html' %}aria-current="page"{% endif %}>Dependencies</a>
-                            <a href="communities{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'communities.html' %}nav-sublink--active{% endif %}"
+                            <a href="communities{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'communities.html' %}nav-sublink--active{% endif %}" title="The modules the code forms on its own, where they leak, what to cut first. Advanced."
                                {% if page == 'communities.html' %}aria-current="page"{% endif %}>Natural groups</a>
-                            <a href="classification{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'classification.html' %}nav-sublink--active{% endif %}"
+                            <a href="classification{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'classification.html' %}nav-sublink--active{% endif %}" title="What each class does: controller, repository, value object."
                                {% if page == 'classification.html' %}aria-current="page"{% endif %}>Roles</a>
                         </div>
                     </details>
@@ -796,15 +797,16 @@
                             </svg>
                         </summary>
                         <div class="nav-sublist">
-                            <a href="linters{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'linters.html' %}nav-sublink--active{% endif %}"
+                            <a href="linters{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'linters.html' %}nav-sublink--active{% endif %}" title="The rules the code breaks, and the ones it respects."
                                {% if page == 'linters.html' %}aria-current="page"{% endif %}>Rule violations</a>
-                            <a href="risks{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'risks.html' %}nav-sublink--active{% endif %}"
+                            <a href="risks{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'risks.html' %}nav-sublink--active{% endif %}" title="The files where complexity meets churn: where a change is most likely to hurt."
                                {% if page == 'risks.html' %}aria-current="page"{% endif %}>Observations</a>
                         </div>
                     </details>
 
                     <a href="busfactor{{ scopeSuffix }}.html"
                        class="nav-link {% if page == 'busfactor.html' %}nav-link--active{% endif %}"
+                               title="Who knows which part of the code, and what happens if they leave."
                        {% if page == 'busfactor.html' %}aria-current="page"{% endif %}>
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
@@ -815,6 +817,7 @@
                     {% if currentView.Comparaison %}
                     <a href="compare{{ scopeSuffix }}.html"
                        class="nav-link {% if page == 'compare.html' %}nav-link--active{% endif %}"
+                               title="What changed since the previous analysis."
                        {% if page == 'compare.html' %}aria-current="page"{% endif %}>
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />

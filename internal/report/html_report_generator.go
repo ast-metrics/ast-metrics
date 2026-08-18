@@ -1101,9 +1101,27 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 	pongo2.RegisterFilter("communityFiles", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
 		cm, ok := in.Interface().(*analyzer.CommunityMetrics)
 		if !ok {
-			return pongo2.AsSafeValue(`{"dirs":[],"f":[],"c":{},"n":{},"b":[],"s":"","u":"class","d":{}}`), nil
+			return pongo2.AsSafeValue(`{"dirs":[],"f":[],"c":{},"n":{},"x":{},"m":{},"b":[],"s":"","u":"class","d":{}}`), nil
 		}
 		return pongo2.AsSafeValue(communityFilesJSON(cm)), nil
+	})
+
+	// communityFreeze reads the state of the no_cross_community_dependencies
+	// rule off the evaluation. Usage: {% set freeze = projectAggregated.Evaluation|communityFreeze %}
+	pongo2.RegisterFilter("communityFreeze", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		eval, _ := in.Interface().(*requirement.EvaluationResult)
+		return pongo2.AsValue(communityFreezeOf(eval)), nil
+	})
+
+	// communityLabels joins the short labels of the first units of a list,
+	// for a tooltip. Usage: {{ c.Exposed|communityLabels:cm }} (five of them)
+	pongo2.RegisterFilter("communityLabels", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, ok := param.Interface().(*analyzer.CommunityMetrics)
+		units, ok2 := in.Interface().([]string)
+		if !ok || !ok2 {
+			return pongo2.AsValue(""), nil
+		}
+		return pongo2.AsValue(unitLabels(cm, units, 5)), nil
 	})
 
 	// communityColor gives the color of the community at a position in the

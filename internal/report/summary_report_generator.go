@@ -114,6 +114,9 @@ func (v *SummaryReportGenerator) Render(files []*pb.File, projectAggregated anal
 			if n := len(combined.Community.Cycles); n > 0 {
 				row(body, "  cycles between communities", integer(n))
 			}
+			if combined.Community.HistoryAvailable && combined.Community.HistoryCommits > 0 {
+				row(body, "  commits agreeing with them", fmt.Sprintf("%d%%", int(combined.Community.HistoryAgreement*100+0.5)))
+			}
 		}
 	})
 

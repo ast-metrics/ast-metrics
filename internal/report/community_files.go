@@ -24,6 +24,11 @@ type communityFiles struct {
 	// Communities carries, per id, what the map needs to draw a box:
 	// [short name, size, colour].
 	Communities map[string][3]interface{} `json:"n"`
+	// Exposed maps a community id onto the file indices of the members the
+	// rest of the code reaches; Border onto the ones another resolution of
+	// the detection places elsewhere. The members list marks them.
+	Exposed map[string][]int `json:"x"`
+	Border  map[string][]int `json:"m"`
 	// Back lists the community edges closing a cycle, "from>to".
 	Back []string `json:"b"`
 	// Shared is the id of the shared kernel, "" without one.
@@ -49,7 +54,7 @@ type folderPayload struct {
 // communityFilesJSON serialises the files and cross references of the
 // communities.
 func communityFilesJSON(cm *analyzer.CommunityMetrics) string {
-	empty := `{"dirs":[],"f":[],"c":{},"n":{},"b":[],"s":"","u":"class","d":{}}`
+	empty := `{"dirs":[],"f":[],"c":{},"n":{},"x":{},"m":{},"b":[],"s":"","u":"class","d":{}}`
 	if cm == nil || len(cm.UnitFiles) == 0 {
 		return empty
 	}
@@ -94,6 +99,7 @@ func communityFilesJSON(cm *analyzer.CommunityMetrics) string {
 	out := communityFiles{
 		Dirs: dirs, Files: files, Units: map[string][]int{},
 		Communities: map[string][3]interface{}{}, Back: []string{}, Unit: "class",
+		Exposed: map[string][]int{}, Border: map[string][]int{},
 		Folders: map[string]folderPayload{},
 	}
 	if cm.Granularity == analyzer.GranularityNamespace {
@@ -102,14 +108,23 @@ func communityFilesJSON(cm *analyzer.CommunityMetrics) string {
 	if cm.Shared != nil {
 		out.Shared = cm.Shared.ID
 	}
-	for i, c := range cm.Communities {
-		list := make([]int, 0, len(c.Units))
-		for _, unit := range c.Units {
+	indicesOf := func(units []string) []int {
+		list := make([]int, 0, len(units))
+		for _, unit := range units {
 			if fi, ok := fileOf(unit); ok {
 				list = append(list, fi)
 			}
 		}
-		out.Units[c.ID] = list
+		return list
+	}
+	for i, c := range cm.Communities {
+		out.Units[c.ID] = indicesOf(c.Units)
+		if len(c.Exposed) > 0 {
+			out.Exposed[c.ID] = indicesOf(c.Exposed)
+		}
+		if len(c.Border) > 0 {
+			out.Border[c.ID] = indicesOf(c.Border)
+		}
 		out.Communities[c.ID] = [3]interface{}{c.ShortName, c.Size, communityColor(i, c.Shared)}
 	}
 	for _, e := range cm.Edges {
@@ -120,13 +135,7 @@ func communityFilesJSON(cm *analyzer.CommunityMetrics) string {
 	for _, folder := range cm.Folders {
 		payload := folderPayload{UnitCount: folder.UnitCount, Communities: [][5]interface{}{}, Edges: [][4]interface{}{}, Verdict: folder.Verdict + " " + folder.VerdictNote}
 		for _, c := range folder.Communities {
-			list := make([]int, 0, len(c.Units))
-			for _, unit := range c.Units {
-				if fi, ok := fileOf(unit); ok {
-					list = append(list, fi)
-				}
-			}
-			payload.Communities = append(payload.Communities, [5]interface{}{c.ShortName, c.Size, c.Shared, c.Hint, deltas(list)})
+			payload.Communities = append(payload.Communities, [5]interface{}{c.ShortName, c.Size, c.Shared, c.Hint, deltas(indicesOf(c.Units))})
 		}
 		for _, e := range folder.Edges {
 			if e.Shared {
