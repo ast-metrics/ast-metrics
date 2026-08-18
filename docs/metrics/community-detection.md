@@ -43,10 +43,12 @@ the same way every time, so two runs on the same code draw the same map.
 Communities of fewer than 3 units are folded into the neighbour they exchange
 the most with (two classes are a pair, not a module); a small group linked to
 nothing stays apart and is counted with the units that take no part.
-Communities are numbered largest first and named after the namespaces their
-members come from: a single name once one namespace holds at least half of
-them, the next namespaces joining the name below that. A community drawn at
-least 75% from one namespace is called **cohesive**.
+Communities are numbered largest first. One is named after its namespace
+when that namespace holds at least half of its members; otherwise after the
+word its class names share (`Billing`, `Repository`), joined to the dominant
+namespace when that word names a layer (`Repository · Component\Scm`), and
+failing that after the class at its heart. A community drawn at least 75%
+from one namespace is called **cohesive**.
 
 ## Reading the page
 
