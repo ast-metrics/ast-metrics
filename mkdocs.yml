@@ -40,6 +40,13 @@ markdown_extensions:
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - md_in_html
 
+plugins:
+  - search
+  - git-revision-date-localized:
+      type: iso_date
+      enable_creation_date: false
+      fallback_to_build_date: false
+
 extra_css:
   - assets/stylesheets/extra.css
 
