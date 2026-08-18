@@ -37,11 +37,7 @@ Developers often believe their architecture follows a certain pattern: "We have 
 
 ### 1. Community Detection
 
-Instead of showing thousands of individual classes, AST Metrics groups them into **Communities** using the **Louvain Algorithm**.
-
-A Community is a cluster of classes that interact more with each other than with the rest of the system.
-
-![Community Detection](../images/community-detection-explainer.png)
+Instead of showing thousands of individual classes, AST Metrics groups them into **communities**: groups of classes that depend on each other more than on the rest of the code, found on the dependency graph with a weighted Louvain detection. The classes the whole codebase leans on are set aside as a shared kernel. [Community Detection](community-detection.md) explains how they are found and how to read them.
 
 ### 2. Dependency Layering
 

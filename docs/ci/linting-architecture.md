@@ -59,6 +59,9 @@ ast-metrics ruleset add volume
 | **no_circular_dependencies** | Detect circular dependencies between classes |
 | **max_responsibilities** | Maximum number of responsibilities (LCOM) per class |
 | **no_god_class** | Avoid God Classes (too many methods/properties) |
+| **no_community_cycles** | Fails when communities depend on each other in a cycle |
+| **max_community_cross_share** | Maximum share (%) of dependencies crossing from one community to another |
+| **no_cross_community_dependencies** | Fails on every dependency crossing between communities; meant to be frozen with `ast-metrics baseline` |
 
 #### 📏 Volume Ruleset
 `ast-metrics ruleset add volume`
@@ -164,6 +167,38 @@ recorded violations and only fails on new ones.
 Re-run `ast-metrics baseline` whenever you want to shrink the file as you pay off
 the debt. If you keep the file somewhere else, point the linter at it with
 `ast-metrics lint --baseline=<path>`.
+
+## Freezing the community boundaries
+
+Three project rules read the [communities](../metrics/community-detection.md)
+the analysis finds on the dependency graph. They all pass when the project has
+fewer than two communities.
+
+```yaml
+requirements:
+  rules:
+    architecture:
+      no_community_cycles: true
+      max_community_cross_share: 20
+      no_cross_community_dependencies: true
+```
+
+`no_community_cycles` fails once per cycle and names the arrows to cut, lightest
+first. `max_community_cross_share` fails when more than the given percentage of
+the dependencies cross from one community to another, the shared kernel left
+aside. `no_cross_community_dependencies` fails on every single crossing, so it
+only makes sense with a baseline:
+
+```bash
+ast-metrics baseline   # accept today's crossings
+ast-metrics lint       # fails only on a crossing added since
+```
+
+Each crossing is filed under the file of the class that depends, with the
+message `Foo depends on Bar, which sits in another community`. Community names
+stay out of the message on purpose: they change as the code moves, and the
+baseline recognizes an entry by rule, file and message. The communities page of
+the HTML report shows how many crossings are frozen and how many are new.
 
 !!! note "Baseline or review?"
     The two mechanisms are complementary. The **baseline** freezes today's violations

@@ -28,6 +28,6 @@ We believe that **code quality is not just about style**. It's about:
 - [**Test Quality**](test-quality.md): Isolation, traceability, god tests and untested classes.
 
 ### 🏗️ Architecture & Team
-- [**Community Detection**](community-detection.md): The natural structure of your code.
+- [**Community Detection**](community-detection.md): The groups your classes form on the dependency graph, the shared kernel, the cycles between them, and what the git history says of the boundaries.
 - [**Bus Factor**](bus-factor.md): Knowledge distribution and risk.
 - [**Architecture Map**](architecture-map.md): Visualizing the system.

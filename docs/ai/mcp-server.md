@@ -38,7 +38,7 @@ List dependency relationships across files.
 </div>
 <div class="mcp-tool" markdown>
 ### `get_communities`
-Detect module communities using the Louvain algorithm.
+The communities the code forms on the dependency graph, with the shared kernel, the cycles, the findings and the actions to take first.
 </div>
 <div class="mcp-tool" markdown>
 ### `get_test_quality`
