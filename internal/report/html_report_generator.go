@@ -1096,6 +1096,17 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 		return pongo2.AsSafeValue(communityMapSVG(cm)), nil
 	})
 
+	// communityBlocks draws the zoomed-out map: the blocks the communities
+	// form at a coarser grain. Empty when there is nothing to zoom out to.
+	// Usage: {{ currentView.Community|communityBlocks }}
+	pongo2.RegisterFilter("communityBlocks", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, ok := in.Interface().(*analyzer.CommunityMetrics)
+		if !ok {
+			return pongo2.AsSafeValue(""), nil
+		}
+		return pongo2.AsSafeValue(communityBlocksSVG(cm)), nil
+	})
+
 	// communityFiles serialises the files behind the communities, for the
 	// folder explorer of the page. Usage: {{ currentView.Community|communityFiles }}
 	pongo2.RegisterFilter("communityFiles", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
@@ -1122,6 +1133,23 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 			return pongo2.AsValue(""), nil
 		}
 		return pongo2.AsValue(unitLabels(cm, units, 5)), nil
+	})
+
+	// groupedBlocks counts the blocks holding several communities: the ones
+	// the zoomed-out map draws as boxes, the others standing apart.
+	// Usage: {{ cm|groupedBlocks }}
+	pongo2.RegisterFilter("groupedBlocks", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, ok := in.Interface().(*analyzer.CommunityMetrics)
+		if !ok {
+			return pongo2.AsValue(0), nil
+		}
+		n := 0
+		for _, b := range cm.Blocks {
+			if len(b.Communities) > 1 {
+				n++
+			}
+		}
+		return pongo2.AsValue(n), nil
 	})
 
 	// communityColor gives the color of the community at a position in the

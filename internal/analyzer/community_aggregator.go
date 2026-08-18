@@ -33,6 +33,12 @@ type CommunityMetrics struct {
 	// Actions are the few things to do first, at most three, the most
 	// valuable first, derived from the findings.
 	Actions []CommunityAction
+	// Blocks are the communities grouped at a coarser grain, the zoomed-out
+	// map, largest first; nil when there is nothing to zoom out to. Only
+	// computed at the top level. BlockEdges are the dependencies between
+	// them, heaviest first, their cycles marked the way Edges are.
+	Blocks     []CommunityBlock
+	BlockEdges []CommunityEdge
 
 	// CommunitiesCount is the number of communities, the shared kernel left
 	// out.
@@ -521,20 +527,7 @@ func computeCommunities(g *unitGraph, aggregate *Aggregated) *CommunityMetrics {
 	}
 
 	// Cycles between communities, the shared kernel left out.
-	cm.Cycles = cyclesOf(cm)
-	inCycle := map[string]string{}
-	for i, cycle := range cm.Cycles {
-		for _, id := range cycle {
-			inCycle[id] = fmt.Sprintf("%d", i)
-		}
-	}
-	for i := range cm.Edges {
-		e := &cm.Edges[i]
-		if a, ok := inCycle[e.From]; ok && inCycle[e.To] == a {
-			e.InCycle = true
-		}
-	}
-	markBackEdges(cm)
+	cm.Cycles = markCycles(communityIDs(cm), cm.Edges)
 	for _, cycle := range cm.Cycles {
 		cm.LargestCycle = max(cm.LargestCycle, len(cycle))
 	}
@@ -547,6 +540,7 @@ func computeCommunities(g *unitGraph, aggregate *Aggregated) *CommunityMetrics {
 	// The border of each community costs four more detections: a folder
 	// analysed on its own goes without it.
 	borderOfCommunities(cm, g, shared)
+	cm.Blocks, cm.BlockEdges = blocksOf(cm)
 	ownersOfCommunities(aggregate, cm, g)
 	historyOf(aggregate, cm, g)
 	cm.Findings = withHistoryFindings(findingsOf(cm, g, weights), historyFindingsOf(cm))
@@ -1169,20 +1163,51 @@ func hubsOfHint(hint string) []string {
 	return strings.Split(hint, ", ")
 }
 
-// markBackEdges flags the edges that, cut, would leave the community graph
-// without a cycle, choosing light edges over heavy ones: the sequence of
-// communities is built with the Eades-Lin-Smyth heuristic on the weighted
-// graph, and the edges going against that sequence are the back edges.
-func markBackEdges(cm *CommunityMetrics) {
-	ids := []string{}
+// communityIDs lists the ids of the communities, the shared kernel left out.
+func communityIDs(cm *CommunityMetrics) []string {
+	ids := make([]string, 0, len(cm.Communities))
 	for _, c := range cm.Communities {
 		if !c.Shared {
 			ids = append(ids, c.ID)
 		}
 	}
+	return ids
+}
+
+// markCycles finds the cycles among the nodes (the communities, or the
+// blocks they form), flags InCycle on every edge inside one and Back on the
+// edges to cut, and returns the cycles. Edges touching the shared kernel take
+// no part.
+func markCycles(ids []string, edges []CommunityEdge) [][]string {
+	cycles := cyclesIn(ids, edges)
+	inCycle := map[string]int{}
+	for i, cycle := range cycles {
+		for _, id := range cycle {
+			inCycle[id] = i
+		}
+	}
+	for i := range edges {
+		e := &edges[i]
+		if e.Shared {
+			continue
+		}
+		a, inA := inCycle[e.From]
+		b, inB := inCycle[e.To]
+		e.InCycle = inA && inB && a == b
+	}
+	markBackEdges(ids, edges)
+	return cycles
+}
+
+// markBackEdges flags the edges that, cut, would leave the graph without a
+// cycle, choosing light edges over heavy ones: the sequence of nodes is built
+// with the Eades-Lin-Smyth heuristic on the weighted graph, and the edges
+// going against that sequence are the back edges. Only the edges already
+// flagged InCycle are considered.
+func markBackEdges(ids []string, edges []CommunityEdge) {
 	outW := map[string]map[string]int{}
 	inW := map[string]map[string]int{}
-	for _, e := range cm.Edges {
+	for _, e := range edges {
 		if e.Shared || !e.InCycle {
 			continue
 		}
@@ -1248,8 +1273,8 @@ func markBackEdges(cm *CommunityMetrics) {
 	for i, id := range append(head, tail...) {
 		position[id] = i
 	}
-	for i := range cm.Edges {
-		e := &cm.Edges[i]
+	for i := range edges {
+		e := &edges[i]
 		if e.Shared || !e.InCycle {
 			continue
 		}
@@ -1257,18 +1282,12 @@ func markBackEdges(cm *CommunityMetrics) {
 	}
 }
 
-// cyclesOf finds the strongly connected components of the community graph
-// with more than one member, sorted by id. The shared kernel is left out: it
-// is used by everyone by definition.
-func cyclesOf(cm *CommunityMetrics) [][]string {
+// cyclesIn finds the strongly connected components of the graph with more
+// than one member, sorted by id. The shared kernel is left out: it is used by
+// everyone by definition.
+func cyclesIn(ids []string, edges []CommunityEdge) [][]string {
 	adj := map[string][]string{}
-	ids := make([]string, 0, len(cm.Communities))
-	for _, c := range cm.Communities {
-		if !c.Shared {
-			ids = append(ids, c.ID)
-		}
-	}
-	for _, e := range cm.Edges {
+	for _, e := range edges {
 		if e.Shared {
 			continue
 		}
