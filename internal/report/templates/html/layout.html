@@ -569,6 +569,20 @@
 
         .nav-sublink:hover { background: #f1f5f9; color: #0f172a; }
 
+        /* A small badge after the entries that ask for more from the reader */
+        .nav-sublink:has(.nav-badge) { white-space: nowrap; }
+        /* The sidebar keeps a fixed width: a seventh of a wide screen is too
+           much, a seventh of a laptop too little for the longest entries. */
+        @media (min-width: 1024px) {
+            body div.lg\:grid.lg\:grid-cols-7 { grid-template-columns: 14rem repeat(6, minmax(0, 1fr)) !important; }
+        }
+        .nav-badge {
+            display: inline-block; vertical-align: super; margin-left: 0.2rem;
+            font-size: 0.4375rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; line-height: 1;
+            color: #7c3aed; background: #f5f3ff; border-radius: 999px; padding: 0.15rem 0.3rem;
+        }
+        .nav-sublink--active .nav-badge { color: #6d28d9; background: #ede9fe; }
+
         .nav-sublink--active {
             color: #1d4ed8;
             font-weight: 600;
@@ -646,6 +660,21 @@
             color: #64748b;
         }
 
+        /* One-line description of each section, shown beside the sidebar entry
+           on hover and on focus. Positioned by script because the sidebar
+           scrolls and would clip a CSS bubble. */
+        .nav-tip {
+            position: fixed; z-index: 70; pointer-events: none;
+            background: #1e293b; color: #f8fafc; font-size: 11px; line-height: 1.5;
+            padding: 6px 10px; border-radius: 8px; max-width: 260px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
+            opacity: 0; transition: opacity 0.12s ease;
+        }
+        .nav-tip.is-on { opacity: 1; }
+        .nav-tip::before {
+            content: ''; position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
+            border: 5px solid transparent; border-right-color: #1e293b;
+        }
         /* Shared accessible CSS tooltips: any element with data-tip="..." shows a
            small dark bubble on hover and on keyboard focus. */
         [data-tip] { position: relative; cursor: help; }
@@ -729,7 +758,7 @@
 
                     <a href="index{{ scopeSuffix }}.html"
                        class="nav-link {% if page == 'index.html' %}nav-link--active{% endif %}"
-                               title="The verdict and the scores at a glance. Start here."
+                               data-nav-tip="The verdict and the scores at a glance. Start here."
                        {% if page == 'index.html' %}aria-current="page"{% endif %}>
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h12A2.25 2.25 0 0 1 20.25 6v3H3.75V6ZM3.75 12h7.5v8.25H6A2.25 2.25 0 0 1 3.75 18v-6ZM14.25 12h6v6A2.25 2.25 0 0 1 18 20.25h-3.75V12Z" />
@@ -753,14 +782,14 @@
                             </svg>
                         </summary>
                         <div class="nav-sublist">
-                            <a href="explorer{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'explorer.html' %}nav-sublink--active{% endif %}" title="Every file, with its size, complexity and risk."
+                            <a href="explorer{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'explorer.html' %}nav-sublink--active{% endif %}" data-nav-tip="Every file, with its size, complexity and risk."
                                {% if page == 'explorer.html' %}aria-current="page"{% endif %}>Files</a>
-                            <a href="classes{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'classes.html' %}nav-sublink--active{% endif %}" title="Every class, with its metrics."
+                            <a href="classes{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'classes.html' %}nav-sublink--active{% endif %}" data-nav-tip="Every class, with its metrics."
                                {% if page == 'classes.html' %}aria-current="page"{% endif %}>Classes</a>
-                            <a href="testquality{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'testquality.html' %}nav-sublink--active{% endif %}" title="How isolated and how traceable the tests are."
+                            <a href="testquality{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'testquality.html' %}nav-sublink--active{% endif %}" data-nav-tip="How isolated and how traceable the tests are."
                                {% if page == 'testquality.html' %}aria-current="page"{% endif %}>Tests</a>
-                            <a href="metrics{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'metrics.html' %}nav-sublink--active{% endif %}" title="Every metric with its definition. For the curious."
-                               {% if page == 'metrics.html' %}aria-current="page"{% endif %}>All metrics</a>
+                            <a href="metrics{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'metrics.html' %}nav-sublink--active{% endif %}" data-nav-tip="Every metric with its definition. For the curious."
+                               {% if page == 'metrics.html' %}aria-current="page"{% endif %}>All metrics <span class="nav-badge">advanced</span></a>
                         </div>
                     </details>
 
@@ -776,11 +805,11 @@
                             </svg>
                         </summary>
                         <div class="nav-sublist">
-                            <a href="dependencies{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'dependencies.html' %}nav-sublink--active{% endif %}" title="Who depends on whom, package by package."
+                            <a href="dependencies{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'dependencies.html' %}nav-sublink--active{% endif %}" data-nav-tip="Who depends on whom, package by package."
                                {% if page == 'dependencies.html' %}aria-current="page"{% endif %}>Dependencies</a>
-                            <a href="communities{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'communities.html' %}nav-sublink--active{% endif %}" title="The modules the code forms on its own, where they leak, what to cut first. Advanced."
-                               {% if page == 'communities.html' %}aria-current="page"{% endif %}>Natural groups</a>
-                            <a href="classification{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'classification.html' %}nav-sublink--active{% endif %}" title="What each class does: controller, repository, value object."
+                            <a href="communities{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'communities.html' %}nav-sublink--active{% endif %}" data-nav-tip="The modules the code forms on its own, where they leak, what to cut first. Advanced."
+                               {% if page == 'communities.html' %}aria-current="page"{% endif %}>Natural groups <span class="nav-badge">advanced</span></a>
+                            <a href="classification{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'classification.html' %}nav-sublink--active{% endif %}" data-nav-tip="What each class does: controller, repository, value object."
                                {% if page == 'classification.html' %}aria-current="page"{% endif %}>Roles</a>
                         </div>
                     </details>
@@ -797,16 +826,16 @@
                             </svg>
                         </summary>
                         <div class="nav-sublist">
-                            <a href="linters{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'linters.html' %}nav-sublink--active{% endif %}" title="The rules the code breaks, and the ones it respects."
+                            <a href="linters{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'linters.html' %}nav-sublink--active{% endif %}" data-nav-tip="The rules the code breaks, and the ones it respects."
                                {% if page == 'linters.html' %}aria-current="page"{% endif %}>Rule violations</a>
-                            <a href="risks{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'risks.html' %}nav-sublink--active{% endif %}" title="The files where complexity meets churn: where a change is most likely to hurt."
+                            <a href="risks{{ scopeSuffix }}.html" class="nav-sublink {% if page == 'risks.html' %}nav-sublink--active{% endif %}" data-nav-tip="The files where complexity meets churn: where a change is most likely to hurt."
                                {% if page == 'risks.html' %}aria-current="page"{% endif %}>Observations</a>
                         </div>
                     </details>
 
                     <a href="busfactor{{ scopeSuffix }}.html"
                        class="nav-link {% if page == 'busfactor.html' %}nav-link--active{% endif %}"
-                               title="Who knows which part of the code, and what happens if they leave."
+                               data-nav-tip="Who knows which part of the code, and what happens if they leave."
                        {% if page == 'busfactor.html' %}aria-current="page"{% endif %}>
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
@@ -817,7 +846,7 @@
                     {% if currentView.Comparaison %}
                     <a href="compare{{ scopeSuffix }}.html"
                        class="nav-link {% if page == 'compare.html' %}nav-link--active{% endif %}"
-                               title="What changed since the previous analysis."
+                               data-nav-tip="What changed since the previous analysis."
                        {% if page == 'compare.html' %}aria-current="page"{% endif %}>
                         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
@@ -873,6 +902,30 @@
                 </a>
             </div>
         </aside>
+        <div id="nav-tip" class="nav-tip" role="tooltip" aria-hidden="true"></div>
+        <script>
+        (function () {
+            var tip = document.getElementById('nav-tip');
+            if (!tip) return;
+            function show(el) {
+                tip.textContent = el.getAttribute('data-nav-tip');
+                var r = el.getBoundingClientRect();
+                tip.style.left = (r.right + 10) + 'px';
+                tip.style.top = r.top + 'px';
+                tip.classList.add('is-on');
+                // centre on the entry once the bubble has a height
+                tip.style.top = (r.top + (r.height - tip.offsetHeight) / 2) + 'px';
+            }
+            function hide() { tip.classList.remove('is-on'); }
+            document.querySelectorAll('[data-nav-tip]').forEach(function (el) {
+                el.addEventListener('mouseenter', function () { show(el); });
+                el.addEventListener('focus', function () { show(el); });
+                el.addEventListener('mouseleave', hide);
+                el.addEventListener('blur', hide);
+            });
+        })();
+        </script>
+
 
         <main class="col-span-full lg:col-span-6">
             <div class="report-canvas py-8 px-6 md:px-8">
