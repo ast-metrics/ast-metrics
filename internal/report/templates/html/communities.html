@@ -103,6 +103,9 @@
     .share-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: #e8ecf1; margin-top: 0.75rem; }
     .share-bar > span { height: 100%; }
     .verdict-aside { font-size: 0.9375rem; color: #334155; line-height: 1.55; max-width: 42rem; }
+    .verdict-link { color: inherit; text-decoration: underline; text-decoration-color: #cbd5e1; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+    .verdict-link:hover { text-decoration-color: currentColor; }
+    .members li.is-hit { background: #fef9c3; border-radius: 4px; padding: 0 0.25rem; margin-left: -0.25rem; }
     .freeze { margin-top: 0.6rem; font-size: 0.75rem; color: #475569; max-width: 30rem; line-height: 1.5; }
     .freeze-lock { font-size: 0.7rem; margin-right: 0.15rem; }
     .freeze-offer > summary { cursor: pointer; list-style: none; display: inline-block; padding: 0.2rem 0.6rem; border: 1px solid #e2e8f0; border-radius: 999px; background: white; color: #334155; font-weight: 500; }
@@ -194,9 +197,9 @@
         <div class="min-w-0 max-w-3xl">
             <h1 class="verdict-title">
                 {{ cm.Verdict }}<br>
-                <span class="verdict-muted">{{ cm.VerdictNote }}</span>
+                <span class="verdict-muted">{{ cm.VerdictNote|verdictLinks:cm }}</span>
             </h1>
-            {% if cm.VerdictAside %}<p class="verdict-aside mt-3">{{ cm.VerdictAside }}</p>{% endif %}
+            {% if cm.VerdictAside %}<p class="verdict-aside mt-3">{{ cm.VerdictAside|verdictLinks:cm }}</p>{% endif %}
             <p class="verdict-lead mt-4">
                 Groups of {% if cm.Granularity == "namespace" %}packages{% else %}classes{% endif %} that depend on each other more than on the rest of the code, read from the dependencies alone, never from the folder names.
             </p>
@@ -816,7 +819,34 @@
         // the map is redrawn on zoom: its boxes are wired here, not one by one
         if (a.classList.contains('cm-box') && !document.getElementById('community-' + id)) return;
         openCommunity(id, false);
+        var member = a.getAttribute('data-member');
+        if (member) markMember(id, member);
     });
+    // The names quoted by the verdict light their community on the map.
+    document.querySelectorAll('.verdict-link[data-communities]').forEach(function (a) {
+        var ids = a.getAttribute('data-communities').split(' ');
+        a.addEventListener('mouseenter', function () { focus(ids); });
+        a.addEventListener('mouseleave', blur);
+    });
+    // A class quoted by the verdict is shown among the members of its row.
+    function markMember(id, label) {
+        var panel = document.getElementById('community-' + id + '-detail');
+        if (!panel) return;
+        var det = panel.querySelector('details.members');
+        var ul = panel.querySelector('ul[data-lazy-members]');
+        if (!det || !ul) return;
+        function mark() {
+            Array.prototype.forEach.call(ul.querySelectorAll('li'), function (li) {
+                var text = (li.firstChild && li.firstChild.nodeType === 3 ? li.firstChild.textContent : li.textContent).replace(/ ×\d+$/, '').trim();
+                var hit = text === label;
+                li.classList.toggle('is-hit', hit);
+                if (hit) li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        }
+        // the members are filled on the toggle event, which fires after open is set
+        if (!det.open) { det.addEventListener('toggle', function () { setTimeout(mark, 0); }, { once: true }); det.open = true; }
+        else mark();
+    }
     document.addEventListener('click', function (e) {
         if (e.target.closest('a[href^="#finding-"]')) showTab('findings');
     });
