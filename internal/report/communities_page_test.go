@@ -50,7 +50,7 @@ func twoCommunities() *analyzer.CommunityMetrics {
 // members, and that the row is wired to open it.
 func TestCommunitiesPage_RowsCarryADetailPanel(t *testing.T) {
 	page := renderCommunitiesPage(t, twoCommunities())
-	assert.Contains(t, page, `id="community-0" class="comm-row" data-id="0" tabindex="0" aria-expanded="false" aria-controls="community-0-detail"`)
+	assert.Contains(t, page, `id="community-0" class="comm-row" data-id="0" data-issues="" tabindex="0" aria-expanded="false" aria-controls="community-0-detail"`)
 	assert.Contains(t, page, `id="community-0-detail" class="comm-detail" data-for="0" hidden`)
 	assert.Contains(t, page, `data-lazy-members="0"`)
 	// the summary row keeps a one-line count of the links, the panel names them
@@ -129,4 +129,67 @@ func TestCommunitiesPage_LayeredHelp(t *testing.T) {
 	assert.Less(t, strings.Index(page, `aria-label="Reading the communities"`), strings.Index(page, `<details class="howto mb-4" data-howto>`))
 	assert.Less(t, strings.Index(page, `<details class="howto mb-4" data-howto>`), strings.Index(page, `id="panel-findings"`))
 	assert.Contains(t, page, `class="finding-kind finding-kind--cycle" tabindex="0" data-tip="Communities that reach each other`)
+}
+
+// TestCommunitiesPage_RowsFlagTheirIssues checks that a row carries the
+// kinds of its issues, as pills after the name and as data for the quick
+// filters, that the filters only offer the kinds present, and that a calm
+// row gets nothing.
+func TestCommunitiesPage_RowsFlagTheirIssues(t *testing.T) {
+	cm := twoCommunities()
+	page := renderCommunitiesPage(t, cm)
+	assert.NotContains(t, page, `id="issue-filters"`)
+	assert.NotContains(t, page, `class="issue-pill `)
+
+	cm.Communities[0].Issues = []string{"cycle", "history-crossed", "spread"}
+	cm.Communities[1].Issues = []string{"cycle"}
+	page = renderCommunitiesPage(t, cm)
+	assert.Contains(t, page, `data-id="0" data-issues="cycle history-crossed spread"`)
+	assert.Contains(t, page, `data-id="1" data-issues="cycle"`)
+	assert.Contains(t, page, `<span class="issue-pill finding-kind--cycle" tabindex="0" data-tip="In a cycle:`)
+	assert.Contains(t, page, `>changes together</span>`)
+	// two pills at most, the rest counted with the names in the tooltip
+	assert.NotContains(t, page, `>spread</span>`)
+	assert.Contains(t, page, `<span class="issue-pill issue-more" tabindex="0" data-tip="spread">+1</span>`)
+	assert.Contains(t, page, `id="issue-filters"`)
+	assert.Contains(t, page, `<button type="button" class="filter-chip is-active" data-filter="" aria-pressed="true">All <span class="n">2</span></button>`)
+	assert.Contains(t, page, `data-filter="cycle" aria-pressed="false"`)
+	assert.Contains(t, page, `>In a cycle <span class="n">2</span></button>`)
+	assert.Contains(t, page, `>Changes together <span class="n">1</span></button>`)
+	assert.Contains(t, page, `>Spread <span class="n">1</span></button>`)
+	assert.NotContains(t, page, `data-filter="exposed"`)
+	assert.Less(t, strings.Index(page, `id="issue-filters"`), strings.Index(page, `<table class="comm-table`))
+}
+
+// TestCommunitiesPage_KernelSitsApart checks that the shared kernel is not
+// a ranked row but its own block above the filters, keeping the ids the map
+// and the verdict rely on, with its facts and its detail panel.
+func TestCommunitiesPage_KernelSitsApart(t *testing.T) {
+	cm := twoCommunities()
+	page := renderCommunitiesPage(t, cm)
+	assert.NotContains(t, page, `id="kernel-block"`)
+
+	kernel := &analyzer.Community{ID: analyzer.SharedID, Shared: true, ShortName: "Shared kernel (Money)", Size: 2, Units: []string{"Money", "Clock"}, Hubs: []string{"Money"},
+		Namespaces: []analyzer.NamespaceShare{{Namespace: "app/shared", Label: "shared", Count: 2, Share: 1}},
+		UsedBy:     []analyzer.CommunityLink{{ID: "0", Name: "billing", Weight: 4}, {ID: "1", Name: "users", Weight: 1}},
+		Uses:       []analyzer.CommunityLink{{ID: "0", Name: "billing", Weight: 1}}}
+	cm.Communities = append(cm.Communities, kernel)
+	cm.Shared = kernel
+	cm.SharedShare = 0.3
+	cm.Labels = map[string]string{"Money": "Money", "Clock": "Clock"}
+	cm.Findings = []analyzer.CommunityFinding{{Kind: "shared-leak", Title: "The kernel leaks", Communities: []string{analyzer.SharedID}}}
+	page = renderCommunitiesPage(t, cm)
+	assert.Contains(t, page, `<div class="kernel-block" id="kernel-block">`)
+	assert.Contains(t, page, `id="community-shared" class="comm-row kernel-row" data-id="shared" tabindex="0" aria-expanded="false" aria-controls="community-shared-detail"`)
+	assert.Contains(t, page, `id="community-shared-detail" class="comm-detail" data-for="shared" hidden`)
+	assert.Contains(t, page, `data-lazy-members="shared"`)
+	assert.Contains(t, page, `>kernel leak</span>`)
+	assert.Contains(t, page, `used by 2</span> <span class="cell-sub">of 2 communities`)
+	assert.Contains(t, page, `30%</span> <span class="cell-sub">of all dependencies lead here`)
+	assert.Contains(t, page, `>Money</span>`)
+	// out of the ranking: no table row for it, and the block comes first
+	assert.NotContains(t, page, `<tr id="community-shared"`)
+	assert.Equal(t, 1, strings.Count(page, `id="community-shared"`))
+	assert.Less(t, strings.Index(page, `id="kernel-block"`), strings.Index(page, `id="table-sub-structure"`))
+	assert.Less(t, strings.Index(page, `id="kernel-block"`), strings.Index(page, `<table class="comm-table`))
 }
