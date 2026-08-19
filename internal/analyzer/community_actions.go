@@ -15,7 +15,10 @@ type CommunityAction struct {
 	// Detail says why in one sentence and names the references or classes that carry it.
 	Detail string
 	// Effort is the size of the change, in plain words: "2 references", "3 classes".
-	Effort      string
+	Effort string
+	// Gain is what the reader gets out of it, as an observable consequence:
+	// "Frees 9 modules from the cycle", "The two would sit in one community".
+	Gain        string
 	Communities []string
 	Units       []string
 }
@@ -54,32 +57,49 @@ func actionsOf(cm *CommunityMetrics) []CommunityAction {
 		return id
 	}
 
-	// 1. Cut the back edges, lightest first.
-	backs := []CommunityEdge{}
-	for _, e := range cm.Edges {
-		if e.Back && !e.Shared {
-			backs = append(backs, e)
-		}
+	// 1. Cut the back edges, the ones freeing the most modules first, then
+	// the lightest.
+	ids := communityIDs(cm)
+	before := footprintOf(cyclesIn(ids, cm.Edges))
+	type cut struct {
+		edge CommunityEdge
+		gain cycleGain
 	}
-	slices.SortStableFunc(backs, func(x, y CommunityEdge) int {
-		if x.Weight != y.Weight {
-			return x.Weight - y.Weight
+	cuts := []cut{}
+	for i, e := range cm.Edges {
+		if !e.Back || e.Shared {
+			continue
 		}
-		if c := compareIDs(x.From, y.From); c != 0 {
+		without := slices.Concat(cm.Edges[:i], cm.Edges[i+1:])
+		cuts = append(cuts, cut{edge: e, gain: before.gainOf(footprintOf(cyclesIn(ids, without)))})
+	}
+	slices.SortStableFunc(cuts, func(x, y cut) int {
+		if x.gain.freed != y.gain.freed {
+			return y.gain.freed - x.gain.freed
+		}
+		if x.gain.shortened != y.gain.shortened {
+			return y.gain.shortened - x.gain.shortened
+		}
+		if x.edge.Weight != y.edge.Weight {
+			return x.edge.Weight - y.edge.Weight
+		}
+		if c := compareIDs(x.edge.From, y.edge.From); c != 0 {
 			return c
 		}
-		return compareIDs(x.To, y.To)
+		return compareIDs(x.edge.To, y.edge.To)
 	})
-	for i, e := range backs {
+	for i, c := range cuts {
 		if i >= maxCutActions {
 			break
 		}
+		e := c.edge
 		carriers := carriersBetween(cm, e.From, e.To)
 		actions = append(actions, CommunityAction{
 			Kind:        "cut",
 			Title:       fmt.Sprintf("Cut %s → %s", name(e.From), name(e.To)),
 			Detail:      fmt.Sprintf("It closes a cycle: %s, carried by %s.", plural(e.Weight, "reference", "references"), describeCarriers(cm, carriers)),
 			Effort:      plural(e.Weight, "reference", "references"),
+			Gain:        c.gain.String(),
 			Communities: []string{e.From, e.To},
 			Units:       unitsOfCarriers(carriers),
 		})
@@ -115,6 +135,7 @@ func actionsOf(cm *CommunityMetrics) []CommunityAction {
 			Title:       fmt.Sprintf("Move %s next to %s", pair.From, pair.To),
 			Detail:      fmt.Sprintf("They changed together in %s this year while sitting in %s and %s.", plural(pair.Weight, "commit", "commits"), a.ShortName, b.ShortName),
 			Effort:      "1 file",
+			Gain:        "The two would sit in one community",
 			Communities: []string{a.ID, b.ID},
 			Units:       units,
 		})
@@ -139,6 +160,7 @@ func actionsOf(cm *CommunityMetrics) []CommunityAction {
 			Title:       fmt.Sprintf("Gather the entries of %s", c.ShortName),
 			Detail:      fmt.Sprintf("%d of its %d %s are used from outside; the most used, %s, could front the others.", c.ExposedCount, c.Size, unitWord, joinNames(labelsOf(top, cm.Labels))),
 			Effort:      fmt.Sprintf("%d %s exposed", c.ExposedCount, unitWord),
+			Gain:        fmt.Sprintf("%s become the API of %s", plural(c.ExposedCount, "entry", "entries"), c.ShortName),
 			Communities: []string{c.ID},
 			Units:       top,
 		})
@@ -154,6 +176,7 @@ func actionsOf(cm *CommunityMetrics) []CommunityAction {
 			Title:       fmt.Sprintf("Free the shared kernel from %s", name(l.ID)),
 			Detail:      fmt.Sprintf("The kernel references %s %s: those references should be inverted or moved out.", name(l.ID), plural(l.Weight, "time", "times")),
 			Effort:      plural(l.Weight, "reference", "references"),
+			Gain:        fmt.Sprintf("The kernel could change without %s", name(l.ID)),
 			Communities: []string{SharedID, l.ID},
 			Units:       unitsOfCarriers(carriers),
 		})
@@ -163,6 +186,39 @@ func actionsOf(cm *CommunityMetrics) []CommunityAction {
 		actions = actions[:maxActions]
 	}
 	return actions
+}
+
+// cycleFootprint measures the cycles: how many communities they hold in
+// all, and how many the largest holds.
+type cycleFootprint struct{ caught, largest int }
+
+func footprintOf(cycles [][]string) cycleFootprint {
+	f := cycleFootprint{}
+	for _, cycle := range cycles {
+		f.caught += len(cycle)
+		f.largest = max(f.largest, len(cycle))
+	}
+	return f
+}
+
+// cycleGain is what cutting one edge does to the cycles: the communities
+// freed from any cycle, and the communities the largest cycle loses.
+type cycleGain struct{ freed, shortened int }
+
+func (f cycleFootprint) gainOf(after cycleFootprint) cycleGain {
+	return cycleGain{freed: f.caught - after.caught, shortened: f.largest - after.largest}
+}
+
+// String says the gain as the reader will observe it.
+func (g cycleGain) String() string {
+	switch {
+	case g.freed > 0:
+		return fmt.Sprintf("Frees %s from the cycle", plural(g.freed, "community", "communities"))
+	case g.shortened > 0:
+		return "Shortens the cycle"
+	default:
+		return "Part of the way out of the cycle"
+	}
 }
 
 // carriersBetween lists the references from one community to another,

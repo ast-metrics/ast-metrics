@@ -144,8 +144,8 @@ func TestMutualDependencyIsReportedAsACycleWithTheLighterDirectionToCut(t *testi
 	if backs != 1 {
 		t.Errorf("exactly one back edge expected, got %d", backs)
 	}
-	if !strings.Contains(cm.VerdictNote, "cycle") {
-		t.Errorf("the verdict should mention the cycle: %s", cm.VerdictNote)
+	if cm.Verdict != "Some of these communities cannot change alone." || !strings.Contains(cm.VerdictNote, "2 of the 2 communities depend on each other in 1 cycle") {
+		t.Errorf("the verdict should state the cycle: %s / %s", cm.Verdict, cm.VerdictNote)
 	}
 }
 
@@ -183,8 +183,8 @@ func TestABaseClassEverybodyExtendsIsTheSharedKernel(t *testing.T) {
 	if !found {
 		t.Errorf("the shared kernel should be a finding: %+v", cm.Findings)
 	}
-	if !strings.Contains(cm.Verdict, "shared kernel of 1 class") {
-		t.Errorf("verdict should mention the kernel: %s", cm.Verdict)
+	if cm.Verdict != "This code can be split and worked on in pieces." || !strings.HasSuffix(cm.VerdictNote, ", around a shared kernel of 1 class.") || !strings.HasPrefix(cm.VerdictNote, "4 communities, no cycle, ") {
+		t.Errorf("verdict should mention the kernel: %s / %s", cm.Verdict, cm.VerdictNote)
 	}
 }
 
@@ -220,8 +220,8 @@ func TestAHeavyKernelIsCalledTheCentreOfGravity(t *testing.T) {
 	if strings.Contains(shared[0].Detail, "This is expected of a kernel") {
 		t.Errorf("a heavy kernel is not expected: %s", shared[0].Detail)
 	}
-	if !strings.Contains(cm.VerdictNote, "centre of gravity") {
-		t.Errorf("without a cycle, the verdict note names the centre of gravity: %s", cm.VerdictNote)
+	if cm.Verdict != "Anything changing in the shared kernel reaches most of the code." || !strings.HasSuffix(cm.VerdictNote, "% of the dependencies lead to its 3 classes, used by 4 of the 4 communities.") {
+		t.Errorf("without a cycle, the verdict names the heavy kernel: %s / %s", cm.Verdict, cm.VerdictNote)
 	}
 }
 
@@ -238,8 +238,8 @@ func TestASmallKernelIsExpected(t *testing.T) {
 	if len(shared) != 1 || !strings.Contains(shared[0].Detail, "This is expected of a kernel") {
 		t.Errorf("a small kernel is expected: %+v", shared)
 	}
-	if strings.Contains(cm.VerdictNote, "centre of gravity") {
-		t.Errorf("a small kernel is no centre of gravity: %s", cm.VerdictNote)
+	if strings.Contains(cm.Verdict, "shared kernel reaches") {
+		t.Errorf("a small kernel is no centre of gravity: %s", cm.Verdict)
 	}
 }
 
@@ -478,22 +478,57 @@ func TestTopLevelCodeAmongClassesIsNamedByItsPackage(t *testing.T) {
 }
 
 func TestVerdictNamesABlobWhenOneCycleHoldsMostCommunities(t *testing.T) {
+	blob, cycles := "A change in the middle of this code reaches everywhere.", "Some of these communities cannot change alone."
 	cases := []struct {
-		count  int
-		cycles [][]string
-		want   string
+		count    int
+		cycles   [][]string
+		verdict  string
+		wantNote string
 	}{
-		{5, [][]string{{"0", "1", "2", "3"}}, "4 of them form one indissociable block: none can change without the others."},
-		{10, [][]string{{"0", "1", "2", "3"}}, "4 of them form one indissociable block: none can change without the others."},
-		{12, [][]string{{"0", "1", "2", "3"}}, "4 of them depend on each other in 1 cycle."},
-		{5, [][]string{{"0", "1"}, {"2", "3", "4"}}, "5 of them depend on each other in 2 cycles."},
-		{4, [][]string{{"0", "1", "2"}}, "3 of them depend on each other in 1 cycle."},
+		{5, [][]string{{"0", "1", "2", "3"}}, blob, "4 of the 5 communities depend on each other in 1 cycle."},
+		{10, [][]string{{"0", "1", "2", "3"}}, blob, "4 of the 10 communities depend on each other in 1 cycle."},
+		{12, [][]string{{"0", "1", "2", "3"}}, cycles, "4 of the 12 communities depend on each other in 1 cycle."},
+		{5, [][]string{{"0", "1"}, {"2", "3", "4"}}, cycles, "5 of the 5 communities depend on each other in 2 cycles."},
+		{4, [][]string{{"0", "1", "2"}}, cycles, "3 of the 4 communities depend on each other in 1 cycle."},
 	}
 	for _, c := range cases {
 		cm := &CommunityMetrics{Granularity: GranularityClass, CommunitiesCount: c.count, Cycles: c.cycles}
-		if _, note := verdictOf(cm); note != c.want {
-			t.Errorf("%d communities, cycles %v: got %q, want %q", c.count, c.cycles, note, c.want)
+		if verdict, note := verdictOf(cm); verdict != c.verdict || note != c.wantNote {
+			t.Errorf("%d communities, cycles %v: got %q / %q, want %q / %q", c.count, c.cycles, verdict, note, c.verdict, c.wantNote)
 		}
+	}
+	// with a kernel, the note adds the share of the dependencies leading to it
+	cm := &CommunityMetrics{Granularity: GranularityClass, CommunitiesCount: 5, Cycles: [][]string{{"0", "1"}}, Shared: &Community{ID: SharedID, Shared: true, Size: 3}, SharedShare: 0.31}
+	if _, note := verdictOf(cm); note != "2 of the 5 communities depend on each other in 1 cycle, and 31% of the dependencies lead to 3 shared classes." {
+		t.Errorf("unexpected note: %s", note)
+	}
+	// in namespace granularity the kernel holds packages
+	cm.Granularity = GranularityNamespace
+	if _, note := verdictOf(cm); !strings.HasSuffix(note, "3 shared packages.") {
+		t.Errorf("unexpected note: %s", note)
+	}
+}
+
+func TestVerdictReadsTheHistoryThenTheLayers(t *testing.T) {
+	// a history working across the boundaries: over 20 commits, under 40% agree
+	cm := &CommunityMetrics{Granularity: GranularityClass, CommunitiesCount: 4, CohesiveCount: 4, HistoryAvailable: true, HistoryCommits: 25, HistoryAgreement: 0.3, CrossShare: 0.1}
+	if verdict, note := verdictOf(cm); verdict != "People work across these boundaries, not inside them." || note != "Only 30% of the commits stay in a single community; the code forms 4 of them." {
+		t.Errorf("unexpected verdict: %s / %s", verdict, note)
+	}
+	// too few commits to conclude: the layers, then the clean case
+	cm.HistoryCommits = 10
+	cm.CohesiveCount = 1
+	if verdict, note := verdictOf(cm); verdict != "The folders describe layers; the code lives as features." || note != "3 of the 4 communities cut across the namespaces: what changes together sits in several places." {
+		t.Errorf("unexpected verdict: %s / %s", verdict, note)
+	}
+	cm.CohesiveCount = 3
+	if verdict, note := verdictOf(cm); verdict != "This code can be split and worked on in pieces." || note != "4 communities, no cycle, 10% of the dependencies cross between them." {
+		t.Errorf("unexpected verdict: %s / %s", verdict, note)
+	}
+	// a cycle beats the history
+	cm.HistoryCommits, cm.Cycles = 25, [][]string{{"0", "1"}}
+	if verdict, _ := verdictOf(cm); verdict != "Some of these communities cannot change alone." {
+		t.Errorf("unexpected verdict: %s", verdict)
 	}
 }
 

@@ -41,6 +41,9 @@ func TestABackEdgeBecomesACutAction(t *testing.T) {
 	if cut.Effort != "1 reference" {
 		t.Errorf("unexpected effort: %s", cut.Effort)
 	}
+	if cut.Gain != "Frees 2 communities from the cycle" {
+		t.Errorf("cutting the only back edge frees both: %s", cut.Gain)
+	}
 	if !reflect.DeepEqual(cut.Communities, []string{catalog.ID, billing.ID}) || !reflect.DeepEqual(cut.Units, []string{`App\Catalog\A`}) {
 		t.Errorf("the action should name the communities and the class carrying it: %+v", cut)
 	}
@@ -48,7 +51,7 @@ func TestABackEdgeBecomesACutAction(t *testing.T) {
 		t.Errorf("the cut comes first: %+v", cm.Actions)
 	}
 	export := ExportCommunities(cm, false)
-	if len(export.Actions) != 1 || export.Actions[0].Kind != "cut" || export.Actions[0].Effort != "1 reference" {
+	if len(export.Actions) != 1 || export.Actions[0].Kind != "cut" || export.Actions[0].Effort != "1 reference" || export.Actions[0].Gain != "Frees 2 communities from the cycle" {
 		t.Errorf("the export should carry the actions: %+v", export.Actions)
 	}
 }
@@ -77,8 +80,8 @@ func TestACoChangingPairBecomesAMoveAction(t *testing.T) {
 	if move.Detail != "They changed together in 5 commits this year while sitting in Catalog and Billing." {
 		t.Errorf("unexpected detail: %s", move.Detail)
 	}
-	if move.Effort != "1 file" {
-		t.Errorf("unexpected effort: %s", move.Effort)
+	if move.Effort != "1 file" || move.Gain != "The two would sit in one community" {
+		t.Errorf("unexpected effort or gain: %s / %s", move.Effort, move.Gain)
 	}
 	if !reflect.DeepEqual(move.Communities, []string{catalog.ID, billing.ID}) || !reflect.DeepEqual(move.Units, []string{`App\Catalog\D`, `App\Billing\A`}) {
 		t.Errorf("the action should name the communities and the classes: %+v", move)
@@ -106,6 +109,9 @@ func TestAnExposedCommunityBecomesAGatherAction(t *testing.T) {
 	}
 	if g.Detail != "4 of its 6 classes are used from outside; the most used, A, B and C, could front the others." {
 		t.Errorf("unexpected detail: %s", g.Detail)
+	}
+	if g.Gain != "4 entries become the API of Core" {
+		t.Errorf("unexpected gain: %s", g.Gain)
 	}
 	if g.Effort != "4 classes exposed" || !reflect.DeepEqual(g.Communities, []string{core.ID}) || len(g.Units) != 3 {
 		t.Errorf("unexpected action: %+v", g)
@@ -136,8 +142,81 @@ func TestAKernelKnowingItsUsersBecomesAnInvertAction(t *testing.T) {
 	if inv.Detail != "The kernel references Billing 1 time: those references should be inverted or moved out." {
 		t.Errorf("unexpected detail: %s", inv.Detail)
 	}
+	if inv.Gain != "The kernel could change without Billing" {
+		t.Errorf("unexpected gain: %s", inv.Gain)
+	}
 	if inv.Effort != "1 reference" || inv.Communities[0] != SharedID || !reflect.DeepEqual(inv.Units, []string{`App\Shared\Model`}) {
 		t.Errorf("unexpected action: %+v", inv)
+	}
+}
+
+func TestCutsAreOrderedByWhatTheyFree(t *testing.T) {
+	// A ring of three (0, 1, 2) and a two-way tie between 3 and 4: the light
+	// back edge inside the pair frees 2 modules, the heavier one out of the
+	// ring frees 3 and comes first. A back edge that leaves the ring standing
+	// (a chord) only shortens or is part of the way out.
+	cm := &CommunityMetrics{
+		Communities: []*Community{
+			{ID: "0", ShortName: "A"}, {ID: "1", ShortName: "B"}, {ID: "2", ShortName: "C"},
+			{ID: "3", ShortName: "D"}, {ID: "4", ShortName: "E"},
+		},
+		NodeToCommunity: map[string]string{},
+		Labels:          map[string]string{},
+		Edges: []CommunityEdge{
+			{From: "0", To: "1", Weight: 5, InCycle: true},
+			{From: "1", To: "2", Weight: 5, InCycle: true},
+			{From: "2", To: "0", Weight: 3, InCycle: true, Back: true},
+			{From: "3", To: "4", Weight: 4, InCycle: true},
+			{From: "4", To: "3", Weight: 1, InCycle: true, Back: true},
+		},
+	}
+	actions := actionsOf(cm)
+	if len(actions) != 2 {
+		t.Fatalf("expected the two cuts, got %+v", actions)
+	}
+	if actions[0].Title != "Cut C → A" || actions[0].Gain != "Frees 3 communities from the cycle" || actions[0].Effort != "3 references" {
+		t.Errorf("the cut freeing the most modules comes first: %+v", actions[0])
+	}
+	if actions[1].Title != "Cut E → D" || actions[1].Gain != "Frees 2 communities from the cycle" {
+		t.Errorf("then the other one: %+v", actions[1])
+	}
+
+	// two rings sharing a node: cutting a chord shortens the cycle without
+	// freeing everyone
+	cm.Edges = []CommunityEdge{
+		{From: "0", To: "1", Weight: 5, InCycle: true},
+		{From: "1", To: "0", Weight: 1, InCycle: true, Back: true},
+		{From: "1", To: "2", Weight: 5, InCycle: true},
+		{From: "2", To: "1", Weight: 1, InCycle: true, Back: true},
+	}
+	actions = actionsOf(cm)
+	if len(actions) != 2 || actions[0].Gain != "Frees 1 community from the cycle" || actions[1].Gain != "Frees 1 community from the cycle" {
+		t.Errorf("cutting one back edge of a figure of eight frees one module: %+v", actions)
+	}
+	// a shortcut inside the ring: cutting it changes nothing to who is caught
+	cm.Edges = []CommunityEdge{
+		{From: "0", To: "1", Weight: 5, InCycle: true},
+		{From: "1", To: "2", Weight: 5, InCycle: true},
+		{From: "2", To: "0", Weight: 5, InCycle: true, Back: true},
+		{From: "1", To: "0", Weight: 1, InCycle: true, Back: true},
+	}
+	actions = actionsOf(cm)
+	if len(actions) != 2 || actions[0].Title != "Cut C → A" || actions[0].Gain != "Frees 1 community from the cycle" || actions[1].Gain != "Part of the way out of the cycle" {
+		t.Errorf("a shortcut alone frees nobody: %+v", actions)
+	}
+	// two pairs tied into one cycle of four: cutting the tie leaves two
+	// cycles of two, nobody is freed but the cycle is shorter
+	cm.Edges = []CommunityEdge{
+		{From: "0", To: "1", Weight: 5, InCycle: true},
+		{From: "1", To: "0", Weight: 5, InCycle: true},
+		{From: "2", To: "3", Weight: 5, InCycle: true},
+		{From: "3", To: "2", Weight: 5, InCycle: true},
+		{From: "1", To: "2", Weight: 5, InCycle: true},
+		{From: "3", To: "0", Weight: 1, InCycle: true, Back: true},
+	}
+	actions = actionsOf(cm)
+	if len(actions) != 1 || actions[0].Gain != "Shortens the cycle" {
+		t.Errorf("splitting a cycle in two shortens it: %+v", actions)
 	}
 }
 
@@ -176,6 +255,9 @@ func TestActionsAreBoundedToThree(t *testing.T) {
 	}
 	if actions[0].Title != "Cut C → A" || actions[1].Title != "Cut B → C" {
 		t.Errorf("the lightest cuts come first: %s, %s", actions[0].Title, actions[1].Title)
+	}
+	if actions[0].Gain != "Frees 3 communities from the cycle" || actions[1].Gain != "Frees 3 communities from the cycle" {
+		t.Errorf("each cut of a ring frees it: %s, %s", actions[0].Gain, actions[1].Gain)
 	}
 	if !strings.HasSuffix(actions[0].Detail, "carried by c → a (1).") {
 		t.Errorf("unexpected detail: %s", actions[0].Detail)

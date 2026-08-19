@@ -533,8 +533,8 @@ func computeCommunities(g *unitGraph, aggregate *Aggregated) *CommunityMetrics {
 	}
 	surfaceOfCommunities(cm, g)
 
-	cm.Verdict, cm.VerdictNote = verdictOf(cm)
 	if aggregate == nil {
+		cm.Verdict, cm.VerdictNote = verdictOf(cm)
 		return cm
 	}
 	// The border of each community costs four more detections: a folder
@@ -543,6 +543,8 @@ func computeCommunities(g *unitGraph, aggregate *Aggregated) *CommunityMetrics {
 	cm.Blocks, cm.BlockEdges = blocksOf(cm)
 	ownersOfCommunities(aggregate, cm, g)
 	historyOf(aggregate, cm, g)
+	// The verdict reads the history: it waits for it.
+	cm.Verdict, cm.VerdictNote = verdictOf(cm)
 	cm.Findings = withHistoryFindings(findingsOf(cm, g, weights), historyFindingsOf(cm))
 	cm.Actions = actionsOf(cm)
 
@@ -1808,49 +1810,76 @@ func kernelIsCentreOfGravity(cm *CommunityMetrics) bool {
 	return cm.SharedShare >= kernelHeavyShare || float64(cm.Shared.Size) >= kernelHeavyUnitShare*float64(cm.UnitCount)
 }
 
-// verdictOf writes the sentence the page opens on.
+// Thresholds of the verdict.
+const (
+	// The history contradicts the boundaries when, over at least this many
+	// commits, fewer than verdictHistoryAgreement of them stay in one module.
+	verdictHistoryMinCommits = 20
+	verdictHistoryAgreement  = 0.4
+)
+
+// verdictOf writes the two lines the page opens on: the headline states the
+// consequence the reader will observe, the note gives the fact behind it.
+// The strongest situation wins: a cycle, a heavy kernel, a history working
+// across the boundaries, folders laid out in layers, and otherwise a code
+// that splits.
 func verdictOf(cm *CommunityMetrics) (string, string) {
 	unitWord := "classes"
 	if cm.Granularity == GranularityNamespace {
 		unitWord = "packages"
 	}
+	n := cm.CommunitiesCount
 	switch {
-	case cm.CommunitiesCount == 0:
-		return "No community stands out.",
+	case n == 0:
+		return "There is nothing to split here yet.",
 			fmt.Sprintf("The project's own %s barely depend on each other: there is nothing to group.", unitWord)
-	case cm.CommunitiesCount == 1:
-		return "All the code forms a single community.",
+	case n == 1:
+		return "All the code moves as one piece.",
 			fmt.Sprintf("The %d %s that depend on each other do so without a seam: no group of them stands apart from the rest.", cm.UnitCount, unitWord)
 	}
-	verdict := fmt.Sprintf("Your code forms %d communities.", cm.CommunitiesCount)
+	kernelClause := ""
 	if cm.Shared != nil {
-		verdict = fmt.Sprintf("Your code forms %d communities around a shared kernel of %s.", cm.CommunitiesCount, plural(cm.Shared.Size, unitOne(unitWord), unitWord))
+		kernelClause = fmt.Sprintf("%d%% of the dependencies lead to %s", int(cm.SharedShare*100+0.5), plural(cm.Shared.Size, "shared "+unitOne(unitWord), "shared "+unitWord))
 	}
-	spread := cm.CommunitiesCount - cm.CohesiveCount
+	spread := n - cm.CohesiveCount
 	switch {
 	case len(cm.Cycles) > 0:
-		// one cycle holding a good part of the communities is a blob, and is
-		// said as such rather than counted among the cycles
-		largest := 0
+		largest, caught := 0, 0
 		for _, cycle := range cm.Cycles {
 			largest = max(largest, len(cycle))
-		}
-		if largest >= blobMinCommunities && float64(largest) >= blobMinShare*float64(cm.CommunitiesCount) {
-			return verdict, fmt.Sprintf("%d of them form one indissociable block: none can change without the others.", largest)
-		}
-		caught := 0
-		for _, cycle := range cm.Cycles {
 			caught += len(cycle)
 		}
-		return verdict, fmt.Sprintf("%d of them depend on each other in %s.", caught, plural(len(cm.Cycles), "cycle", "cycles"))
+		note := fmt.Sprintf("%d of the %d communities depend on each other in %s", caught, n, plural(len(cm.Cycles), "cycle", "cycles"))
+		if kernelClause != "" {
+			note += ", and " + kernelClause
+		}
+		// one cycle holding a good part of the communities is a blob, and is
+		// said as such rather than counted among the cycles
+		if largest >= blobMinCommunities && float64(largest) >= blobMinShare*float64(n) {
+			return "A change in the middle of this code reaches everywhere.", note + "."
+		}
+		return "Some of these communities cannot change alone.", note + "."
 	case kernelIsCentreOfGravity(cm):
-		return verdict, fmt.Sprintf("The kernel is the centre of gravity: %d%% of the dependencies lead to its %s.", int(cm.SharedShare*100+0.5), plural(cm.Shared.Size, unitOne(unitWord), unitWord))
-	case spread == 0:
-		return verdict, "Each one stays inside a single namespace: the folders match the dependencies."
-	case spread >= (cm.CommunitiesCount+1)/2:
-		return verdict, fmt.Sprintf("%d of them cut across your namespaces: the dependencies group the code differently than the folders do.", spread)
+		kernelUsers := 0
+		for _, l := range cm.Shared.UsedBy {
+			if l.ID != SharedID {
+				kernelUsers++
+			}
+		}
+		return "Anything changing in the shared kernel reaches most of the code.",
+			fmt.Sprintf("%d%% of the dependencies lead to its %s, used by %d of the %d communities.", int(cm.SharedShare*100+0.5), plural(cm.Shared.Size, unitOne(unitWord), unitWord), kernelUsers, n)
+	case cm.HistoryAvailable && cm.HistoryCommits >= verdictHistoryMinCommits && cm.HistoryAgreement < verdictHistoryAgreement:
+		return "People work across these boundaries, not inside them.",
+			fmt.Sprintf("Only %d%% of the commits stay in a single community; the code forms %d of them.", int(cm.HistoryAgreement*100+0.5), n)
+	case spread >= (n+1)/2:
+		return "The folders describe layers; the code lives as features.",
+			fmt.Sprintf("%d of the %d communities cut across the namespaces: what changes together sits in several places.", spread, n)
 	default:
-		return verdict, fmt.Sprintf("%d stay within one namespace, %d cross namespace boundaries.", cm.CohesiveCount, spread)
+		note := fmt.Sprintf("%d communities, no cycle, %d%% of the dependencies cross between them", n, int(cm.CrossShare*100+0.5))
+		if cm.Shared != nil {
+			note += fmt.Sprintf(", around a shared kernel of %s", plural(cm.Shared.Size, unitOne(unitWord), unitWord))
+		}
+		return "This code can be split and worked on in pieces.", note + "."
 	}
 }
 
