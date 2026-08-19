@@ -1,5 +1,7 @@
 package analyzer
 
+import "strings"
+
 // CommunitiesExport is the community analysis laid out for a reader that did
 // not see the report: the JSON report and the MCP tools both serve it.
 type CommunitiesExport struct {
@@ -162,7 +164,7 @@ func ExportCommunities(cm *CommunityMetrics, withMembers bool) *CommunitiesExpor
 		return nil
 	}
 	export := &CommunitiesExport{
-		Verdict:          cm.Verdict + " " + cm.VerdictNote,
+		Verdict:          strings.TrimSpace(cm.Verdict + " " + cm.VerdictNote + " " + cm.VerdictAside),
 		Granularity:      cm.Granularity,
 		Root:             cm.Root,
 		CommunitiesCount: cm.CommunitiesCount,

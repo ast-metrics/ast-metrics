@@ -497,15 +497,23 @@ func TestVerdictNamesABlobWhenOneCycleHoldsMostCommunities(t *testing.T) {
 			t.Errorf("%d communities, cycles %v: got %q / %q, want %q / %q", c.count, c.cycles, verdict, note, c.verdict, c.wantNote)
 		}
 	}
-	// with a kernel, the note adds the share of the dependencies leading to it
-	cm := &CommunityMetrics{Granularity: GranularityClass, CommunitiesCount: 5, Cycles: [][]string{{"0", "1"}}, Shared: &Community{ID: SharedID, Shared: true, Size: 3}, SharedShare: 0.31}
-	if _, note := verdictOf(cm); note != "2 of the 5 communities depend on each other in 1 cycle, and 31% of the dependencies lead to 3 shared classes." {
-		t.Errorf("unexpected note: %s", note)
+	// a heavy kernel is a concern of its own: the note names it, whatever the
+	// headline; a light one is not mentioned there
+	cm := &CommunityMetrics{Granularity: GranularityClass, CommunitiesCount: 5, UnitCount: 100, Cycles: [][]string{{"0", "1"}},
+		Shared: &Community{ID: SharedID, Shared: true, Size: 3, Hubs: []string{"App\\Base", "App\\Id"}}, SharedShare: 0.31,
+		Labels: map[string]string{"App\\Base": "Base", "App\\Id": "Id"}}
+	if _, note := verdictOf(cm); note != "2 of the 5 communities depend on each other in 1 cycle." || cm.VerdictAside != "On top of that, 31% of the dependencies lead to 3 shared classes (Base, Id…): more a centre of gravity than a kernel." {
+		t.Errorf("unexpected note or aside: %s / %s", note, cm.VerdictAside)
 	}
-	// in namespace granularity the kernel holds packages
-	cm.Granularity = GranularityNamespace
-	if _, note := verdictOf(cm); !strings.HasSuffix(note, "3 shared packages.") {
-		t.Errorf("unexpected note: %s", note)
+	cm.SharedShare = 0.1
+	cm.VerdictAside = ""
+	if _, note := verdictOf(cm); note != "2 of the 5 communities depend on each other in 1 cycle." || cm.VerdictAside != "" {
+		t.Errorf("a light kernel stays out of the verdict: %s / %s", note, cm.VerdictAside)
+	}
+	// the communities caught in the largest cycle are named
+	cm.Communities = []*Community{{ID: "0", ShortName: "Billing"}, {ID: "1", ShortName: "Catalog"}}
+	if _, note := verdictOf(cm); note != "2 of the 5 communities depend on each other in 1 cycle: Billing and Catalog." {
+		t.Errorf("the cycle should be named: %s", note)
 	}
 }
 
