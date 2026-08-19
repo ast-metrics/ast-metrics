@@ -70,7 +70,7 @@ func TestCommunitiesPage_WhereToStart(t *testing.T) {
 	assert.NotContains(t, page, `class="action-row"`)
 
 	cm.Actions = []analyzer.CommunityAction{
-		{Kind: "cut", Title: "Cut billing → users", Detail: "It closes a cycle.", Effort: "3 references", Communities: []string{"0", "1"}, Units: []string{"Invoice"}},
+		{Kind: "cut", Title: "Cut billing → users", Detail: "It closes a cycle.", Effort: "3 references", Gain: "Frees 2 modules from the cycle", Communities: []string{"0", "1"}, Units: []string{"Invoice"}},
 		{Kind: "move", Title: "Move Invoice next to User", Detail: "They change together.", Effort: "1 class", Communities: []string{"0"}},
 	}
 	page = renderCommunitiesPage(t, cm)
@@ -80,6 +80,10 @@ func TestCommunitiesPage_WhereToStart(t *testing.T) {
 	assert.Contains(t, page, `action-dot action-dot--move`)
 	assert.Contains(t, page, `<span class="action-title">Cut billing → users</span>`)
 	assert.Contains(t, page, `<span class="action-effort">3 references</span>`)
+	assert.Contains(t, page, `<span class="action-gain">Frees 2 modules from the cycle</span>`)
+	assert.Less(t, strings.Index(page, `<span class="action-title">Cut billing`), strings.Index(page, `<span class="action-gain">`))
+	assert.Less(t, strings.Index(page, `<span class="action-gain">`), strings.Index(page, `<span class="action-detail">It closes`))
+	assert.Equal(t, 1, strings.Count(page, `class="action-gain"`))
 	assert.Equal(t, 2, strings.Count(page, `class="action-row"`))
 }
 
@@ -106,7 +110,7 @@ func TestCommunitiesPage_ThreeSections(t *testing.T) {
 }
 
 // TestCommunitiesPage_LayeredHelp checks the layered pedagogy: a link to the
-// documentation at the end of the lead, one "How to read this" disclosure
+// documentation in the corner of the hero, no kicker above the verdict, one "How to read this" disclosure
 // under the map's sub-heading and one at the top of the tabs card, both
 // closed in the markup (the script opens them on the first visit), and a
 // tooltip on every finding pill.
@@ -114,7 +118,9 @@ func TestCommunitiesPage_LayeredHelp(t *testing.T) {
 	cm := twoCommunities()
 	cm.Findings = []analyzer.CommunityFinding{{Kind: "cycle", Title: "A cycle", Detail: "Two communities."}}
 	page := renderCommunitiesPage(t, cm)
-	assert.Contains(t, page, `<a class="lead-more" href="https://ast-metrics.dev/metrics/community-detection/" target="_blank" rel="noopener">How this is computed &rarr;</a>`)
+	assert.Contains(t, page, `<a class="lead-more hero-corner-link" href="https://ast-metrics.dev/metrics/community-detection/" target="_blank" rel="noopener">How this is computed &rarr;</a>`)
+	assert.Less(t, strings.Index(page, `hero-corner-link`), strings.Index(page, `<h1 class="verdict-title">`))
+	assert.NotContains(t, page, `Communities read from the dependency graph`)
 	assert.Equal(t, 2, strings.Count(page, `<details class="howto`))
 	assert.NotContains(t, page, `<details class="howto" open`)
 	assert.Contains(t, page, `am-communities-howto`)

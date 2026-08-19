@@ -147,6 +147,7 @@
     .action-dot--invert { background: #7c3aed; }
     .action-title { display: block; font-weight: 600; color: #0f172a; font-size: 0.875rem; line-height: 1.4; }
     .action-row:hover .action-title { color: #1d4ed8; }
+    .action-gain { display: block; color: #15803d; font-size: 0.75rem; font-weight: 500; line-height: 1.45; margin-top: 0.05rem; }
     .action-detail { display: block; color: #64748b; font-size: 0.75rem; line-height: 1.45; margin-top: 0.05rem; }
     .action-effort { flex-shrink: 0; align-self: flex-start; font-size: 0.6875rem; font-family: var(--font-mono); color: #475569; background: #f1f5f9; border-radius: 999px; padding: 0.15rem 0.55rem; white-space: nowrap; margin-top: 0.15rem; }
     /* Reading the communities: one card, three tabs */
@@ -170,6 +171,8 @@
     .ns-top-name { min-width: 0; }
     .lead-more { display: inline-block; margin-left: 0.35rem; font-size: 0.8125rem; color: #64748b; text-decoration: none; white-space: nowrap; }
     .lead-more:hover { color: #1d4ed8; text-decoration: underline; }
+    .page-hero--communities { position: relative; }
+    .hero-corner-link { position: absolute; top: 1.1rem; right: 1.5rem; margin-left: 0; font-size: 0.75rem; }
     /* How to read this: a legend folded away for the returning reader */
     .howto { font-size: 0.8125rem; color: #475569; margin-top: 0.5rem; }
     .howto > summary { cursor: pointer; list-style: none; color: #2563eb; display: inline-block; }
@@ -184,17 +187,16 @@
 </style>
 
 <!-- Verdict -->
-<div class="page-hero animate-fade-in-up mb-6">
+<div class="page-hero page-hero--communities animate-fade-in-up mb-6">
+    <a class="lead-more hero-corner-link" href="https://ast-metrics.dev/metrics/community-detection/" target="_blank" rel="noopener">How this is computed &rarr;</a>
     <div class="flex flex-wrap items-start justify-between gap-8">
         <div class="min-w-0 max-w-3xl">
-            <p class="page-kicker mb-3">Communities read from the dependency graph{% if scopeKind != "all" %}, {{ scopeLabel }}{% endif %}</p>
             <h1 class="verdict-title">
                 {{ cm.Verdict }}<br>
                 <span class="verdict-muted">{{ cm.VerdictNote }}</span>
             </h1>
             <p class="verdict-lead mt-4">
                 Groups of {% if cm.Granularity == "namespace" %}packages{% else %}classes{% endif %} that depend on each other more than on the rest of the code, read from the dependencies alone, never from the folder names.
-                <a class="lead-more" href="https://ast-metrics.dev/metrics/community-detection/" target="_blank" rel="noopener">How this is computed &rarr;</a>
             </p>
         </div>
         {% if cm.CommunitiesCount > 0 %}
@@ -349,6 +351,7 @@
                     <span class="action-dot action-dot--{{ a.Kind }}" title="{% if a.Kind == "cut" %}Cut a dependency{% elif a.Kind == "move" %}Move code{% elif a.Kind == "gather" %}Gather the entries{% elif a.Kind == "invert" %}Invert a dependency{% else %}{{ a.Kind }}{% endif %}"></span>
                     <span class="min-w-0 flex-1">
                         <span class="action-title">{{ a.Title }}</span>
+                        {% if a.Gain %}<span class="action-gain">{{ a.Gain }}</span>{% endif %}
                         <span class="action-detail">{{ a.Detail }}</span>
                     </span>
                     {% if a.Effort %}<span class="action-effort">{{ a.Effort }}</span>{% endif %}

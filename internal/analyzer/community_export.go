@@ -149,6 +149,7 @@ type CommunityActionExport struct {
 	Title       string   `json:"title"`
 	Detail      string   `json:"detail"`
 	Effort      string   `json:"effort"`
+	Gain        string   `json:"gain,omitempty"`
 	Communities []string `json:"communities,omitempty"`
 	Units       []string `json:"units,omitempty"`
 }
@@ -232,7 +233,7 @@ func ExportCommunities(cm *CommunityMetrics, withMembers bool) *CommunitiesExpor
 		export.Findings = append(export.Findings, CommunityFindingExport{Kind: f.Kind, Title: f.Title, Detail: f.Detail, Communities: f.Communities, Units: f.Units})
 	}
 	for _, a := range cm.Actions {
-		export.Actions = append(export.Actions, CommunityActionExport{Kind: a.Kind, Title: a.Title, Detail: a.Detail, Effort: a.Effort, Communities: a.Communities, Units: a.Units})
+		export.Actions = append(export.Actions, CommunityActionExport{Kind: a.Kind, Title: a.Title, Detail: a.Detail, Effort: a.Effort, Gain: a.Gain, Communities: a.Communities, Units: a.Units})
 	}
 	for _, b := range cm.Blocks {
 		export.Blocks = append(export.Blocks, CommunityBlockExport{ID: b.ID, Name: b.Name, Communities: b.Communities, Size: b.Size})
