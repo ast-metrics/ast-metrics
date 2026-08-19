@@ -188,6 +188,36 @@
     .howto-list svg { width: 40px; height: 18px; flex-shrink: 0; }
     @media (min-width: 900px) { .howto-list { grid-template-columns: 1fr 1fr; } }
     .ns-top .ns-share { flex-shrink: 0; white-space: nowrap; }
+    /* Issue pills on the rows: the words and colours of the finding pills, tiny */
+    .issue-pills { display: inline-flex; flex-wrap: wrap; gap: 0.2rem; margin-left: 0.4rem; vertical-align: 2px; }
+    .issue-pill { display: inline-block; font-size: 0.5625rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.05rem 0.35rem; border-radius: 4px; white-space: nowrap; cursor: help; }
+    .issue-pill.issue-more { background: #f1f5f9; color: #64748b; }
+    /* Quick filters above the table: one chip per issue kind present */
+    .issue-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0 0 0.75rem; }
+    .filter-chip { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; padding: 0.2rem 0.65rem; border-radius: 999px; border: 1px solid #e2e8f0; background: white; color: #334155; cursor: pointer; }
+    .filter-chip:hover { border-color: #94a3b8; color: #0f172a; }
+    .filter-chip.is-active { background: #0f172a; border-color: #0f172a; color: white; }
+    .filter-chip .n { font-family: var(--font-mono); font-size: 0.6875rem; color: #64748b; }
+    .filter-chip.is-active .n { color: #cbd5e1; }
+    .comm-table tr.out-of-filter { display: none; }
+    .filter-empty { font-size: 0.8125rem; color: #64748b; padding: 0.75rem 0; }
+    /* The shared kernel: apart from the ranking, in the dashed box the map draws it in */
+    .kernel-block { border: 1.5px dashed #cbd5e1; background: #f8fafc; border-radius: 12px; margin: 0 0 1rem; }
+    .kernel-block.out-of-view { display: none; }
+    .kernel-row { display: flex; align-items: flex-start; gap: 1rem; padding: 0.875rem 1rem; cursor: pointer; border-radius: 12px; }
+    .kernel-row:hover { background: #f1f5f9; }
+    .kernel-row:focus-visible { outline: 2px solid #93c5fd; outline-offset: -2px; }
+    .kernel-row .row-caret { margin-top: 0.3rem; }
+    .kernel-name { flex: 1 1 14rem; min-width: 0; }
+    .kernel-facts { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; flex: 3 1 24rem; min-width: 0; font-size: 0.8125rem; color: #334155; align-items: baseline; }
+    .kernel-facts .cell-sub { display: block; }
+    .kernel-facts .fact { min-width: 0; }
+    .kernel-facts .fact .cell-main { white-space: nowrap; }
+    .kernel-hubs { font-family: var(--font-mono); font-size: 0.75rem; color: #334155; overflow-wrap: anywhere; }
+    .kernel-block .comm-detail { display: block; padding: 0.875rem 1rem 1rem 2.6rem; border-top: 1px dashed #cbd5e1; }
+    .kernel-block .comm-detail[hidden] { display: none; }
+    .kernel-block .comm-detail:target, .kernel-row:target, .kernel-row.is-open { background: #eff6ff; }
+    .kernel-row.is-open { border-radius: 12px 12px 0 0; }
 </style>
 
 <!-- Verdict -->
@@ -200,16 +230,15 @@
                 <span class="verdict-muted">{{ cm.VerdictNote|verdictLinks:cm }}</span>
             </h1>
             {% if cm.VerdictAside %}<p class="verdict-aside mt-3">{{ cm.VerdictAside|verdictLinks:cm }}</p>{% endif %}
-            <p class="verdict-lead mt-4">
-                Groups of {% if cm.Granularity == "namespace" %}packages{% else %}classes{% endif %} that depend on each other more than on the rest of the code, read from the dependencies alone, never from the folder names.
-            </p>
         </div>
         {% if cm.CommunitiesCount > 0 %}
         <div class="shrink-0">
             <div class="kpi-strip kpi-strip--divided">
                 <div>
                     <div class="kpi-value">{{ cm.CommunitiesCount }}</div>
-                    <div class="kpi-label">communit{% if cm.CommunitiesCount == 1 %}y{% else %}ies{% endif %}</div>
+                    <div class="kpi-label">communit{% if cm.CommunitiesCount == 1 %}y{% else %}ies{% endif %}
+                        <span tabindex="0" data-tip="A community is a group of {% if cm.Granularity == "namespace" %}packages{% else %}classes{% endif %} that depend on each other more than on the rest of the code, read from the dependencies alone, never from the folder names." class="text-slate-300">&#9432;</span>
+                    </div>
                 </div>
                 <div>
                     <div class="kpi-value">{{ cm.InternalShare|percent }}%</div>
@@ -294,6 +323,7 @@
             <details class="howto" data-howto>
                 <summary>How to read this</summary>
                 <ul class="howto-list">
+                    <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="4" y="3" width="14" height="12" rx="2" fill="none" stroke="#64748b"/><circle cx="8" cy="7" r="1.3" fill="#64748b"/><circle cx="14" cy="7" r="1.3" fill="#64748b"/><circle cx="11" cy="12" r="1.3" fill="#64748b"/><circle cx="30" cy="9" r="1.3" fill="#cbd5e1"/></svg><span>A box is a community: {% if cm.Granularity == "namespace" %}packages{% else %}classes{% endif %} that depend on each other more than on the rest, read from the dependencies alone, never from the folder names</span></li>
                     <li><svg viewBox="0 0 40 18" aria-hidden="true"><path d="M3 9h28" stroke="#94a3b8" stroke-width="1.5" fill="none"/><path d="M28 5l6 4-6 4z" fill="#94a3b8"/></svg><span>A depends on B</span></li>
                     <li><svg viewBox="0 0 40 18" aria-hidden="true"><path d="M3 9h28" stroke="#94a3b8" stroke-width="4" fill="none"/><path d="M28 3l8 6-8 6z" fill="#94a3b8"/></svg><span>Thicker: more references</span></li>
                     <li><svg viewBox="0 0 40 18" aria-hidden="true"><rect x="12" y="1" width="16" height="6" rx="1.5" fill="white" stroke="#94a3b8"/><rect x="12" y="11" width="16" height="6" rx="1.5" fill="white" stroke="#94a3b8"/><path d="M20 7v3" stroke="#94a3b8" stroke-width="1.5"/></svg><span>What nobody depends on sits at the top, what everything rests on at the bottom</span></li>
@@ -411,6 +441,74 @@
     {% endif %}
     </div>
     <div class="reading-panel" id="panel-communities" role="tabpanel" hidden>
+    {% if cm.Shared %}
+    {% with cm.Shared as c %}
+    {% set rowColor = 0|communityColor:true %}
+    {# the shared kernel sits apart from the ranking: it is part of no community, and the map draws it in this same dashed box #}
+    <div class="kernel-block" id="kernel-block">
+        <div id="community-{{ c.ID }}" class="comm-row kernel-row" data-id="{{ c.ID }}" tabindex="0" aria-expanded="false" aria-controls="community-{{ c.ID }}-detail">
+            <span class="row-caret" aria-hidden="true">▸</span>
+            <div class="kernel-name">
+                <div class="comm-name">Shared kernel
+                    {% set kernelLeak = cm|hasFinding:"shared-leak" %}
+                    {% if kernelLeak or c.Issues|length > 0 %}<span class="issue-pills">{% if kernelLeak %}<span class="issue-pill finding-kind--shared-leak" tabindex="0" data-tip="Kernel leak: the kernel depends on the code that uses it, so it cannot change alone.">kernel leak</span>{% endif %}{% for k in c.Issues %}<span class="issue-pill finding-kind--{{ k }}" tabindex="0" data-tip="{{ k|issueTip }}">{{ k|issueLabel }}</span>{% endfor %}</span>{% endif %}
+                </div>
+                <div class="comm-hint">Part of no community, used by everyone; what the rest of the code rests on</div>
+            </div>
+            <div class="kernel-facts">
+                <div class="fact"><span class="cell-main font-mono">{{ c.Size }}</span> <span class="cell-sub">{{ unitWord }}</span></div>
+                <div class="fact"><span class="cell-main">used by {{ c.UsedBy|length }}</span> <span class="cell-sub">of {{ cm.CommunitiesCount }} communities</span></div>
+                <div class="fact"><span class="cell-main">{{ cm.SharedShare|percent }}%</span> <span class="cell-sub">of all dependencies lead here</span></div>
+                {% if c.Hubs|length > 0 %}<div class="fact"><span class="cell-sub">hubs</span> <span class="kernel-hubs" tabindex="0" data-tip="The {{ unitWord }} of the kernel used by the most communities">{{ c.Hubs|communityLabels:cm }}{% if c.Hubs|length > 5 %}…{% endif %}</span></div>{% endif %}
+            </div>
+        </div>
+        <div id="community-{{ c.ID }}-detail" class="comm-detail" data-for="{{ c.ID }}" hidden>
+            <div class="detail-grid">
+                <div>
+                    <div class="detail-title">Filed under</div>
+                    <div class="ns-meter" style="margin-top: 0.15rem">
+                        {% for ns in c.Namespaces %}{% if forloop.Counter0 < 8 %}<span style="width: {{ ns.Share|percent }}%; background: {{ rowColor }}; opacity: {% if forloop.Counter0 == 0 %}1{% elif forloop.Counter0 == 1 %}0.55{% elif forloop.Counter0 == 2 %}0.4{% else %}0.28{% endif %}"></span>{% endif %}{% endfor %}
+                    </div>
+                    <div>
+                        {% for ns in c.Namespaces %}{% if forloop.Counter0 < 12 %}<span class="ns-chip" title="{{ ns.Namespace }}">{% if ns.Label %}{{ ns.Label }}{% else %}(no namespace){% endif %} <span class="ns-share">{{ ns.Share|percent }}%</span></span>{% endif %}{% endfor %}
+                        {% if c.Namespaces|length > 12 %}{% with c.Namespaces|length as n %}<span class="cell-note whitespace-nowrap">and {{ n - 12 }} more</span>{% endwith %}{% endif %}
+                    </div>
+                </div>
+                <div class="link-list">
+                    <div class="detail-title">Depends on <span tabindex="0" data-tip="A kernel should depend on nothing that uses it: each link here is a leak, the references to invert or move out." class="text-slate-300 font-normal">&#9432;</span></div>
+                    {% if c.Uses|length == 0 %}<span class="text-slate-400">nothing</span>{% endif %}
+                    {% for l in c.Uses %}{% if forloop.Counter0 < 8 %}
+                    {% if l.Details|length > 0 %}<details class="link-detail">
+                        <summary><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></summary>
+                        <ul>{% for d in l.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul>
+                    </details>{% else %}<div><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></div>{% endif %}
+                    {% endif %}{% endfor %}
+                    {% if c.Uses|length > 8 %}{% with c.Uses|length as n %}<div class="text-slate-400">and {{ n - 8 }} more</div>{% endwith %}{% endif %}
+                </div>
+                <div class="link-list">
+                    <div class="detail-title">Used by</div>
+                    {% if c.UsedBy|length == 0 %}<span class="text-slate-400">nobody</span>{% endif %}
+                    {% for l in c.UsedBy %}{% if forloop.Counter0 < 8 %}
+                    {% if l.Details|length > 0 %}<details class="link-detail">
+                        <summary><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></summary>
+                        <ul>{% for d in l.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul>
+                    </details>{% else %}<div><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></div>{% endif %}
+                    {% endif %}{% endfor %}
+                    {% if c.UsedBy|length > 8 %}{% with c.UsedBy|length as n %}<div class="text-slate-400">and {{ n - 8 }} more</div>{% endwith %}{% endif %}
+                </div>
+            </div>
+            {% if c.Externals|length > 0 %}
+            <div class="comm-hint mt-3">Relies on {% for e in c.Externals %}{% if forloop.Counter0 > 0 %}, {% endif %}<span class="ident">{{ e.Namespace }}</span>{% endfor %}</div>
+            {% endif %}
+            <details class="members mt-2">
+                <summary>{{ c.Size }} member{% if c.Size != 1 %}s{% endif %}</summary>
+                <ul data-lazy-members="{{ c.ID }}">{% if cm.Granularity == "namespace" %}{% for u in c.Units %}<li{% if u in c.Border %} class="is-border" title="Mobile member: it moves to another community when the detection is tuned differently"{% endif %}>{{ cm.Labels|getMapValue:u|default:u }}</li>{% endfor %}
+                {% if c.Border|length > 0 %}<li class="legend">dotted: moves at another resolution</li>{% endif %}{% endif %}</ul>
+            </details>
+        </div>
+    </div>
+    {% endwith %}
+    {% endif %}
             <p class="card-sub" id="table-sub-structure">
                 Largest first. Open a row for its members, its namespaces and its links.
             </p>
@@ -421,6 +519,15 @@
             {% endif %}
     <p class="text-sm text-slate-500" id="table-zoomed-note" hidden>The folder zoomed on is drawn on its own under the map, with the communities its code forms by itself. <button type="button" class="text-blue-700 hover:underline" data-clear-zoom>Show everything</button></p>
     <div id="communities-table-card">
+    {% set issueCounts = cm|communityIssueCounts %}
+    {% if issueCounts|length > 0 %}
+    <div class="issue-filters" id="issue-filters" role="group" aria-label="Show only the communities with an issue">
+        <button type="button" class="filter-chip is-active" data-filter="" aria-pressed="true">All <span class="n">{{ cm.CommunitiesCount }}</span></button>
+        {% for f in issueCounts %}
+        <button type="button" class="filter-chip" data-filter="{{ f.Kind }}" aria-pressed="false" data-tip="{{ f.Kind|issueTip }}">{% if f.Kind == "cycle" %}In a cycle{% else %}{{ f.Label|capfirst }}{% endif %} <span class="n">{{ f.Count }}</span></button>
+        {% endfor %}
+    </div>
+    {% endif %}
     <div class="overflow-x-auto">
         <table class="comm-table view-structure">
             <thead>
@@ -446,13 +553,14 @@
             {# the references behind each link are written for the communities shown first: the smaller ones, folded away, keep the page light #}
             {% set detailed = forloop.Counter0 < 40 or c.Shared %}
             {% set folded = forloop.Counter0 >= 40 and not c.Shared %}
-            <tr id="community-{{ c.ID }}" class="comm-row{% if folded %} row-more{% endif %}" data-id="{{ c.ID }}" tabindex="0" aria-expanded="false" aria-controls="community-{{ c.ID }}-detail"{% if folded %} hidden{% endif %}>
+            {% if not c.Shared %}
+            <tr id="community-{{ c.ID }}" class="comm-row{% if folded %} row-more{% endif %}" data-id="{{ c.ID }}" data-issues="{% for k in c.Issues %}{% if forloop.Counter0 > 0 %} {% endif %}{{ k }}{% endfor %}" tabindex="0" aria-expanded="false" aria-controls="community-{{ c.ID }}-detail"{% if folded %} hidden{% endif %}>
                 <td>
                     <div class="flex items-start gap-2">
                         <span class="row-caret" aria-hidden="true">▸</span>
                         <span class="comm-swatch" style="background: {{ rowColor }}"></span>
                         <div class="min-w-0">
-                            <div class="comm-name">{{ c.ShortName }}</div>
+                            <div class="comm-name">{{ c.ShortName }}{% if c.Issues|length > 0 %}<span class="issue-pills">{% for k in c.Issues %}{% if forloop.Counter0 < 2 %}<span class="issue-pill finding-kind--{{ k }}" tabindex="0" data-tip="{{ k|issueTip }}">{{ k|issueLabel }}</span>{% endif %}{% endfor %}{% if c.Issues|length > 2 %}{% with c.Issues|length as n %}<span class="issue-pill issue-more" tabindex="0" data-tip="{% for k in c.Issues %}{% if forloop.Counter0 >= 2 %}{% if forloop.Counter0 > 2 %}, {% endif %}{{ k|issueLabel }}{% endif %}{% endfor %}">+{{ n - 2 }}</span>{% endwith %}{% endif %}</span>{% endif %}</div>
                             {% if c.Hint %}<div class="comm-hint" title="The {{ unitWord }} carrying the most dependencies inside the community">{{ c.Hint }}</div>{% endif %}
                         </div>
                     </div>
@@ -579,10 +687,12 @@
                     </details>
                 </td>
             </tr>
+            {% endif %}
             {% endfor %}
             </tbody>
         </table>
     </div>
+    <p class="filter-empty" id="filter-empty" hidden>No community carries this issue in the folder zoomed on.</p>
     {% if cm.Communities|length > 41 %}
     <button type="button" id="rows-more" class="text-sm text-blue-700 hover:underline mt-3">{% with cm.Communities|length as n %}Show the {{ n - 41 }} smaller communities{% endwith %}</button>
     {% endif %}
@@ -757,6 +867,9 @@
         var subS = document.getElementById('table-sub-structure'), subH = document.getElementById('table-sub-history');
         if (subS) subS.hidden = name === 'history';
         if (subH) subH.hidden = name !== 'history';
+        // the shared kernel has no history of its own: it changes with everyone
+        var kernel = document.getElementById('kernel-block');
+        if (kernel) kernel.classList.toggle('out-of-view', name === 'history');
         tabs.forEach(function (t) {
             var active = t.getAttribute('data-panel') === name;
             t.classList.toggle('seg-item--active', active);
@@ -771,6 +884,49 @@
             moreRows.remove();
         });
     }
+    // ---- Quick filters: only the communities carrying one issue -----------
+    // Each row says which issues it carries (data-issues); a chip keeps the
+    // rows carrying its kind and hides the others with a class of their own,
+    // so that the zoom on a folder, which hides rows with another class,
+    // combines with it instead of undoing it.
+    var chips = Array.prototype.slice.call(document.querySelectorAll('#issue-filters .filter-chip'));
+    var activeFilter = '';
+    function applyFilter() {
+        var shown = 0, total = 0;
+        document.querySelectorAll('.comm-table tr.comm-row').forEach(function (row) {
+            var kinds = (row.getAttribute('data-issues') || '').split(' ').filter(Boolean);
+            var out = activeFilter !== '' && kinds.indexOf(activeFilter) < 0;
+            row.classList.toggle('out-of-filter', out);
+            var panel = row.nextElementSibling;
+            if (panel && panel.classList.contains('comm-detail')) panel.classList.toggle('out-of-filter', out);
+            if (!out) { total++; if (!row.classList.contains('out-of-focus')) shown++; }
+        });
+        var empty = document.getElementById('filter-empty');
+        if (empty) empty.hidden = !(activeFilter !== '' && total > 0 && shown === 0);
+        chips.forEach(function (c) {
+            var active = c.getAttribute('data-filter') === activeFilter;
+            c.classList.toggle('is-active', active);
+            c.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+    }
+    function setFilter(kind) {
+        if (kind && !chips.some(function (c) { return c.getAttribute('data-filter') === kind; })) kind = '';
+        activeFilter = kind || '';
+        applyFilter();
+    }
+    chips.forEach(function (c) { c.addEventListener('click', function () { setFilter(c.getAttribute('data-filter')); }); });
+    // a link carrying data-filter (the "and N more" of the verdict, a
+    // finding) opens the table on that filter
+    document.addEventListener('click', function (e) {
+        var a = e.target.closest('a[data-filter]');
+        if (!a) return;
+        e.preventDefault();
+        showTab('communities');
+        setFilter(a.getAttribute('data-filter'));
+        var card = document.getElementById('communities-table-card');
+        if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
     // ---- The detail panel of a row -----------------------------------------
     // Each community row hides a second row holding its namespaces, its
     // links and its members. Clicking the row, a box of the map or a link
@@ -788,12 +944,14 @@
         row.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
     function openCommunity(id, scroll) {
-        if (currentTab === 'findings') showTab('communities');
-        setOpen(id, true);
         var row = document.getElementById('community-' + id);
+        // the kernel block leaves the History view; a hidden row is of no use
+        if (currentTab === 'findings' || (row && row.classList.contains('kernel-row') && currentTab === 'history')) showTab('communities');
+        if (row && row.classList.contains('out-of-filter')) setFilter('');
+        setOpen(id, true);
         if (row && scroll) row.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-    document.querySelectorAll('.comm-table tr.comm-row').forEach(function (row) {
+    document.querySelectorAll('.comm-row').forEach(function (row) {
         row.addEventListener('click', function (e) {
             if (e.target.closest('a, summary, button, [data-tip]')) return;
             setOpen(row.getAttribute('data-id'), row.getAttribute('aria-expanded') !== 'true');
@@ -1217,8 +1375,10 @@
     var zoomTable = document.getElementById('zoom-table');
     var globalTable = document.getElementById('communities-table-card');
     var zoomedNote = document.getElementById('table-zoomed-note');
+    var kernelBlock = document.getElementById('kernel-block');
     function showGlobalTable(shown) {
         if (globalTable) globalTable.style.display = shown ? '' : 'none';
+        if (kernelBlock) kernelBlock.style.display = shown ? '' : 'none';
         if (zoomedNote) zoomedNote.hidden = shown;
     }
     function renderLocalTable(spec) {
@@ -1297,6 +1457,7 @@
                 chip.style.display = here > 0 ? '' : 'none';
             }
         });
+        applyFilter();
         if (history.replaceState) { history.replaceState(null, '', '#folder=' + encodeURIComponent(path)); }
         document.getElementById('focus-title').textContent = path;
         var detail;
@@ -1324,6 +1485,7 @@
             var chip = row.querySelector('.focus-chip');
             if (chip) chip.style.display = 'none';
         });
+        applyFilter();
         banner.style.display = 'none';
         if (history.replaceState) { history.replaceState(null, '', location.pathname + location.search); }
         render();

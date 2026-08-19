@@ -1142,6 +1142,30 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 		return pongo2.AsSafeValue(verdictLinks(in.String(), cm)), nil
 	})
 
+	// communityIssueCounts lists the issue kinds the ranked communities carry,
+	// with their counts, for the quick filters of the table.
+	// Usage: {% for f in cm|communityIssueCounts %}
+	pongo2.RegisterFilter("communityIssueCounts", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, _ := in.Interface().(*analyzer.CommunityMetrics)
+		return pongo2.AsValue(communityIssueCounts(cm)), nil
+	})
+
+	// hasFinding tells whether the findings hold one of a kind.
+	// Usage: {% if cm|hasFinding:"shared-leak" %}
+	pongo2.RegisterFilter("hasFinding", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, _ := in.Interface().(*analyzer.CommunityMetrics)
+		return pongo2.AsValue(hasFinding(cm, param.String())), nil
+	})
+
+	// issueLabel and issueTip give the words and the tooltip of the pill of
+	// an issue kind. Usage: {{ kind|issueLabel }}, {{ kind|issueTip }}
+	pongo2.RegisterFilter("issueLabel", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		return pongo2.AsValue(issueLabel(in.String())), nil
+	})
+	pongo2.RegisterFilter("issueTip", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		return pongo2.AsValue(issueTip(in.String())), nil
+	})
+
 	// groupedBlocks counts the blocks holding several communities: the ones
 	// the zoomed-out map draws as boxes, the others standing apart.
 	// Usage: {{ cm|groupedBlocks }}
