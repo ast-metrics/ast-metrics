@@ -1166,6 +1166,14 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 		return pongo2.AsValue(issueTip(in.String())), nil
 	})
 
+	// cycleView tells what a row shows of the cycle its community is caught
+	// in. Usage: {% set cyc = c|cycleView:cm %}
+	pongo2.RegisterFilter("cycleView", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		c, _ := in.Interface().(*analyzer.Community)
+		cm, _ := param.Interface().(*analyzer.CommunityMetrics)
+		return pongo2.AsValue(cycleViewOf(c, cm)), nil
+	})
+
 	// groupedBlocks counts the blocks holding several communities: the ones
 	// the zoomed-out map draws as boxes, the others standing apart.
 	// Usage: {{ cm|groupedBlocks }}
