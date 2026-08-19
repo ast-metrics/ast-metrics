@@ -83,6 +83,7 @@ type CommunityExport struct {
 	Border        []string          `json:"border,omitempty"`
 	Confidence    float64           `json:"confidence"`
 	BusFactor     int               `json:"busFactor,omitempty"`
+	Issues        []string          `json:"issues,omitempty"`
 	TopCommitters []CommitterExport `json:"topCommitters,omitempty"`
 	// History: the commits of the year touching the community, the share of
 	// its multi-file commits staying inside it, and the communities the same
@@ -204,7 +205,7 @@ func ExportCommunities(cm *CommunityMetrics, withMembers bool) *CommunitiesExpor
 	for _, c := range cm.Communities {
 		item := CommunityExport{
 			ID: c.ID, Name: c.Name, ShortName: c.ShortName, Shared: c.Shared, Size: c.Size, Cohesive: c.Cohesive,
-			Hubs: c.Hubs, Internal: c.InternalWeight, Outbound: c.OutWeight, Inbound: c.InWeight, BusFactor: c.BusFactor,
+			Hubs: c.Hubs, Internal: c.InternalWeight, Outbound: c.OutWeight, Inbound: c.InWeight, BusFactor: c.BusFactor, Issues: c.Issues,
 			Uses: links(c.Uses), UsedBy: links(c.UsedBy),
 			ExposedCount: c.ExposedCount, ExposedShare: c.ExposedShare, ForeignUsesCount: c.ForeignUsesCount, Confidence: c.Confidence,
 			HistoryCommits: c.HistoryCommits, HistoryCohesion: c.HistoryCohesion,
