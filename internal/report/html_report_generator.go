@@ -1135,6 +1135,13 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 		return pongo2.AsValue(unitLabels(cm, units, 5)), nil
 	})
 
+	// verdictLinks links the names the verdict quotes to the rows they name.
+	// Usage: {{ cm.VerdictNote|verdictLinks:cm }}
+	pongo2.RegisterFilter("verdictLinks", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, _ := param.Interface().(*analyzer.CommunityMetrics)
+		return pongo2.AsSafeValue(verdictLinks(in.String(), cm)), nil
+	})
+
 	// groupedBlocks counts the blocks holding several communities: the ones
 	// the zoomed-out map draws as boxes, the others standing apart.
 	// Usage: {{ cm|groupedBlocks }}
