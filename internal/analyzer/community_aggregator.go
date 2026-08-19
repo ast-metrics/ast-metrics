@@ -1872,8 +1872,8 @@ func verdictOf(cm *CommunityMetrics) (string, string) {
 		if len(hubs) > 3 {
 			hubs = hubs[:3]
 		}
-		kernelConcern = fmt.Sprintf("On top of that, %d%% of the dependencies lead to %s (%s…): more a centre of gravity than a kernel.",
-			int(cm.SharedShare*100+0.5), plural(cm.Shared.Size, "shared "+unitOne(unitWord), "shared "+unitWord), strings.Join(hubs, ", "))
+		kernelConcern = fmt.Sprintf("The shared kernel is heavy: %s (%s…) receive %d%% of all dependencies. That is a centre of gravity, not a kernel: anything changing there reaches most of the code.",
+			plural(cm.Shared.Size, unitOne(unitWord), unitWord), strings.Join(hubs, ", "), int(cm.SharedShare*100+0.5))
 	}
 	spread := n - cm.CohesiveCount
 	switch {
