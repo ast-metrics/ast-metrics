@@ -502,7 +502,7 @@ func TestVerdictNamesABlobWhenOneCycleHoldsMostCommunities(t *testing.T) {
 	cm := &CommunityMetrics{Granularity: GranularityClass, CommunitiesCount: 5, UnitCount: 100, Cycles: [][]string{{"0", "1"}},
 		Shared: &Community{ID: SharedID, Shared: true, Size: 3, Hubs: []string{"App\\Base", "App\\Id"}}, SharedShare: 0.31,
 		Labels: map[string]string{"App\\Base": "Base", "App\\Id": "Id"}}
-	if _, note := verdictOf(cm); note != "2 of the 5 communities depend on each other in 1 cycle." || cm.VerdictAside != "On top of that, 31% of the dependencies lead to 3 shared classes (Base, Id…): more a centre of gravity than a kernel." {
+	if _, note := verdictOf(cm); note != "2 of the 5 communities depend on each other in 1 cycle." || cm.VerdictAside != "The shared kernel is heavy: 3 classes (Base, Id…) receive 31% of all dependencies. That is a centre of gravity, not a kernel: anything changing there reaches most of the code." {
 		t.Errorf("unexpected note or aside: %s / %s", note, cm.VerdictAside)
 	}
 	cm.SharedShare = 0.1
