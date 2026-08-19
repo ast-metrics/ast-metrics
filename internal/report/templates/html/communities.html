@@ -105,6 +105,13 @@
     .verdict-aside { font-size: 0.9375rem; color: #334155; line-height: 1.55; max-width: 42rem; }
     .verdict-link { color: inherit; text-decoration: underline; text-decoration-color: #cbd5e1; text-underline-offset: 3px; text-decoration-thickness: 1px; }
     .verdict-link:hover { text-decoration-color: currentColor; }
+    .cycle-box { border-left: 3px solid #ef4444; background: #fff; border-radius: 0 8px 8px 0; padding: 0.6rem 0.9rem; margin-bottom: 0.9rem; font-size: 0.8125rem; color: #334155; }
+    .cycle-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+    .cycle-head .finding-kind { flex-shrink: 0; min-width: 0; }
+    .cycle-map-link { margin-left: auto; color: #2563eb; font-size: 0.75rem; white-space: nowrap; }
+    .cycle-map-link:hover { text-decoration: underline; }
+    .cycle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.5rem 1.5rem; margin-top: 0.5rem; }
+    .cycle-cut summary { color: #b91c1c; }
     .members li.is-hit { background: #fef9c3; border-radius: 4px; padding: 0 0.25rem; margin-left: -0.25rem; }
     .freeze { margin-top: 0.6rem; font-size: 0.75rem; color: #475569; max-width: 30rem; line-height: 1.5; }
     .freeze-lock { font-size: 0.7rem; margin-right: 0.15rem; }
@@ -643,6 +650,33 @@
             {# the detail panel of the row: every namespace, the links with the references behind them, the members #}
             <tr id="community-{{ c.ID }}-detail" class="comm-detail{% if folded %} row-more{% endif %}" data-for="{{ c.ID }}" hidden>
                 <td colspan="10">
+                    {% set cyc = c|cycleView:cm %}
+                    {% if cyc %}
+                    <div class="cycle-box" data-communities="{{ cyc.IDs }}">
+                        <div class="cycle-head">
+                            <span class="finding-kind finding-kind--cycle">cycle</span>
+                            <span>Locked with {% for m in cyc.Mates %}{% if forloop.Counter0 < 6 %}{% if forloop.Counter0 > 0 %}, {% endif %}<a href="#community-{{ m.ID }}" class="hover:underline">{{ m.Name }}</a>{% endif %}{% endfor %}{% if cyc.Mates|length > 6 %}{% with cyc.Mates|length as n %} and {{ n - 6 }} more{% endwith %}{% endif %}: none of them can change, be tested or extracted without the others.</span>
+                            <a href="#" class="cycle-map-link" data-focus="{{ cyc.IDs }}">Show on the map</a>
+                        </div>
+                        <div class="cycle-grid">
+                            <div>
+                                <div class="detail-title">It reaches</div>
+                                {% if cyc.Reaches|length == 0 %}<span class="text-slate-400">none of them directly</span>{% endif %}
+                                {% for l in cyc.Reaches %}<details class="link-detail"><summary><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></summary><ul>{% for d in l.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul></details>{% endfor %}
+                            </div>
+                            <div>
+                                <div class="detail-title">It is reached by</div>
+                                {% if cyc.ReachedBy|length == 0 %}<span class="text-slate-400">none of them directly</span>{% endif %}
+                                {% for l in cyc.ReachedBy %}<details class="link-detail"><summary><a href="#community-{{ l.ID }}" class="hover:underline">{{ l.Name }}</a> <span class="w">{{ l.Weight }}</span></summary><ul>{% for d in l.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul></details>{% endfor %}
+                            </div>
+                            <div>
+                                <div class="detail-title">The way out here</div>
+                                {% if cyc.Cuts|length == 0 %}<span class="text-slate-400">the cheapest cuts sit on other communities of the cycle</span>{% endif %}
+                                {% for k in cyc.Cuts %}<details class="link-detail cycle-cut"><summary>{% if k.Outgoing %}Stop depending on <a href="#community-{{ k.ToID }}" class="hover:underline">{{ k.ToName }}</a>{% else %}Free it from <a href="#community-{{ k.FromID }}" class="hover:underline">{{ k.FromName }}</a>{% endif %} <span class="w">{{ k.Weight }}</span></summary><ul>{% for d in k.Details %}<li>{{ d.From }} <span class="arrow">→</span> {{ d.To }} <span class="w">{{ d.Weight }}</span></li>{% endfor %}</ul></details>{% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                     <div class="detail-grid">
                         <div>
                             <div class="detail-title">Filed under</div>
@@ -979,6 +1013,21 @@
         openCommunity(id, false);
         var member = a.getAttribute('data-member');
         if (member) markMember(id, member);
+    });
+    // "Show on the map" and the cycle box light the whole cycle on the map.
+    document.querySelectorAll('[data-focus]').forEach(function (a) {
+        var ids = a.getAttribute('data-focus').split(' ');
+        a.addEventListener('click', function (e) {
+            e.preventDefault();
+            focus(ids);
+            var map = document.getElementById('community-map-wrap') || svg;
+            if (map && map.scrollIntoView) map.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+    document.querySelectorAll('.cycle-box[data-communities]').forEach(function (box) {
+        var ids = box.getAttribute('data-communities').split(' ');
+        box.addEventListener('mouseenter', function () { focus(ids); });
+        box.addEventListener('mouseleave', blur);
     });
     // The names quoted by the verdict light their community on the map.
     document.querySelectorAll('.verdict-link[data-communities]').forEach(function (a) {

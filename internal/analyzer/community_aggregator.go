@@ -166,6 +166,9 @@ type Community struct {
 	BusFactor     int
 	TopCommitters []CommitterShare
 	CommitCount   int
+	// CycleWith lists the other communities of the cycle this one is caught
+	// in, by id, in the order of the cycle; nil when it is in none.
+	CycleWith []string
 	// Issues lists the kinds of the findings this community takes part in,
 	// most important first and each kind once: what the table flags on its
 	// row. Empty for a community nothing was noticed about.
@@ -537,6 +540,15 @@ func computeCommunities(g *unitGraph, aggregate *Aggregated) *CommunityMetrics {
 	cm.Cycles = markCycles(communityIDs(cm), cm.Edges)
 	for _, cycle := range cm.Cycles {
 		cm.LargestCycle = max(cm.LargestCycle, len(cycle))
+		for _, id := range cycle {
+			others := make([]string, 0, len(cycle)-1)
+			for _, other := range cycle {
+				if other != id {
+					others = append(others, other)
+				}
+			}
+			byID[id].CycleWith = others
+		}
 	}
 	surfaceOfCommunities(cm, g)
 
