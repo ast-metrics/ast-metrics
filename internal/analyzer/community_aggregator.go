@@ -84,9 +84,12 @@ type CommunityMetrics struct {
 	// Folders holds the analysis of each folder taken on its own, sorted by
 	// path.
 	Folders []FolderCommunities
-	// Verdict is the one sentence the page opens on; VerdictNote qualifies it.
-	Verdict     string
-	VerdictNote string
+	// Verdict is the one sentence the page opens on; VerdictNote gives the
+	// fact behind it; VerdictAside adds a second concern worth a line of its
+	// own, when there is one (a heavy kernel behind a cycle).
+	Verdict      string
+	VerdictNote  string
+	VerdictAside string
 	// CohesiveCount is the number of communities drawn from a single namespace.
 	CohesiveCount int
 	// Shared is the shared kernel, nil when none stands out.
@@ -1837,28 +1840,59 @@ func verdictOf(cm *CommunityMetrics) (string, string) {
 		return "All the code moves as one piece.",
 			fmt.Sprintf("The %d %s that depend on each other do so without a seam: no group of them stands apart from the rest.", cm.UnitCount, unitWord)
 	}
-	kernelClause := ""
-	if cm.Shared != nil {
-		kernelClause = fmt.Sprintf("%d%% of the dependencies lead to %s", int(cm.SharedShare*100+0.5), plural(cm.Shared.Size, "shared "+unitOne(unitWord), "shared "+unitWord))
+	// The names answer "which ones?" before the reader has to scroll: the
+	// communities caught in the largest cycle, the classes at the heart of a
+	// heavy kernel.
+	byID := map[string]*Community{}
+	for _, c := range cm.Communities {
+		byID[c.ID] = c
+	}
+	namesOf := func(ids []string, limit int) string {
+		names := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if c := byID[id]; c != nil {
+				names = append(names, c.ShortName)
+			}
+		}
+		if len(names) > limit {
+			return strings.Join(names[:limit], ", ") + fmt.Sprintf(" and %d more", len(names)-limit)
+		}
+		return joinNames(names)
+	}
+	// A heavy kernel is worth a word whatever the headline: it is a concern
+	// on its own, and it is named.
+	kernelConcern := ""
+	if kernelIsCentreOfGravity(cm) {
+		hubs := labelsOf(cm.Shared.Hubs, cm.Labels)
+		if len(hubs) > 3 {
+			hubs = hubs[:3]
+		}
+		kernelConcern = fmt.Sprintf("On top of that, %d%% of the dependencies lead to %s (%s…): more a centre of gravity than a kernel.",
+			int(cm.SharedShare*100+0.5), plural(cm.Shared.Size, "shared "+unitOne(unitWord), "shared "+unitWord), strings.Join(hubs, ", "))
 	}
 	spread := n - cm.CohesiveCount
 	switch {
 	case len(cm.Cycles) > 0:
-		largest, caught := 0, 0
+		largest, caught, largestCycle := 0, 0, []string{}
 		for _, cycle := range cm.Cycles {
-			largest = max(largest, len(cycle))
+			if len(cycle) > largest {
+				largest, largestCycle = len(cycle), cycle
+			}
 			caught += len(cycle)
 		}
 		note := fmt.Sprintf("%d of the %d communities depend on each other in %s", caught, n, plural(len(cm.Cycles), "cycle", "cycles"))
-		if kernelClause != "" {
-			note += ", and " + kernelClause
+		if names := namesOf(largestCycle, 3); names != "" {
+			note += ": " + names
 		}
+		note += "."
 		// one cycle holding a good part of the communities is a blob, and is
 		// said as such rather than counted among the cycles
 		if largest >= blobMinCommunities && float64(largest) >= blobMinShare*float64(n) {
-			return "A change in the middle of this code reaches everywhere.", note + "."
+			cm.VerdictAside = kernelConcern
+			return "A change in the middle of this code reaches everywhere.", note
 		}
-		return "Some of these communities cannot change alone.", note + "."
+		cm.VerdictAside = kernelConcern
+		return "Some of these communities cannot change alone.", note
 	case kernelIsCentreOfGravity(cm):
 		kernelUsers := 0
 		for _, l := range cm.Shared.UsedBy {
