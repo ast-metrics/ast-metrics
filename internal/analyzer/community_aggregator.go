@@ -166,6 +166,10 @@ type Community struct {
 	BusFactor     int
 	TopCommitters []CommitterShare
 	CommitCount   int
+	// Issues lists the kinds of the findings this community takes part in,
+	// most important first and each kind once: what the table flags on its
+	// row. Empty for a community nothing was noticed about.
+	Issues []string
 	// History: what the commits of the year say of the community.
 	// HistoryCommits is the number of distinct commits touching at least one
 	// of its files, HistoryMultiFileCommits the ones among them touching
@@ -549,6 +553,7 @@ func computeCommunities(g *unitGraph, aggregate *Aggregated) *CommunityMetrics {
 	// The verdict reads the history: it waits for it.
 	cm.Verdict, cm.VerdictNote = verdictOf(cm)
 	cm.Findings = withHistoryFindings(findingsOf(cm, g, weights), historyFindingsOf(cm))
+	issuesOfCommunities(cm)
 	cm.Actions = actionsOf(cm)
 
 	// The suggestions page files the findings with the other observations.
@@ -1914,6 +1919,35 @@ func verdictOf(cm *CommunityMetrics) (string, string) {
 			note += fmt.Sprintf(", around a shared kernel of %s", plural(cm.Shared.Size, unitOne(unitWord), unitWord))
 		}
 		return "This code can be split and worked on in pieces.", note + "."
+	}
+}
+
+// communityIssueKinds are the finding kinds that say something about a
+// community itself: it is caught in a cycle, has no boundary, is scattered,
+// changes with another or never as a whole. A split folder, a bridge class
+// or a leaking kernel name a community without it being at fault.
+var communityIssueKinds = map[string]bool{"cycle": true, "exposed": true, "spread": true, "history-crossed": true, "history-loose": true}
+
+// issuesOfCommunities flags each community with the kinds of the findings
+// about it, in the order of the findings, so the table can tell at a glance
+// which rows the page is talking about.
+func issuesOfCommunities(cm *CommunityMetrics) {
+	byID := map[string]*Community{}
+	for _, c := range cm.Communities {
+		byID[c.ID] = c
+		c.Issues = nil
+	}
+	for _, f := range cm.Findings {
+		if !communityIssueKinds[f.Kind] {
+			continue
+		}
+		for _, id := range f.Communities {
+			c := byID[id]
+			if c == nil || slices.Contains(c.Issues, f.Kind) {
+				continue
+			}
+			c.Issues = append(c.Issues, f.Kind)
+		}
 	}
 }
 
