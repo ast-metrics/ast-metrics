@@ -336,7 +336,6 @@ func (v *HtmlReportGenerator) generatePages(baseTemplateDir string, scopeDefs []
 
 	// copy each image
 	for _, file := range []string{
-		"help-community.png",
 		"logo-ast-metrics-small.png",
 		"icon-ai.webp",
 		"icon-classifier.webp",
@@ -524,6 +523,33 @@ func pruneFunction(m *pb.StmtFunction) {
 		m.Stmts.StmtDecisionSwitch = nil
 		m.Stmts.StmtExternalDependencies = nil
 	}
+}
+
+// stripIndentation drops the leading whitespace of every line of a rendered
+// page. The templates are indented for the people who write them, and that
+// indentation weighs a fifth of a large page once rendered a few hundred rows
+// deep. HTML reads a line the same with or without it; a <pre> or <textarea>
+// would not, and none of the templates carries one.
+func stripIndentation(html string) string {
+	var sb strings.Builder
+	sb.Grow(len(html))
+	start := 0
+	for start < len(html) {
+		end := strings.IndexByte(html[start:], '\n')
+		if end < 0 {
+			end = len(html)
+		} else {
+			end += start
+		}
+		line := html[start:end]
+		trimmed := strings.TrimLeft(line, " \t")
+		if trimmed != "" {
+			sb.WriteString(trimmed)
+			sb.WriteByte('\n')
+		}
+		start = end + 1
+	}
+	return sb.String()
 }
 
 func buildNodeToCommunityJSON(n2c map[string]string) string {
@@ -965,7 +991,7 @@ func (v *HtmlReportGenerator) GenerateScopePage(template string, scope scopeDef,
 		return err
 	}
 	defer file.Close()
-	file.WriteString(out)
+	file.WriteString(stripIndentation(out))
 
 	return nil
 }
@@ -1058,6 +1084,123 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 	// Usage: href="index_{{ languageName|langSlug }}.html"
 	pongo2.RegisterFilter("langSlug", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
 		return pongo2.AsValue(languageURLSlug(in.String())), nil
+	})
+
+	// communityMap draws the communities and their dependencies as an inline
+	// SVG. Usage: {{ currentView.Community|communityMap }}
+	pongo2.RegisterFilter("communityMap", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, ok := in.Interface().(*analyzer.CommunityMetrics)
+		if !ok {
+			return pongo2.AsSafeValue(""), nil
+		}
+		return pongo2.AsSafeValue(communityMapSVG(cm)), nil
+	})
+
+	// communityBlocks draws the zoomed-out map: the blocks the communities
+	// form at a coarser grain. Empty when there is nothing to zoom out to.
+	// Usage: {{ currentView.Community|communityBlocks }}
+	pongo2.RegisterFilter("communityBlocks", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, ok := in.Interface().(*analyzer.CommunityMetrics)
+		if !ok {
+			return pongo2.AsSafeValue(""), nil
+		}
+		return pongo2.AsSafeValue(communityBlocksSVG(cm)), nil
+	})
+
+	// communityFiles serialises the files behind the communities, for the
+	// folder explorer of the page. Usage: {{ currentView.Community|communityFiles }}
+	pongo2.RegisterFilter("communityFiles", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, ok := in.Interface().(*analyzer.CommunityMetrics)
+		if !ok {
+			return pongo2.AsSafeValue(`{"dirs":[],"f":[],"c":{},"n":{},"x":{},"m":{},"b":[],"s":"","u":"class","d":{}}`), nil
+		}
+		return pongo2.AsSafeValue(communityFilesJSON(cm)), nil
+	})
+
+	// communityFreeze reads the state of the no_cross_community_dependencies
+	// rule off the evaluation. Usage: {% set freeze = projectAggregated.Evaluation|communityFreeze %}
+	pongo2.RegisterFilter("communityFreeze", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		eval, _ := in.Interface().(*requirement.EvaluationResult)
+		return pongo2.AsValue(communityFreezeOf(eval)), nil
+	})
+
+	// communityLabels joins the short labels of the first units of a list,
+	// for a tooltip. Usage: {{ c.Exposed|communityLabels:cm }} (five of them)
+	pongo2.RegisterFilter("communityLabels", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, ok := param.Interface().(*analyzer.CommunityMetrics)
+		units, ok2 := in.Interface().([]string)
+		if !ok || !ok2 {
+			return pongo2.AsValue(""), nil
+		}
+		return pongo2.AsValue(unitLabels(cm, units, 5)), nil
+	})
+
+	// verdictLinks links the names the verdict quotes to the rows they name.
+	// Usage: {{ cm.VerdictNote|verdictLinks:cm }}
+	pongo2.RegisterFilter("verdictLinks", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, _ := param.Interface().(*analyzer.CommunityMetrics)
+		return pongo2.AsSafeValue(verdictLinks(in.String(), cm)), nil
+	})
+
+	// communityIssueCounts lists the issue kinds the ranked communities carry,
+	// with their counts, for the quick filters of the table.
+	// Usage: {% for f in cm|communityIssueCounts %}
+	pongo2.RegisterFilter("communityIssueCounts", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, _ := in.Interface().(*analyzer.CommunityMetrics)
+		return pongo2.AsValue(communityIssueCounts(cm)), nil
+	})
+
+	// hasFinding tells whether the findings hold one of a kind.
+	// Usage: {% if cm|hasFinding:"shared-leak" %}
+	pongo2.RegisterFilter("hasFinding", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, _ := in.Interface().(*analyzer.CommunityMetrics)
+		return pongo2.AsValue(hasFinding(cm, param.String())), nil
+	})
+
+	// issueLabel and issueTip give the words and the tooltip of the pill of
+	// an issue kind. Usage: {{ kind|issueLabel }}, {{ kind|issueTip }}
+	pongo2.RegisterFilter("issueLabel", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		return pongo2.AsValue(issueLabel(in.String())), nil
+	})
+	pongo2.RegisterFilter("issueTip", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		return pongo2.AsValue(issueTip(in.String())), nil
+	})
+
+	// cycleView tells what a row shows of the cycle its community is caught
+	// in. Usage: {% set cyc = c|cycleView:cm %}
+	pongo2.RegisterFilter("cycleView", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		c, _ := in.Interface().(*analyzer.Community)
+		cm, _ := param.Interface().(*analyzer.CommunityMetrics)
+		return pongo2.AsValue(cycleViewOf(c, cm)), nil
+	})
+
+	// groupedBlocks counts the blocks holding several communities: the ones
+	// the zoomed-out map draws as boxes, the others standing apart.
+	// Usage: {{ cm|groupedBlocks }}
+	pongo2.RegisterFilter("groupedBlocks", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		cm, ok := in.Interface().(*analyzer.CommunityMetrics)
+		if !ok {
+			return pongo2.AsValue(0), nil
+		}
+		n := 0
+		for _, b := range cm.Blocks {
+			if len(b.Communities) > 1 {
+				n++
+			}
+		}
+		return pongo2.AsValue(n), nil
+	})
+
+	// communityColor gives the color of the community at a position in the
+	// list; the shared kernel has its own. Usage: {{ i|communityColor:c.Shared }}
+	pongo2.RegisterFilter("communityColor", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		return pongo2.AsValue(communityColor(in.Integer(), param.Bool())), nil
+	})
+
+	// percent formats a share between 0 and 1 as a rounded percentage.
+	// Usage: {{ share|percent }}%
+	pongo2.RegisterFilter("percent", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
+		return pongo2.AsValue(int(in.Float()*100 + 0.5)), nil
 	})
 
 	// jsonEncode marshals any value to a JSON string for embedding in <script>.
@@ -1497,6 +1640,10 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 				return pongo2.AsValue(val), nil
 			}
 		case classifier.FamilyGroupedPredictions:
+			if val, exists := m[key]; exists {
+				return pongo2.AsValue(val), nil
+			}
+		case map[string]string:
 			if val, exists := m[key]; exists {
 				return pongo2.AsValue(val), nil
 			}

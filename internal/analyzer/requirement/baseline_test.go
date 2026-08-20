@@ -87,3 +87,28 @@ func TestResolveBaselinePath(t *testing.T) {
 	assert.NoError(t, os.WriteFile(DefaultBaselineFilename, []byte("ignored: []"), 0644))
 	assert.Equal(t, DefaultBaselineFilename, ResolveBaselinePath(""))
 }
+
+func TestBaseline_FilterByRuleCountsThePerRuleSilencedViolations(t *testing.T) {
+	baseline := NewBaselineFromOutcomes([]RuleOutcome{
+		{Rule: "no_cross_community_dependencies", File: "a.go", Message: "A depends on B, which sits in another community"},
+		{Rule: "no_cross_community_dependencies", File: "a.go", Message: "A depends on C, which sits in another community"},
+		{Rule: "max_loc", File: "a.go", Message: "too long"},
+	})
+
+	outcomes := []RuleOutcome{
+		{Rule: "no_cross_community_dependencies", File: "a.go", Message: "A depends on B, which sits in another community"},
+		{Rule: "no_cross_community_dependencies", File: "a.go", Message: "A depends on C, which sits in another community"},
+		{Rule: "no_cross_community_dependencies", File: "b.go", Message: "D depends on B, which sits in another community"},
+		{Rule: "max_loc", File: "a.go", Message: "too long"},
+	}
+
+	kept, baselined, byRule := baseline.FilterByRule(outcomes)
+
+	assert.Equal(t, 3, baselined)
+	assert.Equal(t, 1, len(kept))
+	assert.Equal(t, "b.go", kept[0].File)
+	assert.Equal(t, map[string]int{"no_cross_community_dependencies": 2, "max_loc": 1}, byRule)
+
+	_, _, none := (*Baseline)(nil).FilterByRule(outcomes)
+	assert.Nil(t, none)
+}

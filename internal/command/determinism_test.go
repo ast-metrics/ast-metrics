@@ -319,17 +319,21 @@ func snapshotCommunity(sb *strings.Builder, prefix string, community *analyzer.C
 	if community == nil {
 		return
 	}
-	fmt.Fprintf(sb, "%s.community count=%d avgSize=%v maxSize=%d density=%v modularity=%v\n",
-		prefix, community.CommunitiesCount, community.AvgSize, community.MaxSize, community.GraphDensity, community.ModularityQ)
-	fmt.Fprintf(sb, "%s.community.matrixOrder=%s\n", prefix, strings.Join(community.MatrixOrder, ","))
-	fmt.Fprintf(sb, "%s.community.boundaryNodes=%s\n", prefix, strings.Join(community.BoundaryNodes, ","))
-	for _, id := range sortedKeysOf(community.Communities) {
-		fmt.Fprintf(sb, "%s.community[%s]=%s purity=%v inbound=%d outbound=%d\n",
-			prefix, id, strings.Join(community.Communities[id], ","),
-			community.PurityPerCommunity[id], community.InboundEdgesPerComm[id], community.OutboundEdgesPerComm[id])
+	fmt.Fprintf(sb, "%s.community count=%d maxSize=%d units=%d isolated=%d internalShare=%v modularity=%v root=%s\n",
+		prefix, community.CommunitiesCount, community.MaxSize, community.UnitCount, community.IsolatedUnits, community.InternalShare, community.Modularity, community.Root)
+	fmt.Fprintf(sb, "%s.community.verdict=%s %s\n", prefix, community.Verdict, community.VerdictNote)
+	for _, c := range community.Communities {
+		fmt.Fprintf(sb, "%s.community[%s]=%s name=%q hint=%q cohesive=%v internal=%d in=%d out=%d hubs=%s\n",
+			prefix, c.ID, strings.Join(c.Units, ","), c.Name, c.Hint, c.Cohesive, c.InternalWeight, c.InWeight, c.OutWeight, strings.Join(c.Hubs, ","))
 	}
-	for i, edge := range community.EdgesBetweenCommunities {
+	for i, edge := range community.Edges {
 		fmt.Fprintf(sb, "%s.community.edge[%d]=%v\n", prefix, i, edge)
+	}
+	for i, cycle := range community.Cycles {
+		fmt.Fprintf(sb, "%s.community.cycle[%d]=%s\n", prefix, i, strings.Join(cycle, ","))
+	}
+	for i, finding := range community.Findings {
+		fmt.Fprintf(sb, "%s.community.finding[%d]=%s %s\n", prefix, i, finding.Kind, finding.Title)
 	}
 }
 

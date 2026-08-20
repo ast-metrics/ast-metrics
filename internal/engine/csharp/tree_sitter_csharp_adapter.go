@@ -254,9 +254,19 @@ func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
 	return csDecisions.LogicalOperator(n, a.src)
 }
 
+// Imports returns the dependencies written on a node. A using directive
+// names a namespace, or a type under an alias. Every other reference to a
+// type is returned with an empty Module: C# writes types by their simple
+// name, which the analysis resolves through the usings of the file, its own
+// namespace and the enclosing ones, the way the compiler does. The visitor
+// calls this on every node it visits and files the result under the class and
+// the method the node sits in.
 func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
-	if n == nil || n.Type() != "using_directive" {
+	if n == nil {
 		return nil
+	}
+	if n.Type() != "using_directive" {
+		return a.typeReferences(n)
 	}
 	// using System;                       -> {Module: "System"}
 	// using static System.Math;          -> {Module: "System.Math"}
@@ -287,6 +297,137 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 		return nil
 	}
 	return []Treesitter.ImportItem{{Module: module, Name: alias}}
+}
+
+// typeReferences returns the types a node refers to, by the name written in
+// the source: a simple name with an empty Module, a qualified name split into
+// its namespace and its type.
+//
+// The visitor walks the body of a type and of a method, not their
+// declaration: what is written on the declaration (base list, attributes,
+// parameter and return types) is read when the visitor lands on it, what is
+// written in a body when it lands on each declaration or expression carrying
+// a type.
+func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportItem {
+	items := []Treesitter.ImportItem{}
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		if idx := strings.LastIndex(name, "."); idx >= 0 {
+			items = append(items, Treesitter.ImportItem{Module: name[:idx], Name: name[idx+1:]})
+			return
+		}
+		items = append(items, Treesitter.ImportItem{Module: "", Name: name})
+	}
+	// typesUnder collects the types written under a type node: through
+	// nullable, array and tuple wrappers, and the arguments of a generic.
+	var typesUnder func(x *sitter.Node)
+	typesUnder = func(x *sitter.Node) {
+		if x == nil {
+			return
+		}
+		switch x.Type() {
+		case "identifier":
+			add(text(a.src, x))
+			return
+		case "qualified_name":
+			add(text(a.src, x))
+			return
+		case "generic_name":
+			// the generic itself, then its arguments
+			for i := 0; i < int(x.NamedChildCount()); i++ {
+				ch := x.NamedChild(i)
+				if ch.Type() == "identifier" {
+					add(text(a.src, ch))
+				} else {
+					typesUnder(ch)
+				}
+			}
+			return
+		case "predefined_type", "implicit_type", "var", "pointer_type", "function_pointer_type":
+			return
+		}
+		for i := 0; i < int(x.NamedChildCount()); i++ {
+			typesUnder(x.NamedChild(i))
+		}
+	}
+	attributes := func(x *sitter.Node) {
+		var walk func(y *sitter.Node)
+		walk = func(y *sitter.Node) {
+			if y == nil {
+				return
+			}
+			if y.Type() == "attribute" {
+				if name := y.ChildByFieldName("name"); name != nil {
+					add(text(a.src, name))
+				}
+				return
+			}
+			for i := 0; i < int(y.NamedChildCount()); i++ {
+				walk(y.NamedChild(i))
+			}
+		}
+		walk(x)
+	}
+	switch n.Type() {
+	case "class_declaration", "struct_declaration", "record_declaration", "record_struct_declaration", "enum_declaration", "interface_declaration":
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			ch := n.NamedChild(i)
+			switch ch.Type() {
+			case "base_list", "parameter_list", "type_parameter_constraints_clause":
+				typesUnder(ch)
+			case "attribute_list":
+				attributes(ch)
+			}
+		}
+	case "method_declaration", "constructor_declaration", "local_function_statement", "destructor_declaration",
+		"operator_declaration", "conversion_operator_declaration", "delegate_declaration", "indexer_declaration":
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			ch := n.NamedChild(i)
+			switch ch.Type() {
+			case "block", "arrow_expression_clause", "identifier", "modifier", "type_parameter_list":
+				continue
+			case "attribute_list":
+				attributes(ch)
+			default:
+				typesUnder(ch)
+			}
+		}
+	case "variable_declaration", "parameter", "object_creation_expression", "cast_expression", "declaration_pattern",
+		"catch_declaration", "property_declaration", "event_declaration", "event_field_declaration", "typeof_expression",
+		"default_expression", "array_creation_expression", "stackalloc_expression", "recursive_pattern", "type_pattern",
+		"as_expression", "is_expression", "sizeof_expression":
+		if t := n.ChildByFieldName("type"); t != nil {
+			typesUnder(t)
+		}
+		if n.Type() == "property_declaration" || n.Type() == "event_field_declaration" {
+			for i := 0; i < int(n.NamedChildCount()); i++ {
+				if ch := n.NamedChild(i); ch.Type() == "attribute_list" {
+					attributes(ch)
+				}
+			}
+		}
+	case "member_access_expression":
+		// Money.Zero, OrderStatus.Pending: a capitalised receiver that is
+		// not a variable is a type by convention
+		if object := n.ChildByFieldName("expression"); object != nil && object.Type() == "identifier" {
+			if name := text(a.src, object); looksLikeCSharpType(name) {
+				add(name)
+			}
+		}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return items
+}
+
+// looksLikeCSharpType tells whether a simple name is written like a type:
+// capitalised, and not a constant written all in capitals.
+func looksLikeCSharpType(name string) bool {
+	return name != "" && name[0] >= 'A' && name[0] <= 'Z' && strings.ToUpper(name) != name
 }
 
 // CountComments counts C# comment lines (//, /// and /* */) in the given range.

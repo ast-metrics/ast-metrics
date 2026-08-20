@@ -2,7 +2,6 @@ package php
 
 import (
 	"bytes"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -12,24 +11,12 @@ import (
 	tsPhp "github.com/smacker/go-tree-sitter/php"
 )
 
-// Pre-compiled regex patterns for PHP external dependency scanning.
-var (
-	rePhpUse        = regexp.MustCompile(`(?m)^\s*use\s+([^;]+);`)
-	rePhpNewClass   = regexp.MustCompile(`new\s+(\\)?([A-Za-z_][A-Za-z0-9_\\]*)`)
-	rePhpStatic     = regexp.MustCompile(`(\\)?([A-Za-z_][A-Za-z0-9_\\]*)::`)
-	rePhpFuncParams = regexp.MustCompile(`function\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*)\)`)
-	rePhpParamType  = regexp.MustCompile(`\??[A-Za-z_\\][A-Za-z0-9_\\]*\s*\$`)
-	rePhpReturnType = regexp.MustCompile(`\)\s*:\s*\??([A-Za-z_\\][A-Za-z0-9_\\]*)`)
-	rePhpProperty   = regexp.MustCompile(`(?m)^(?:\s*)(?:public|private|protected|var)\s+\??([A-Za-z_\\][A-Za-z0-9_\\]*)?\s*\$`)
-)
-
 type TreeSitterAdapter struct {
 	src      []byte
 	root     *sitter.Node // shared root from runner to avoid re-parsing
 	ns       string
 	aliases  map[string]string
 	computed bool
-	extDeps  []Treesitter.ImportItem
 	// srcLines holds the source split into lines, so that the extractors called
 	// once per function do not split the whole file again for each of them
 	srcLines Treesitter.LineCache
@@ -228,58 +215,271 @@ func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
 	return phpDecisions.LogicalOperator(n, a.src)
 }
 
-// ---- Imports (use statements) ----
+// ---- Dependencies ----
+//
+// The dependencies of a PHP file are read off the tree, node by node, as the
+// visitor walks it: the visitor calls Imports on every node it visits and
+// attaches what comes back to the class and the function it is in. A name is
+// a dependency where the language makes it one:
+//
+//   - what a class extends, implements or uses as a trait, and the attributes
+//     on it;
+//   - the type of a parameter, a property, a return value or a caught
+//     exception, in every place a type may be written (methods, functions,
+//     closures, arrow functions, promoted properties);
+//   - the class of an object created with new, called or read statically
+//     (Foo::bar(), Foo::CONST, Foo::$prop, Foo::class), or tested with
+//     instanceof.
+//
+// Every name is resolved the way PHP resolves it: a fully qualified name as
+// it is, an imported name through its import or its alias, any other name in
+// the namespace of the file. self, static, parent and the primitive types are
+// not dependencies. Every use counts, so that a class using another in three
+// places weighs three times one that uses it once.
+
+// phpPrimitiveTypes lists the names written where a class name could be that
+// name no class.
+var phpPrimitiveTypes = map[string]bool{
+	"int": true, "integer": true, "float": true, "double": true, "string": true,
+	"bool": true, "boolean": true, "array": true, "callable": true, "iterable": true,
+	"void": true, "mixed": true, "object": true, "null": true, "never": true,
+	"false": true, "true": true, "resource": true,
+	"self": true, "static": true, "parent": true,
+}
+
+// Imports returns the dependencies written on a node, resolved to qualified
+// names. Module and Name both carry the qualified name of the class: PHP has
+// no package a class would be imported from.
 func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	if n == nil {
 		return nil
 	}
-	// compute once from whole source
 	if !a.computed {
-		a.computeExternalDependencies()
+		a.collectAliases()
 	}
-	if n.Type() == "use_declaration" {
-		// also return plain use declarations as dependencies
-		items := []Treesitter.ImportItem{}
-		var walk func(*sitter.Node)
-		walk = func(x *sitter.Node) {
-			if x == nil {
-				return
-			}
-			t := x.Type()
-			if t == "qualified_name" || t == "namespace_name" || t == "name" {
-				mod := a.text(x)
-				if mod != "" {
-					items = append(items, Treesitter.ImportItem{Module: mod, Name: mod})
-				}
-			}
-			for i := 0; i < int(x.ChildCount()); i++ {
-				walk(x.Child(i))
+	names := []string{}
+	typeName := func(x *sitter.Node) {
+		if x == nil {
+			return
+		}
+		switch x.Type() {
+		case "name", "qualified_name":
+			names = append(names, a.text(x))
+		}
+	}
+	// namesUnder collects the class names listed under a clause.
+	namesUnder := func(x *sitter.Node) {
+		if x == nil {
+			return
+		}
+		for i := 0; i < int(x.NamedChildCount()); i++ {
+			typeName(x.NamedChild(i))
+		}
+	}
+	// typesUnder collects the named types under a node: a parameter list, a
+	// union or an optional type, a return type, a catch type list.
+	var typesUnder func(x *sitter.Node)
+	typesUnder = func(x *sitter.Node) {
+		if x == nil {
+			return
+		}
+		if x.Type() == "named_type" {
+			typeName(x.NamedChild(0))
+			return
+		}
+		for i := 0; i < int(x.NamedChildCount()); i++ {
+			typesUnder(x.NamedChild(i))
+		}
+	}
+	switch n.Type() {
+	case "class_declaration", "enum_declaration", "trait_declaration", "interface_declaration":
+		// the declaration itself: what it extends and implements, and its
+		// attributes; the body is visited on its own
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			ch := n.NamedChild(i)
+			switch ch.Type() {
+			case "base_clause", "class_interface_clause":
+				namesUnder(ch)
+			case "attribute_list":
+				a.attributeNames(ch, &names)
 			}
 		}
-		walk(n)
-		return dedup(items)
+	case "method_declaration", "function_definition":
+		// the signature: parameter types, return type, attributes; the body
+		// is visited on its own
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			ch := n.NamedChild(i)
+			switch ch.Type() {
+			case "compound_statement":
+				continue
+			case "attribute_list":
+				a.attributeNames(ch, &names)
+			default:
+				typesUnder(ch)
+			}
+		}
+	case "arrow_function", "anonymous_function_creation_expression":
+		// the closure is a node of the body: its signature is read here, its
+		// own body is visited after it
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			ch := n.NamedChild(i)
+			switch ch.Type() {
+			case "formal_parameters", "named_type", "optional_type", "union_type", "intersection_type", "disjunctive_normal_form_type":
+				typesUnder(ch)
+			}
+		}
+	case "property_declaration":
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			ch := n.NamedChild(i)
+			switch ch.Type() {
+			case "named_type", "optional_type", "union_type", "intersection_type", "disjunctive_normal_form_type":
+				typesUnder(ch)
+			case "attribute_list":
+				a.attributeNames(ch, &names)
+			}
+		}
+	case "catch_clause":
+		if types := n.ChildByFieldName("type"); types != nil {
+			typesUnder(types)
+		} else {
+			typesUnder(firstChildOfType(n, "type_list"))
+		}
+	case "object_creation_expression":
+		// new Foo, new \Bar\Baz, new class extends Base {}
+		if n.NamedChildCount() > 0 {
+			first := n.NamedChild(0)
+			// PHP 8.4 lets a method be called on a new object without
+			// parentheses, new Foo($x)->bar(): the bundled grammar reads it
+			// as the creation of what "Foo($x)->bar" returns, and the class
+			// sits at the bottom of that chain
+			for first != nil && first.NamedChildCount() > 0 {
+				switch first.Type() {
+				case "member_access_expression", "member_call_expression", "nullsafe_member_access_expression", "nullsafe_member_call_expression", "function_call_expression":
+					first = first.NamedChild(0)
+					continue
+				}
+				break
+			}
+			switch first.Type() {
+			case "name", "qualified_name":
+				names = append(names, a.text(first))
+			case "attribute_list", "base_clause", "class_interface_clause":
+				for i := 0; i < int(n.NamedChildCount()); i++ {
+					ch := n.NamedChild(i)
+					if ch.Type() == "base_clause" || ch.Type() == "class_interface_clause" {
+						namesUnder(ch)
+					}
+				}
+			}
+		}
+	case "scoped_call_expression", "class_constant_access_expression", "scoped_property_access_expression":
+		// Foo::bar(), Foo::CONST, Foo::class, Foo::$prop
+		if n.NamedChildCount() > 0 {
+			typeName(n.NamedChild(0))
+		}
+	case "use_declaration":
+		// inside a class body: the traits brought in. The names of the
+		// conflict resolution list are not walked: they name methods.
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			typeName(n.NamedChild(i))
+		}
+	case "binary_expression":
+		if a.isInstanceof(n) && n.NamedChildCount() >= 2 {
+			typeName(n.NamedChild(int(n.NamedChildCount()) - 1))
+		}
 	}
-	// return precomputed externals on class nodes to attach them in class scope
-	if n.Type() == "class_declaration" {
-		return a.extDeps
+	if len(names) == 0 {
+		return nil
 	}
-	return nil
+	items := make([]Treesitter.ImportItem, 0, len(names))
+	for _, name := range names {
+		if class := a.resolveClassName(name); class != "" {
+			items = append(items, Treesitter.ImportItem{Module: class, Name: class})
+		}
+	}
+	return items
 }
 
-// computeExternalDependencies scans the whole source and fills a.extDeps with external classes used within class bodies.
-// It tries to resolve:
-// - property and parameter type hints
-// - return types
-// - new ClassName
-// - static calls ClassName::method/const and attributes ClassName::$ATTR
-// - fully qualified names starting with \
-// - use imports with aliases
-func (a *TreeSitterAdapter) computeExternalDependencies() {
+// attributeNames collects the classes named by the attributes of a list.
+func (a *TreeSitterAdapter) attributeNames(list *sitter.Node, names *[]string) {
+	var walk func(x *sitter.Node)
+	walk = func(x *sitter.Node) {
+		if x == nil {
+			return
+		}
+		if x.Type() == "attribute" {
+			if x.NamedChildCount() > 0 {
+				first := x.NamedChild(0)
+				if first.Type() == "name" || first.Type() == "qualified_name" {
+					*names = append(*names, a.text(first))
+				}
+			}
+			return
+		}
+		for i := 0; i < int(x.NamedChildCount()); i++ {
+			walk(x.NamedChild(i))
+		}
+	}
+	walk(list)
+}
+
+// isInstanceof tells whether a binary expression is an instanceof test: the
+// operator is an anonymous token between the two operands.
+func (a *TreeSitterAdapter) isInstanceof(n *sitter.Node) bool {
+	for i := 0; i < int(n.ChildCount()); i++ {
+		ch := n.Child(i)
+		if !ch.IsNamed() && a.text(ch) == "instanceof" {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveClassName resolves a name written in the source the way PHP does,
+// and returns an empty string for a name that is no class.
+func (a *TreeSitterAdapter) resolveClassName(name string) string {
+	name = strings.TrimSpace(strings.TrimPrefix(name, "?"))
+	if name == "" {
+		return ""
+	}
+	if strings.HasPrefix(name, "\\") {
+		return strings.TrimPrefix(name, "\\")
+	}
+	if phpPrimitiveTypes[strings.ToLower(name)] {
+		return ""
+	}
+	// an unqualified name imported as is, or the first segment of a
+	// qualified name imported as a namespace (use App\Shared; Shared\Model)
+	if full, ok := a.aliases[name]; ok {
+		return full
+	}
+	if i := strings.Index(name, "\\"); i > 0 {
+		if full, ok := a.aliases[name[:i]]; ok {
+			return full + name[i:]
+		}
+	}
+	// a few classes of the global namespace, written without a leading
+	// backslash by habit: kept as they are, so that a file that forgot the
+	// backslash still points at the class it means
+	switch name {
+	case "stdClass", "InvalidArgumentException":
+		return name
+	}
+	if a.ns != "" {
+		return a.ns + "\\" + name
+	}
+	return name
+}
+
+// collectAliases reads the namespace and the imports of the file: what each
+// imported name stands for, with its alias when it has one. Imports of
+// functions and constants are left aside: they name no class.
+func (a *TreeSitterAdapter) collectAliases() {
 	if a.computed {
 		return
 	}
 	a.computed = true
-	a.extDeps = []Treesitter.ImportItem{}
+	a.aliases = map[string]string{}
 	if a.src == nil {
 		return
 	}
@@ -287,211 +487,105 @@ func (a *TreeSitterAdapter) computeExternalDependencies() {
 	if root == nil {
 		parser := sitter.NewParser()
 		parser.SetLanguage(tsPhp.GetLanguage())
-		tree := parser.Parse(nil, a.src)
-		root = tree.RootNode()
+		root = parser.Parse(nil, a.src).RootNode()
 	}
+	// The declarations sit at the top of the file, or one level down inside
+	// a braced namespace.
+	var scan func(n *sitter.Node)
+	scan = func(n *sitter.Node) {
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			ch := n.NamedChild(i)
+			switch ch.Type() {
+			case "namespace_definition":
+				if nm := firstChildOfType(ch, "namespace_name"); nm != nil {
+					a.ns = a.text(nm)
+				}
+				if body := firstChildOfType(ch, "compound_statement"); body != nil {
+					scan(body)
+				}
+			case "namespace_use_declaration":
+				a.collectUseDeclaration(ch)
+			}
+		}
+	}
+	scan(root)
+}
 
-	// collect namespace and use aliases — only scan top-level children
-	// (namespace/use declarations are always at the top of a PHP file)
-	a.aliases = map[string]string{}
-	collectUse := func(n *sitter.Node) {
-		// Traverse to collect any use_as_clause (aliases)
-		var collect func(*sitter.Node)
-		collect = func(x *sitter.Node) {
-			if x == nil {
+// collectUseDeclaration records the imports of one use statement.
+func (a *TreeSitterAdapter) collectUseDeclaration(n *sitter.Node) {
+	// use function foo; use const BAR;
+	for i := 0; i < int(n.ChildCount()); i++ {
+		ch := n.Child(i)
+		if !ch.IsNamed() {
+			switch a.text(ch) {
+			case "function", "const":
 				return
 			}
-			if x.Type() == "use_as_clause" {
-				var base, alias string
-				if q := firstChildOfType(x, "qualified_name"); q != nil {
-					base = a.text(q)
-				}
-				if base == "" {
-					if nm := firstChildOfType(x, "name"); nm != nil {
-						base = a.text(nm)
-					}
-				}
-				if aliasNode := x.Child(int(x.ChildCount() - 1)); aliasNode != nil {
-					alias = a.text(aliasNode)
-				}
-				if base != "" && alias != "" {
-					a.aliases[alias] = base
-				}
-			}
-			for i := 0; i < int(x.ChildCount()); i++ {
-				collect(x.Child(i))
-			}
-		}
-		collect(n)
-		// simple import without alias: use A\B; alias is short name or single name
-		if q := firstChildOfType(n, "qualified_name"); q != nil {
-			base := a.text(q)
-			if base != "" {
-				short := base
-				if idx := strings.LastIndex(base, "\\"); idx >= 0 {
-					short = base[idx+1:]
-				}
-				a.aliases[short] = base
-			}
-		} else if nm := firstChildOfType(n, "name"); nm != nil {
-			base := a.text(nm)
-			if base != "" {
-				a.aliases[base] = base
-			}
 		}
 	}
-	// Scan only top-level children (and one level into namespace body)
-	for i := 0; i < int(root.ChildCount()); i++ {
-		ch := root.Child(i)
-		t := ch.Type()
-		if t == "namespace_definition" {
-			if nm := firstChildOfType(ch, "namespace_name"); nm != nil {
-				a.ns = a.text(nm)
-			}
-			// Also scan use declarations inside namespace body
-			if body := firstChildOfType(ch, "compound_statement"); body != nil {
-				for j := 0; j < int(body.ChildCount()); j++ {
-					inner := body.Child(j)
-					if inner.Type() == "use_declaration" {
-						collectUse(inner)
-					}
-				}
-			}
-		} else if t == "use_declaration" {
-			collectUse(ch)
-		}
-	}
-
-	// helper to resolve a class name considering alias, FQN and local namespace
-	resolve := func(name string) string {
-		if name == "" {
-			return name
-		}
-		// drop leading ? nullable
-		name = strings.TrimPrefix(name, "?")
-		if strings.HasPrefix(name, "\\") {
-			return strings.TrimPrefix(name, "\\")
-		}
-		// some global classes in PHP's root namespace should not be prefixed
-		switch name {
-		case "stdClass", "InvalidArgumentException":
-			return name
-		}
-		if full, ok := a.aliases[name]; ok {
-			return full
-		}
-		if a.ns != "" {
-			return a.ns + "\\" + name
-		}
-		return name
-	}
-	add := func(class string) {
-		if class == "" {
+	record := func(full string, aliasNode *sitter.Node) {
+		full = strings.TrimPrefix(strings.TrimSpace(full), "\\")
+		if full == "" {
 			return
 		}
-		// Ignore pseudo-class keywords which are not external dependencies
-		last := class
-		if idx := strings.LastIndex(class, "\\"); idx >= 0 {
-			last = class[idx+1:]
+		alias := ""
+		if aliasNode != nil {
+			if nm := firstChildOfType(aliasNode, "name"); nm != nil {
+				alias = a.text(nm)
+			}
 		}
-		switch strings.ToLower(last) {
-		case "self", "static", "parent":
-			return
+		if alias == "" {
+			alias = full
+			if i := strings.LastIndex(full, "\\"); i >= 0 {
+				alias = full[i+1:]
+			}
 		}
-		a.extDeps = append(a.extDeps, Treesitter.ImportItem{Module: class, Name: class})
+		a.aliases[alias] = full
 	}
-
-	// Also, regex-pass to find use statements for aliases in case AST patterns differ
-	src := string(a.src)
-	{
-		for _, m := range rePhpUse.FindAllStringSubmatch(src, -1) {
-			clause := m[1]
-			// split multiple by comma
-			parts := strings.Split(clause, ",")
-			for _, p := range parts {
-				seg := strings.TrimSpace(p)
-				if seg == "" {
+	prefix := ""
+	for i := 0; i < int(n.NamedChildCount()); i++ {
+		ch := n.NamedChild(i)
+		switch ch.Type() {
+		case "namespace_name":
+			// use App\Shared\{...}: the prefix of a group
+			prefix = a.text(ch)
+		case "namespace_use_clause":
+			var full string
+			var aliasNode *sitter.Node
+			for j := 0; j < int(ch.NamedChildCount()); j++ {
+				part := ch.NamedChild(j)
+				switch part.Type() {
+				case "qualified_name", "name":
+					full = a.text(part)
+				case "namespace_aliasing_clause":
+					aliasNode = part
+				}
+			}
+			record(full, aliasNode)
+		case "namespace_use_group":
+			for j := 0; j < int(ch.NamedChildCount()); j++ {
+				clause := ch.NamedChild(j)
+				if clause.Type() != "namespace_use_group_clause" {
 					continue
 				}
-				if strings.Contains(seg, " as ") {
-					kv := strings.SplitN(seg, " as ", 2)
-					base := strings.TrimSpace(kv[0])
-					alias := strings.TrimSpace(kv[1])
-					if base != "" && alias != "" {
-						a.aliases[alias] = base
-					}
-				} else {
-					base := seg
-					if base != "" {
-						short := base
-						if i := strings.LastIndex(short, "\\"); i >= 0 {
-							short = short[i+1:]
-						}
-						a.aliases[short] = base
+				var full string
+				var aliasNode *sitter.Node
+				for k := 0; k < int(clause.NamedChildCount()); k++ {
+					part := clause.NamedChild(k)
+					switch part.Type() {
+					case "namespace_name", "qualified_name", "name":
+						full = a.text(part)
+					case "namespace_aliasing_clause":
+						aliasNode = part
 					}
 				}
-			}
-		}
-	}
-	// Fallback: use regex-like scanning on the whole source to approximate dependencies (sufficient for tests)
-	isPrimitive := func(t string) bool {
-		low := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(t), "?"))
-		switch low {
-		case "int", "float", "string", "bool", "boolean", "array", "callable", "iterable", "void", "mixed", "object", "null":
-			return true
-		}
-		return false
-	}
-	// new Class
-	{
-		for _, m := range rePhpNewClass.FindAllStringSubmatch(src, -1) {
-			name := m[2]
-			if m[1] != "" {
-				name = "\\" + name
-			}
-			add(resolve(name))
-		}
-	}
-	// Static: Class::
-	{
-		for _, m := range rePhpStatic.FindAllStringSubmatch(src, -1) {
-			name := m[2]
-			if m[1] != "" {
-				name = "\\" + name
-			}
-			add(resolve(name))
-		}
-	}
-	// Function parameter types
-	{
-		matches := rePhpFuncParams.FindAllStringSubmatch(src, -1)
-		for _, mm := range matches {
-			params := mm[1]
-			for _, p := range rePhpParamType.FindAllString(params, -1) {
-				name := strings.TrimSpace(strings.TrimSuffix(p, "$"))
-				if !isPrimitive(name) {
-					add(resolve(name))
+				if prefix != "" {
+					full = prefix + "\\" + full
 				}
+				record(full, aliasNode)
 			}
 		}
 	}
-	// Return types
-	{
-		for _, m := range rePhpReturnType.FindAllStringSubmatch(src, -1) {
-			if !isPrimitive(m[1]) {
-				add(resolve(m[1]))
-			}
-		}
-	}
-	// Property declarations with types
-	{
-		for _, m := range rePhpProperty.FindAllStringSubmatch(src, -1) {
-			if m[1] != "" && !isPrimitive(m[1]) {
-				add(resolve(m[1]))
-			}
-		}
-	}
-	// keep duplicates to align with expected metrics (counts each usage)
 }
 
 // ---- Class operands (properties) ----
@@ -961,25 +1055,8 @@ func normalizePhpOperand(name string) string {
 	return name
 }
 
-func dedup(in []Treesitter.ImportItem) []Treesitter.ImportItem {
-	if len(in) <= 1 {
-		return in
-	}
-	seen := map[string]struct{}{}
-	out := in[:0]
-	for _, it := range in {
-		key := it.Module + " " + it.Name
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, it)
-	}
-	return out
-}
-
 func (a *TreeSitterAdapter) findNamespace() string {
-	// If computeExternalDependencies already ran, reuse its result
+	// If the aliases were collected already, the namespace came with them
 	if a.computed {
 		return a.ns
 	}

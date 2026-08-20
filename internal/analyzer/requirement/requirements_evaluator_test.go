@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/ast-metrics/ast-metrics/internal/analyzer/ruleset"
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/stretchr/testify/assert"
@@ -103,4 +104,40 @@ requirements:
 	assert.Equal(t, true, evaluation.Succeeded)
 
 	assert.Equal(t, 0, len(evaluation.Errors))
+}
+
+// A project rule naming a file must reach the outcomes with that file, and
+// the baseline must recognize it from one run to the next: freezing the
+// crossings between communities relies on both.
+func TestEvaluateProjectRuleCarriesTheFileAndSurvivesTheBaseline(t *testing.T) {
+	enabled := true
+	requirements := configuration.ConfigurationRequirements{
+		Rules: &configuration.ConfigurationRequirementsRules{
+			Architecture: &configuration.ConfigurationArchitectureRules{NoCrossCommunityDependencies: &enabled},
+		},
+	}
+	crossings := func(deps ...ruleset.CrossDependencyInfo) ProjectAggregated {
+		return ProjectAggregated{ProjectCtx: ruleset.ProjectContext{Communities: &ruleset.CommunitiesInfo{Count: 2, CrossDependencies: deps}}}
+	}
+	first := ruleset.CrossDependencyInfo{File: "src/Billing/A.php", From: "A", To: "D"}
+	second := ruleset.CrossDependencyInfo{File: "src/Billing/B.php", From: "B", To: "C"}
+
+	evaluator := NewRequirementsEvaluator(requirements)
+	before := evaluator.Evaluate(nil, crossings(first))
+	assert.Equal(t, 1, len(before.Errors))
+	assert.Equal(t, "no_cross_community_dependencies", before.Errors[0].Rule)
+	assert.Equal(t, "src/Billing/A.php", before.Errors[0].File)
+	assert.Nil(t, before.BaselinedByRule)
+
+	evaluator.Baseline = NewBaselineFromOutcomes(before.Errors)
+	frozen := evaluator.Evaluate(nil, crossings(first))
+	assert.Equal(t, 0, len(frozen.Errors))
+	assert.True(t, frozen.Succeeded)
+	assert.Equal(t, 1, frozen.Baselined)
+	assert.Equal(t, map[string]int{"no_cross_community_dependencies": 1}, frozen.BaselinedByRule)
+
+	after := evaluator.Evaluate(nil, crossings(first, second))
+	assert.Equal(t, 1, len(after.Errors))
+	assert.Equal(t, "src/Billing/B.php", after.Errors[0].File)
+	assert.Equal(t, 1, after.BaselinedByRule["no_cross_community_dependencies"])
 }

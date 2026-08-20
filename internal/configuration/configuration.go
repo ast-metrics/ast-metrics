@@ -105,6 +105,13 @@ type ConfigurationArchitectureRules struct {
 	NoCircularDependencies *bool                      `yaml:"no_circular_dependencies,omitempty"`
 	MaxResponsibilities    *int                       `yaml:"max_responsibilities,omitempty"`
 	NoGodClass             *bool                      `yaml:"no_god_class,omitempty"`
+	// Communities: groups of classes detected on the dependency graph
+	NoCommunityCycles      *bool `yaml:"no_community_cycles,omitempty"`
+	MaxCommunityCrossShare *int  `yaml:"max_community_cross_share,omitempty"`
+	// NoCrossCommunityDependencies fails on every dependency crossing from
+	// one community to another; freeze the current ones with `ast-metrics
+	// baseline` and only new crossings fail afterwards.
+	NoCrossCommunityDependencies *bool `yaml:"no_cross_community_dependencies,omitempty"`
 }
 
 type ConfigurationVolumeRules struct {

@@ -281,6 +281,42 @@ func (v *AnalyzeCommand) Execute() error {
 
 func buildProjectContext(pa analyzer.ProjectAggregated) ruleset.ProjectContext {
 	ctx := ruleset.ProjectContext{}
+	if cm := pa.Combined.Community; cm != nil {
+		info := &ruleset.CommunitiesInfo{Count: cm.CommunitiesCount, CrossSharePct: cm.CrossShare * 100}
+		names := map[string]string{}
+		for _, c := range cm.Communities {
+			names[c.ID] = c.ShortName
+		}
+		for _, cycle := range cm.Cycles {
+			members := make([]string, 0, len(cycle))
+			for _, id := range cycle {
+				members = append(members, names[id])
+			}
+			info.Cycles = append(info.Cycles, members)
+		}
+		for i := len(cm.Edges) - 1; i >= 0; i-- {
+			// edges come heaviest first: the lightest cuts first
+			if e := cm.Edges[i]; e.Back {
+				info.BackEdges = append(info.BackEdges, fmt.Sprintf("%s → %s (%d)", names[e.From], names[e.To], e.Weight))
+			}
+		}
+		// The crossings between two communities proper: the shared kernel is
+		// meant to be used by everyone, so a reference to or from it is not
+		// one. Paths are made relative here, at the boundary, for the same
+		// reason as the test rules below.
+		for _, ref := range cm.CrossReferences {
+			from, to := cm.NodeToCommunity[ref.From], cm.NodeToCommunity[ref.To]
+			if from == analyzer.SharedID || to == analyzer.SharedID || from == to {
+				continue
+			}
+			info.CrossDependencies = append(info.CrossDependencies, ruleset.CrossDependencyInfo{
+				File: requirement.RelativeToCwd(cm.UnitFiles[ref.From]),
+				From: unitLabel(cm.Labels, ref.From),
+				To:   unitLabel(cm.Labels, ref.To),
+			})
+		}
+		ctx.Communities = info
+	}
 	tq := pa.Combined.TestQuality
 	if tq == nil {
 		return ctx
@@ -319,4 +355,12 @@ func (v *AnalyzeCommand) ExecuteRunnerAnalysis(config *configuration.Configurati
 	}
 
 	return parsed, nil
+}
+
+// unitLabel gives the short name of a unit, falling back on its id.
+func unitLabel(labels map[string]string, unit string) string {
+	if label, ok := labels[unit]; ok && label != "" {
+		return label
+	}
+	return unit
 }

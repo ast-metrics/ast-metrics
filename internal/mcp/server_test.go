@@ -113,27 +113,23 @@ func newTestAggregated() *analyzer.ProjectAggregated {
 				"cmd.App": 2,
 			},
 			Community: &analyzer.CommunityMetrics{
+				Granularity:      analyzer.GranularityNamespace,
 				CommunitiesCount: 2,
-				AvgSize:          1.5,
-				MaxSize:          2,
-				GraphDensity:     0.5,
-				Communities: map[string][]string{
-					"0": {"cmd"},
-					"1": {"internal/util"},
+				MaxSize:          1,
+				UnitCount:        2,
+				InternalShare:    0,
+				Communities: []*analyzer.Community{
+					{ID: "0", Name: "cmd", ShortName: "cmd", Units: []string{"cmd"}, Size: 1, Cohesive: true,
+						Namespaces: []analyzer.NamespaceShare{{Namespace: "cmd", Count: 1, Share: 1}},
+						Uses:       []analyzer.CommunityLink{{ID: "1", Name: "internal/util", Weight: 3}}},
+					{ID: "1", Name: "internal/util", ShortName: "internal/util", Units: []string{"internal/util"}, Size: 1, Cohesive: true,
+						Namespaces: []analyzer.NamespaceShare{{Namespace: "internal/util", Count: 1, Share: 1}},
+						UsedBy:     []analyzer.CommunityLink{{ID: "0", Name: "cmd", Weight: 3}}},
 				},
-				DisplayNamePerComm: map[string]string{
-					"0": "Command Layer",
-					"1": "Utilities",
-				},
-				PurityPerCommunity: map[string]float64{
-					"0": 1.0,
-					"1": 1.0,
-				},
-				InboundEdgesPerComm:  map[string]int{"0": 0, "1": 1},
-				OutboundEdgesPerComm: map[string]int{"0": 1, "1": 0},
-				EdgesBetweenCommunities: []analyzer.EdgeBetweenCommunities{
-					{From: "0", To: "1", Edges: 3},
-				},
+				NodeToCommunity: map[string]string{"cmd": "0", "internal/util": "1"},
+				Edges:           []analyzer.CommunityEdge{{From: "0", To: "1", Weight: 3}},
+				Verdict:         "Your code forms 2 communities.",
+				VerdictNote:     "Each one stays inside a single namespace: the folders match the dependencies.",
 			},
 			TestQuality: &analyzer.TestQualityMetrics{
 				GlobalIsolationScore: 75.0,
@@ -340,8 +336,10 @@ func TestHandleGetCommunities(t *testing.T) {
 	assert.NoError(t, err)
 
 	data := parseToolResult(t, result)
-	assert.Equal(t, float64(2), data["communities_count"])
-	assert.Equal(t, 0.5, data["graph_density"])
+	assert.Equal(t, float64(2), data["communitiesCount"])
+	assert.Equal(t, "namespace", data["granularity"])
+	edges := data["edges"].([]any)
+	assert.Equal(t, 1, len(edges))
 
 	communities := data["communities"].([]any)
 	assert.Equal(t, 2, len(communities))
