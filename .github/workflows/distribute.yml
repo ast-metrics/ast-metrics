@@ -29,16 +29,23 @@ jobs:
       - id: tag
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
-          TAG="${{ inputs.tag }}"
+          TAG="$INPUT_TAG"
           # When triggered by the release workflow, head_branch holds the tag that
           # was pushed: more reliable than the "latest" flag, which GitHub updates
           # with a delay after a release is published.
-          if [ -z "$TAG" ] && [ "${{ github.event_name }}" = "workflow_run" ]; then
-            TAG="${{ github.event.workflow_run.head_branch }}"
+          if [ -z "$TAG" ] && [ "$EVENT_NAME" = "workflow_run" ]; then
+            TAG="$HEAD_BRANCH"
           fi
           if [ -z "$TAG" ]; then
             TAG=$(gh release view --repo "${{ github.repository }}" --json tagName -q .tagName)
+          fi
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::'$TAG' is not a release tag" >&2
+            exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
@@ -56,9 +63,10 @@ jobs:
       - name: Download Linux binaries
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           mkdir -p dist
-          gh release download "${{ needs.resolve.outputs.tag }}" --repo "${{ github.repository }}" \
+          gh release download "$TAG" --repo "${{ github.repository }}" \
             --pattern 'ast-metrics_Linux_*' --dir dist
 
       - name: Build .deb and .rpm
@@ -95,8 +103,9 @@ jobs:
       - name: Upload packages to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
         run: |
-          gh release upload "${{ needs.resolve.outputs.tag }}" --repo "${{ github.repository }}" \
+          gh release upload "$TAG" --repo "${{ github.repository }}" \
             dist/*.deb dist/*.rpm --clobber
 
   docker:
@@ -133,9 +142,10 @@ jobs:
       - name: Download binaries and compute checksums
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           mkdir -p dist
-          gh release download "${{ needs.resolve.outputs.tag }}" --repo "${{ github.repository }}" \
+          gh release download "$TAG" --repo "${{ github.repository }}" \
             --pattern 'ast-metrics_Darwin_*' --pattern 'ast-metrics_Linux_*' --dir dist
           {
             echo "SHA_DARWIN_ARM64=$(sha256sum dist/ast-metrics_Darwin_arm64 | cut -d' ' -f1)"
