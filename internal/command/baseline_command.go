@@ -89,11 +89,17 @@ func (c *BaselineCommand) Execute() error {
 
 	allResults := analyzer.AnalyzeFiles(allParsed, nil)
 	aggregator := analyzer.NewAggregator(allResults, nil)
+	// One aggregate per analyzed source, so that a project holding its own
+	// requirements is judged on its own metrics.
+	aggregator.WithAnalyzedPaths(c.Configuration.SourcesToAnalyzePath)
 	projectAggregated := aggregator.Aggregates()
 
-	reqEval := requirement.NewRequirementsEvaluator(*c.Configuration.Requirements)
+	reqEval := requirement.NewScopedRequirementsEvaluator(c.Configuration)
 	projectCtx := buildProjectContext(projectAggregated)
-	evaluation := reqEval.Evaluate(allResults, requirement.ProjectAggregated{ProjectCtx: projectCtx})
+	evaluation := reqEval.Evaluate(allResults, requirement.ProjectAggregated{
+		ProjectCtx: projectCtx,
+		ByScope:    buildProjectContexts(projectAggregated),
+	})
 
 	if spinner != nil {
 		spinner.Stop()
