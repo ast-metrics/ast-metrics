@@ -9,7 +9,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
 	sitter "github.com/smacker/go-tree-sitter"
-	tsPhp "github.com/smacker/go-tree-sitter/php"
+	tsPhp "github.com/ast-metrics/ast-metrics/internal/engine/php/grammar"
 )
 
 // Pre-compiled regex patterns for PHP external dependency scanning.
@@ -20,7 +20,7 @@ var (
 	rePhpFuncParams = regexp.MustCompile(`function\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*)\)`)
 	rePhpParamType  = regexp.MustCompile(`\??[A-Za-z_\\][A-Za-z0-9_\\]*\s*\$`)
 	rePhpReturnType = regexp.MustCompile(`\)\s*:\s*\??([A-Za-z_\\][A-Za-z0-9_\\]*)`)
-	rePhpProperty   = regexp.MustCompile(`(?m)^(?:\s*)(?:public|private|protected|var)\s+\??([A-Za-z_\\][A-Za-z0-9_\\]*)?\s*\$`)
+	rePhpProperty   = regexp.MustCompile(`(?m)^(?:\s*)(?:public(?:\s+(?:private|protected)\(set\))?|private|protected|var)\s+\??([A-Za-z_\\][A-Za-z0-9_\\]*)?\s*\$`)
 )
 
 type TreeSitterAdapter struct {
@@ -79,7 +79,7 @@ var (
 	phpModules    = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"program"}}
 	phpClasses    = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"class_declaration", "trait_declaration", "enum_declaration"}}
 	phpInterfaces = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"interface_declaration"}}
-	phpFunctions  = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"function_definition", "method_declaration"}}
+	phpFunctions  = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"function_definition", "method_declaration", "property_hook"}}
 )
 
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return phpModules.Has(n) }
@@ -639,6 +639,9 @@ var phpPruneTypes = map[string]bool{
 	"abstract_modifier": true, "final_modifier": true, "readonly_modifier": true,
 	"var_modifier": true, "attribute_list": true, "base_clause": true,
 	"class_interface_clause": true,
+	// PHP 8.4+: asymmetric visibility modifier operand (e.g. the "(set)" in
+	// "public private(set)") is a declaration detail, not an operand.
+	"operation": true,
 }
 
 // phpChainTypes lists the attribute access node types. A PHP method call has

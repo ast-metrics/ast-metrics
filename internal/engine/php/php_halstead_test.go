@@ -104,3 +104,41 @@ function test() {
 	assert.Equal(t, 0, counts["|"], "the halves of a pipe must not be reported on their own, got %v", ops)
 	assert.Equal(t, 0, counts[">"], "the halves of a pipe must not be reported on their own, got %v", ops)
 }
+
+// TestPhp84PropertyHooksContributeOperators verifies that PHP 8.4 property hook
+// bodies are walked by the Halstead extractor, so that hooks contribute
+// operators and operands just like regular methods.
+func TestPhp84PropertyHooksContributeOperators(t *testing.T) {
+	phpSource := `<?php
+class User {
+    public string $name {
+        get => strtoupper($this->rawName);
+        set(string $v) {
+            if ($v === '') {
+                throw new \InvalidArgumentException('Name cannot be empty');
+            }
+            $this->rawName = $v;
+        }
+    }
+}
+`
+	adapter := NewTreeSitterAdapter([]byte(phpSource))
+	// Lines 3-10 span both hooks; we expect operators to be non-empty.
+	ops, operands := adapter.ExtractOperatorsOperands([]byte(phpSource), 1, 16)
+	assert.NotEmpty(t, ops, "property hook bodies should yield operators")
+	assert.NotEmpty(t, operands, "property hook bodies should yield operands")
+}
+
+// TestPhp84AsymmetricVisibilityPropertyIsDetected verifies that files with
+// PHP 8.4 asymmetric visibility parse without errors.
+func TestPhp84AsymmetricVisibilityPropertyIsDetected(t *testing.T) {
+	phpSource := `<?php
+class Foo {
+    public private(set) string $bar = 'baz';
+    public protected(set) int $count = 0;
+}
+`
+	result, err := engine.CreateTestFileWithCode(&PhpRunner{}, phpSource)
+	assert.Nil(t, err, "Expected no error, got %s", err)
+	assert.Empty(t, result.Errors, "PHP 8.4 asymmetric visibility should parse without errors")
+}
