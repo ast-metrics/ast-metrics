@@ -266,6 +266,16 @@ type InterfaceAware interface {
 	IsInterface(*sitter.Node) bool
 }
 
+// QualifiedNameAware lets an adapter compute the short and qualified names of
+// a class or a function from the node itself, including any enclosing scope
+// the generic traversal cannot know about (C++ namespace blocks, which are
+// per-declaration rather than per-file). When the adapter implements it and
+// answers a non-empty short name, that answer takes precedence over the
+// generic NodeName + file-namespace prefixing.
+type QualifiedNameAware interface {
+	NodeQualifiedName(n *sitter.Node) (short, qualified string)
+}
+
 // ReceiverAware lets an adapter tell that a function node is a method bound to a
 // type declared elsewhere in the file. Go declares its methods at the top level,
 // outside of the struct they belong to: without this, a struct would hold no
@@ -402,7 +412,11 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		name := v.ad.NodeName(node)
 		qualified := name
 		// qualify with namespace if provided (PHP namespaces, even single segment)
-		if v.ns != nil && v.ns.Name != nil {
+		if qn, ok := v.ad.(QualifiedNameAware); ok {
+			if short, q := qn.NodeQualifiedName(node); short != "" {
+				name, qualified = short, q
+			}
+		} else if v.ns != nil && v.ns.Name != nil {
 			ns := v.ns.Name.Qualified
 			if ns != "" {
 				qualified = ns + v.namespaceSeparator() + name
@@ -482,7 +496,11 @@ func (v *Visitor) Visit(node *sitter.Node) {
 	case v.ad.IsFunction(node):
 		name := v.ad.NodeName(node)
 		qualified := name
-		if cls := v.curClass(); cls != nil {
+		if qn, ok := v.ad.(QualifiedNameAware); ok {
+			if short, q := qn.NodeQualifiedName(node); short != "" {
+				name, qualified = short, q
+			}
+		} else if cls := v.curClass(); cls != nil {
 			qualified = v.ad.AttachQualified(cls.Name.Qualified, name)
 		}
 

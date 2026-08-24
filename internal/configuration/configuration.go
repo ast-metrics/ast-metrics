@@ -230,13 +230,16 @@ func (c *Configuration) SetExcludePatterns(patterns []string) {
 	(*c).ExcludePatterns = patterns
 }
 
-var defaultExtensions = map[string]string{
-	"php": ".php", "go": ".go", "python": ".py", "rust": ".rs", "typescript": ".ts",
-	"java": ".java", "csharp": ".cs",
+var defaultExtensions = map[string][]string{
+	"php": {".php"}, "go": {".go"}, "python": {".py"}, "rust": {".rs"}, "typescript": {".ts"},
+	"java": {".java"}, "csharp": {".cs"},
+	// C++ lives in several extensions. `.h` is not claimed here: it may hold
+	// plain C, so the C++ runner claims it only when its content looks like C++.
+	"cpp": {".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"},
 }
 
 func (c *Configuration) GetExtensionsForLanguage(lang string) []string {
-	base := []string{defaultExtensions[lang]}
+	base := append([]string{}, defaultExtensions[lang]...)
 	if c.Extensions != nil {
 		for _, ext := range c.Extensions[lang] {
 			if !strings.HasPrefix(ext, ".") {

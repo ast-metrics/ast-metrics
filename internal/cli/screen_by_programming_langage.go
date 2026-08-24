@@ -3,9 +3,9 @@ package cli
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	pb "github.com/ast-metrics/ast-metrics/pb"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type ScreenByProgrammingLanguage struct {
@@ -76,6 +76,8 @@ func (v ScreenByProgrammingLanguage) GetScreenName() string {
 		emoji = "☕ "
 	case "C#":
 		emoji = "🟦 "
+	case "C++":
+		emoji = "🔷 "
 	}
 
 	count := 0

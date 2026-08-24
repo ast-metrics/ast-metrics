@@ -14,7 +14,7 @@ Deterministic: same code, same verdict. Works offline: no data leaves your machi
 Fast: 20,000+ lines of code analyzed per second, on a laptop.
 <br />
 <br />
-<code>Go</code> · <code>PHP</code> · <code>Python</code> · <code>Rust</code> · <code>Java</code> · <code>C#</code> · <code>TypeScript</code>
+<code>Go</code> · <code>PHP</code> · <code>Python</code> · <code>Rust</code> · <code>Java</code> · <code>C#</code> · <code>TypeScript</code> · <code>C++ (initial/basic)</code>
 </p>
 <br />
 
@@ -132,7 +132,23 @@ ast-metrics mcp .
 
 ## Supported languages
 
-Go, PHP, Python, Rust, Java, C# and TypeScript.
+Go, PHP, Python, Rust, Java, C#, TypeScript, and initial/basic syntax-level C++ support.
+
+C++ discovery includes `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, and `.hxx`. A generic
+`.h` file is claimed when its content looks like C++ (`class`, `namespace`,
+`template`, `::`), so plain C headers are left alone.
+
+The C++ engine maps Tree-sitter syntax into the common metrics representation.
+Its syntax-level limits, in short:
+
+- no preprocessing: both branches of an `#ifdef` are counted, and code wrapped
+  in unexpanded macros is only partially analyzed;
+- lambdas are not scopes: their complexity is attributed to the enclosing
+  function;
+- out-of-class definitions keep their written qualification
+  (`ns::Class::method`), but without semantic analysis an unqualified type
+  reference resolves against the namespace of the class that uses it, never
+  across files.
 
 ## Contributing
 
