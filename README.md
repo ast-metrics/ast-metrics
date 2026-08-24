@@ -121,10 +121,21 @@ ast-metrics mcp .
 
 Go, PHP, Python, Rust, Java, C#, TypeScript, and initial/basic syntax-level C++ support.
 
-C++ discovery includes `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, and `.hxx`. Generic
-`.h` files are not claimed automatically because they may contain either C or C++.
-The C++ engine maps Tree-sitter syntax into the common metrics representation; it
-does not provide preprocessing, include resolution, or complete semantic/type analysis.
+C++ discovery includes `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, and `.hxx`. A generic
+`.h` file is claimed when its content looks like C++ (`class`, `namespace`,
+`template`, `::`), so plain C headers are left alone.
+
+The C++ engine maps Tree-sitter syntax into the common metrics representation.
+Its syntax-level limits, in short:
+
+- no preprocessing: both branches of an `#ifdef` are counted, and code wrapped
+  in unexpanded macros is only partially analyzed;
+- lambdas are not scopes: their complexity is attributed to the enclosing
+  function;
+- out-of-class definitions keep their written qualification
+  (`ns::Class::method`), but without semantic analysis an unqualified type
+  reference resolves against the namespace of the class that uses it, never
+  across files.
 
 ## Contributing
 

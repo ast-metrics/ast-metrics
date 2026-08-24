@@ -123,14 +123,77 @@ private:
 	assert.ElementsMatch(t, []string{"BaseController", "Transport", "Logger"}, depNames)
 }
 
+func TestCppClassDependencyNoiseIsSkipped(t *testing.T) {
+	file := parseCpp(t, `
+template <typename T, typename Alloc>
+class Holder {
+public:
+    void fill(const std::vector<T, Alloc>& items) { count_ = items.size(); }
+    std::size_t size() const { return count_; }
+private:
+    std::size_t count_ = 0;
+    FMT_CONSTEXPR int unused_ = 0;
+};
+`)
+	holder := file.Stmts.StmtClass[0]
+	for _, dep := range holder.Stmts.StmtExternalDependencies {
+		assert.NotEqual(t, "T", dep.ClassName, "template parameters are not dependencies")
+		assert.NotEqual(t, "Alloc", dep.ClassName, "template parameters are not dependencies")
+		assert.NotEqual(t, "std", dep.ClassName, "std is not a dependency")
+		assert.NotContains(t, dep.Namespace, "std::", "std-rooted references are not dependencies")
+		assert.NotEqual(t, "FMT_CONSTEXPR", dep.ClassName, "macros are not dependencies")
+	}
+	assert.Empty(t, holder.Stmts.StmtExternalDependencies)
+}
+
+func TestCppClassDependenciesUseTemplateNameWithoutArguments(t *testing.T) {
+	file := parseCpp(t, `
+namespace other { template <typename Y> class Thing {}; }
+class Consumer {
+public:
+    void store(other::Thing<int>& thing) { kept_ = &thing; }
+private:
+    other::Thing<int>* kept_;
+};
+`)
+	consumer := file.Stmts.StmtClass[1]
+	require.Len(t, consumer.Stmts.StmtExternalDependencies, 1)
+	dep := consumer.Stmts.StmtExternalDependencies[0]
+	assert.Equal(t, "other::Thing", dep.Namespace)
+	assert.Equal(t, "Thing", dep.ClassName)
+}
+
+func TestCppInNamespaceReferenceResolvesToQualifiedClass(t *testing.T) {
+	file := parseCpp(t, `
+namespace fmt {
+class formatter { public: int format() { return 1; } };
+class context {
+public:
+    formatter& get() { return fmt_; }
+private:
+    formatter fmt_;
+};
+}
+`)
+	require.Len(t, file.Stmts.StmtClass, 2)
+	context := file.Stmts.StmtClass[1]
+	assert.Equal(t, "fmt::context", context.Name.Qualified)
+	require.Len(t, context.Stmts.StmtExternalDependencies, 1)
+	// the unqualified `formatter` resolves inside its namespace, so the
+	// dependency points at the qualified class and coupling can resolve
+	assert.Equal(t, "fmt::formatter", context.Stmts.StmtExternalDependencies[0].Namespace)
+}
+
 func TestCppClassDependenciesDriveCouplingMetrics(t *testing.T) {
 	file := parseCpp(t, `
+namespace devices {
 class Motor {};
 class Controller {
     Motor* motor_;
 public:
     explicit Controller(Motor* motor) : motor_(motor) {}
 };
+}
 `)
 	analyzer.AnalyzeFile(file)
 	project := analyzer.NewAggregator([]*pb.File{file}, nil).Aggregates()
