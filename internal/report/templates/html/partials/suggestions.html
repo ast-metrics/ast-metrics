@@ -31,10 +31,10 @@
         <div class="flex items-center gap-2">
           <span class="dot sev-warn"></span>
           <span class="text-sm font-semibold text-gray-900">Coupling</span>
-          <span tabindex="0" data-tip="Efferent coupling ratio: the share of a group's dependencies that point outside the group." class="text-gray-300 text-xs">ⓘ</span>
+          <span tabindex="0" data-tip="Read from the communities: groups of classes that depend on each other more than on the rest of the code." class="text-gray-300 text-xs">ⓘ</span>
           <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-600">{{ couplingCount }}</span>
         </div>
-        <p class="text-sm text-gray-500 mt-1">Most of what these groups depend on lives outside them, so a change elsewhere reaches them.</p>
+        <p class="text-sm text-gray-500 mt-1">Communities that depend on each other, or a shared kernel that reaches back into the code using it: none of them can change alone.</p>
         {% if couplingCount > 3 %}<details class="mt-2"><summary class="cursor-pointer text-sm text-blue-600 hover:underline">Show all {{ couplingCount }}</summary>{% endif %}
         <div class="mt-1">
           {% for s in suggestions %}{% if s.Category == "coupling" %}
@@ -58,10 +58,10 @@
         <div class="flex items-center gap-2">
           <span class="dot sev-warn"></span>
           <span class="text-sm font-semibold text-gray-900">Mixed concerns</span>
-          <span tabindex="0" data-tip="Purity: the share of files in a group that come from the same namespace." class="text-gray-300 text-xs">ⓘ</span>
+          <span tabindex="0" data-tip="Where the namespaces and the dependencies disagree: a folder whose classes go their separate ways, or a community filed in several folders." class="text-gray-300 text-xs">ⓘ</span>
           <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-600">{{ purityCount }}</span>
         </div>
-        <p class="text-sm text-gray-500 mt-1">These groups gather files from several unrelated namespaces, so their content is not aligned with one concern.</p>
+        <p class="text-sm text-gray-500 mt-1">The folders and the dependencies tell different stories here: a namespace spread across several communities, or a community drawn from several namespaces.</p>
         {% if purityCount > 3 %}<details class="mt-2"><summary class="cursor-pointer text-sm text-blue-600 hover:underline">Show all {{ purityCount }}</summary>{% endif %}
         <div class="mt-1">
           {% for s in suggestions %}{% if s.Category == "purity" %}
@@ -84,11 +84,11 @@
       <div>
         <div class="flex items-center gap-2">
           <span class="dot sev-none"></span>
-          <span class="text-sm font-semibold text-gray-900">Boundary nodes</span>
-          <span tabindex="0" data-tip="A node is on a boundary when it takes part in dependencies that cross the frontier between two groups." class="text-gray-300 text-xs">ⓘ</span>
+          <span class="text-sm font-semibold text-gray-900">Shared classes and bridges</span>
+          <span tabindex="0" data-tip="The shared kernel the whole codebase leans on, and the classes carrying the traffic between communities." class="text-gray-300 text-xs">ⓘ</span>
           <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-600">{{ boundaryCount }}</span>
         </div>
-        <p class="text-sm text-gray-500 mt-1">These nodes sit on dependencies that cross group frontiers, so they carry traffic between otherwise separate parts of the code.</p>
+        <p class="text-sm text-gray-500 mt-1">These classes are used from several communities at once: a change there reaches all of them, and their interface deserves to be explicit.</p>
         {% if boundaryCount > 3 %}<details class="mt-2"><summary class="cursor-pointer text-sm text-blue-600 hover:underline">Show all {{ boundaryCount }}</summary>{% endif %}
         <div class="mt-1">
           {% for s in suggestions %}{% if s.Category == "boundary" %}

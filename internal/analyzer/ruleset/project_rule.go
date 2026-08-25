@@ -11,6 +11,9 @@ type ProjectContext struct {
 	GlobalIsolationScore float64
 	GodTests             []GodTestInfo
 	OrphanClasses        []OrphanClassInfo
+	// Communities is what the community analysis found, nil when it did
+	// not run.
+	Communities *CommunitiesInfo
 }
 
 // GodTestInfo describes a test file with excessive fan-out.

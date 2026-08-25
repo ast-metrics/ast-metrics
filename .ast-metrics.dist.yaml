@@ -16,6 +16,8 @@ requirements:
       max_afferent_coupling: 10
       max_efferent_coupling: 10
       min_maintainability: 70
+      no_community_cycles: true
+      max_community_cross_share: 40
     volume:
       max_loc: 1000
       max_logical_loc: 600

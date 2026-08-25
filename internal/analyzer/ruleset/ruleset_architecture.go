@@ -75,6 +75,34 @@ func (a *architectureRuleset) All() []Rule {
 }
 
 func (a *architectureRuleset) IsEnabled() bool {
-	enabled := a.Enabled()
-	return len(enabled) > 0
+	return len(a.Enabled()) > 0 || len(a.EnabledProjectRules()) > 0
+}
+
+// AllProjectRules returns the project-level rules of the ruleset, whatever
+// the configuration: the ones reading the communities.
+func (a *architectureRuleset) AllProjectRules() []ProjectRule {
+	return []ProjectRule{
+		NewNoCommunityCyclesRule(nil),
+		NewMaxCommunityCrossShareRule(nil),
+		NewNoCrossCommunityDependenciesRule(nil),
+	}
+}
+
+// EnabledProjectRules returns the project-level rules the configuration turns on.
+func (a *architectureRuleset) EnabledProjectRules() []ProjectRule {
+	rules := []ProjectRule{}
+	if a == nil || a.cfg == nil || a.cfg.Rules == nil || a.cfg.Rules.Architecture == nil {
+		return rules
+	}
+	arch := a.cfg.Rules.Architecture
+	if arch.NoCommunityCycles != nil && *arch.NoCommunityCycles {
+		rules = append(rules, NewNoCommunityCyclesRule(arch.NoCommunityCycles))
+	}
+	if arch.MaxCommunityCrossShare != nil {
+		rules = append(rules, NewMaxCommunityCrossShareRule(arch.MaxCommunityCrossShare))
+	}
+	if arch.NoCrossCommunityDependencies != nil && *arch.NoCrossCommunityDependencies {
+		rules = append(rules, NewNoCrossCommunityDependenciesRule(arch.NoCrossCommunityDependencies))
+	}
+	return rules
 }

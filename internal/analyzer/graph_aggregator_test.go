@@ -193,8 +193,9 @@ func TestGraphLinksGoPackagesToEachOther(t *testing.T) {
 }
 
 // Whatever the depth the namespaces end up cut at, the communities have to be
-// looked up under the very identifiers the graph is made of.
-func TestCommunitiesAreKeyedOnTheNodesOfTheGraph(t *testing.T) {
+// looked up under identifiers the rest of the report knows: the classes of the
+// project, or the very nodes the graph is made of.
+func TestCommunitiesAreKeyedOnTheClassesOrTheNodesOfTheGraph(t *testing.T) {
 	root := `Company\Project\SubProject`
 	aggregated := graphOf(t,
 		phpModule(root+`\Artifact`, root+`\Clearing`),
@@ -205,12 +206,18 @@ func TestCommunitiesAreKeyedOnTheNodesOfTheGraph(t *testing.T) {
 	if aggregated.Community == nil || len(aggregated.Community.NodeToCommunity) == 0 {
 		t.Fatal("expected the communities to be detected")
 	}
+	classes := map[string]bool{}
+	for _, file := range aggregated.ConcernedFiles {
+		for _, class := range enginePkg.GetClassesInFile(file) {
+			classes[class.Name.Qualified] = true
+		}
+	}
 	for node := range aggregated.Community.NodeToCommunity {
 		if !strings.HasPrefix(node, root) {
 			continue
 		}
-		if aggregated.Graph.Nodes[node] == nil {
-			t.Errorf("community keyed on %q, which is not a node of the graph", node)
+		if aggregated.Graph.Nodes[node] == nil && !classes[node] {
+			t.Errorf("community keyed on %q, which is neither a class nor a node of the graph", node)
 		}
 	}
 }

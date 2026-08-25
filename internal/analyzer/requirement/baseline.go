@@ -122,8 +122,16 @@ func ResolveBaselinePath(configured string) string {
 // internal copy of its counters so that extra occurrences of the same
 // message beyond what was baselined are still reported as new violations.
 func (b *Baseline) Filter(outcomes []RuleOutcome) (kept []RuleOutcome, baselined int) {
+	kept, baselined, _ = b.FilterByRule(outcomes)
+	return kept, baselined
+}
+
+// FilterByRule does what Filter does and also counts the silenced outcomes
+// per rule name, so a caller can tell how many entries of one rule the
+// baseline holds. The map is nil when nothing was silenced.
+func (b *Baseline) FilterByRule(outcomes []RuleOutcome) (kept []RuleOutcome, baselined int, byRule map[string]int) {
 	if b == nil || len(b.counts) == 0 {
-		return outcomes, 0
+		return outcomes, 0, nil
 	}
 	remaining := make(map[baselineKey]int, len(b.counts))
 	maps.Copy(remaining, b.counts)
@@ -133,11 +141,15 @@ func (b *Baseline) Filter(outcomes []RuleOutcome) (kept []RuleOutcome, baselined
 		if remaining[key] > 0 {
 			remaining[key]--
 			baselined++
+			if byRule == nil {
+				byRule = map[string]int{}
+			}
+			byRule[o.Rule]++
 			continue
 		}
 		kept = append(kept, o)
 	}
-	return kept, baselined
+	return kept, baselined, byRule
 }
 
 // Len returns the number of unique ignored entries.
