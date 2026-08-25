@@ -186,6 +186,13 @@ func (c *ReviewCommand) configurationForBase(worktree string, repositoryRoot str
 		return nil, nil
 	}
 	baseConfig.SourcesToAnalyzePath = sources
+	// The scopes of the head configuration point at the working tree. The base
+	// version has its own project configuration files, in the worktree, and it
+	// is the one the base metrics must be produced with.
+	if err := baseConfig.ResolveScopes(); err != nil {
+		return nil, err
+	}
+
 	return &baseConfig, nil
 }
 
@@ -194,14 +201,20 @@ func (c *ReviewCommand) evaluateRequirements(files []*pb.File) []requirement.Rul
 		return nil
 	}
 	aggregator := analyzer.NewAggregator(files, nil)
+	// One aggregate per analyzed source, so that a project holding its own
+	// requirements is judged on its own metrics.
+	aggregator.WithAnalyzedPaths(c.Configuration.SourcesToAnalyzePath)
 	projectAggregated := aggregator.Aggregates()
-	evaluator := requirement.NewRequirementsEvaluator(*c.Configuration.Requirements)
+	evaluator := requirement.NewScopedRequirementsEvaluator(c.Configuration)
 	if baselinePath := requirement.ResolveBaselinePath(c.Configuration.Requirements.Baseline); baselinePath != "" {
 		if baseline, err := requirement.LoadBaseline(baselinePath); err == nil {
 			evaluator.Baseline = baseline
 		}
 	}
-	evaluation := evaluator.Evaluate(files, requirement.ProjectAggregated{ProjectCtx: buildProjectContext(projectAggregated)})
+	evaluation := evaluator.Evaluate(files, requirement.ProjectAggregated{
+		ProjectCtx: buildProjectContext(projectAggregated),
+		ByScope:    buildProjectContexts(projectAggregated),
+	})
 	return evaluation.Errors
 }
 

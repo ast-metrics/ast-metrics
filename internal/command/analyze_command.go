@@ -164,7 +164,7 @@ func (v *AnalyzeCommand) Execute() error {
 
 	// Evaluate requirements generating reports so templates can use results
 	if v.Configuration.Requirements != nil {
-		requirementsEvaluator := requirement.NewRequirementsEvaluator(*v.Configuration.Requirements)
+		requirementsEvaluator := requirement.NewScopedRequirementsEvaluator(v.Configuration)
 		if baselinePath := requirement.ResolveBaselinePath(v.Configuration.Requirements.Baseline); baselinePath != "" {
 			baseline, err := requirement.LoadBaseline(baselinePath)
 			if err != nil {
@@ -173,7 +173,10 @@ func (v *AnalyzeCommand) Execute() error {
 			requirementsEvaluator.Baseline = baseline
 		}
 		projectCtx := buildProjectContext(projectAggregated)
-		evaluation := requirementsEvaluator.Evaluate(allResults, requirement.ProjectAggregated{ProjectCtx: projectCtx})
+		evaluation := requirementsEvaluator.Evaluate(allResults, requirement.ProjectAggregated{
+			ProjectCtx: projectCtx,
+			ByScope:    buildProjectContexts(projectAggregated),
+		})
 		projectAggregated.Evaluation = &evaluation
 	}
 
@@ -280,8 +283,27 @@ func (v *AnalyzeCommand) Execute() error {
 }
 
 func buildProjectContext(pa analyzer.ProjectAggregated) ruleset.ProjectContext {
+	return projectContextOf(pa.Combined.TestQuality)
+}
+
+// buildProjectContexts returns the project-level context of every analyzed
+// source, keyed the way the scopes are. A project holding its own requirements
+// is judged on its own aggregates, not on those of the whole repository.
+func buildProjectContexts(pa analyzer.ProjectAggregated) map[string]ruleset.ProjectContext {
+	if len(pa.ByDirectory) == 0 {
+		return nil
+	}
+
+	contexts := make(map[string]ruleset.ProjectContext, len(pa.ByDirectory))
+	for directory, aggregated := range pa.ByDirectory {
+		contexts[directory] = projectContextOf(aggregated.TestQuality)
+	}
+
+	return contexts
+}
+
+func projectContextOf(tq *analyzer.TestQualityMetrics) ruleset.ProjectContext {
 	ctx := ruleset.ProjectContext{}
-	tq := pa.Combined.TestQuality
 	if tq == nil {
 		return ctx
 	}
