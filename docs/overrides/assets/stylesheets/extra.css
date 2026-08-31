@@ -1,6 +1,6 @@
 /* Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 /* Material declares its own tokens on `:root, [data-md-color-scheme=default]` and
@@ -36,7 +36,7 @@ body[data-md-color-scheme] {
   --lp-paper: #faf7f0;
   --lp-paper-deep: #f3eee1;
   --lp-border: #e8e1d1;
-  --lp-serif: 'Instrument Serif', Georgia, serif;
+  --lp-serif: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
 
   /* Design tokens shared by the landing page and the documentation pages */
   --am-ink: #111827;
@@ -214,17 +214,18 @@ h6 {
 
 .landing-page .lp-title {
   font-family: var(--lp-serif);
-  font-weight: 400;
-  font-size: 3.3rem;
-  line-height: 1.05;
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  font-size: 2.75rem;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
   color: var(--am-ink);
   margin: 0 0 1.6rem;
 }
 
+/* Space Grotesk has no italic: the accent is carried by color alone */
 .landing-page .lp-title em,
 .landing-page .lp-h2 em {
-  font-style: italic;
+  font-style: normal;
   color: var(--am-blue);
 }
 
@@ -234,15 +235,6 @@ h6 {
   color: #4b5563;
   max-width: 600px;
   margin: 0 0 1.6rem;
-}
-
-.landing-page ul.lp-pills {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0;
-  padding: 0;
 }
 
 /* --- Hero pixel map --- */
@@ -334,29 +326,6 @@ h6 {
     animation: none;
     opacity: 0;
   }
-}
-
-.landing-page .lp-pills li {
-  display: flex;
-  align-items: center;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: #4b5563;
-  background: #fff;
-  border: 1px solid var(--lp-border);
-  border-radius: 99px;
-  padding: 0.32rem 0.9rem;
-  margin: 0;
-}
-
-/* Square dot: a one-pixel nod to the pixel-art language */
-.landing-page .lp-pills li::before {
-  content: "";
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  background: var(--am-blue);
-  margin-right: 0.55rem;
 }
 
 .landing-page .lp-btn {
@@ -610,10 +579,10 @@ h6 {
 
 .landing-page .lp-h2 {
   font-family: var(--lp-serif);
-  font-weight: 400;
-  font-size: 2.7rem;
-  line-height: 1.12;
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  font-size: 2.3rem;
+  line-height: 1.14;
+  letter-spacing: -0.025em;
   color: var(--am-ink);
   margin: 0 0 1.1rem;
 }
@@ -847,10 +816,6 @@ h6 {
     margin: 0 auto 1.6rem;
   }
 
-  .landing-page ul.lp-pills {
-    justify-content: center;
-  }
-
   .lp-hero-art-svg {
     max-width: 340px;
   }
@@ -1027,10 +992,10 @@ h6 {
 
 .md-typeset:not(:has(.landing-page)) h1 {
   font-family: var(--lp-serif);
-  font-size: 2.6rem;
-  line-height: 1.12;
-  font-weight: 400;
-  letter-spacing: -0.01em;
+  font-size: 2.2rem;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.025em;
   margin: 0 0 1.2rem;
   background: linear-gradient(135deg, #111827 0%, #4b5563 100%);
   -webkit-background-clip: text;
