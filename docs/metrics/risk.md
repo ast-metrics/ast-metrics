@@ -4,30 +4,68 @@ description: "The risk score combines complexity and churn to point at the hotsp
 
 # Risk Score
 
-## What is it?
-The Risk score is **the probability that the code needs refactoring**.
+The risk score answers the question every refactoring plan should start with:
+**where is the next bug most likely to be written?** It multiplies two things
+that are dangerous together and harmless apart:
 
-It is a composite metric that identifies "Hotspots" in your codebase.
+```
+Risk = Complexity × Churn
+```
 
-## How is it calculated?
-The Risk score is calculated based on two main factors:
-1.  **Complexity**: How hard is the code to understand? (Cyclomatic Complexity)
-2.  **Activity**: How often is this code changed? (Git Churn)
+- **Complexity**: how hard the code is to get right
+  ([cyclomatic complexity](cyclomatic-complexity.md)).
+- **Churn**: how often the code actually changes, read from your git history.
 
-`Risk = Complexity × Churn`
+## Why the multiplication matters
 
-## Why it matters?
-- **Complex code that never changes** is not a high risk. It works, leave it alone.
-- **Simple code that changes often** is fine.
-- **Complex code that changes often** is a **Time Bomb**. This is where bugs are most likely to be introduced.
+Think of your files in four quadrants:
 
-## How to use it?
-Run `ast-metrics analyze`: the summary printed in your terminal ends with a `Hotspots` section listing the files with the highest Risk score, with their maintainability index and recent commit count.
+| | Rarely changes | Changes often |
+|---|---|---|
+| **Simple** | Fine. | Fine: easy edits stay easy. |
+| **Complex** | Dormant. It works, leave it alone. | **The hotspot.** Hard edits, made often, by people in a hurry. |
 
-![The Hotspots section of the terminal summary](../images/capture-hotspots-cli.png)
+Only one quadrant is dangerous, and neither metric finds it alone. This is the
+lesson from analyzing [Monolog](../getting-started/your-first-analysis.md):
+`Logger.php` is the most complex class of the project (complexity 72), yet it
+is *not* the top risk, because nobody touches it anymore. The top hotspot is
+`StreamHandler.php`, less complex (MI 66) but modified five times recently.
+Complexity tells you where reading is hard; risk tells you where reading is
+hard *and happening this week*.
 
-The HTML report tells the same story visually: the code map on the overview page draws one bubble per class, where size is the lines of code, color the complexity, and the ring the recent git activity. Big, red, ringed bubbles are your time bombs.
+This also makes risk the best budget allocator you have: refactoring a
+hotspot pays back on every future change, while refactoring dormant complex
+code pays back never.
 
-!!! tip "Prioritize Refactoring"
+## See it on your code
 
-    Don't just refactor everything. Focus your energy on the High Risk files first. These will give you the best Return on Investment (ROI).
+```bash
+ast-metrics analyze .
+```
+
+The summary ends with the list that matters:
+
+```text
+Hotspots (top 5 of 21 files at risk)
+  1.43  src/Monolog/Handler/StreamHandler.php  (MI 66, 5 commits)
+  1.08  src/Monolog/Handler/RotatingFileHandler.php  (MI 72, 5 commits)
+  ...
+```
+
+Each line gives the risk score, the maintainability index, and the recent
+commit count, so you can see which ingredient dominates.
+
+The HTML report tells the same story visually: the code map on the overview
+page draws one bubble per class, where **size is lines of code, color is
+complexity, and the ring is recent git activity**. Big, red, ringed bubbles
+are your hotspots; you'll spot them in two seconds.
+
+!!! tip "Refactor the top three, not everything"
+    The hotspot list is a priority queue, not a to-do list. Fixing the top
+    three entries usually removes most of the risk; fixing entry twenty is
+    procrastination with extra steps.
+
+## Prerequisite
+
+Churn comes from git, so analyze a clone with real history: a `--depth 1`
+checkout has no churn to read, and every file will look dormant.

@@ -58,6 +58,7 @@ nav:
   - Getting started:
     - Why?: getting-started/index.md
     - Quickstart: getting-started/first-execution.md
+    - "Tutorial: your first analysis": getting-started/your-first-analysis.md
     - Installation: getting-started/install.md
     - Reviewing your changes: getting-started/review-changes.md
     - Understanding the output: getting-started/understand.md

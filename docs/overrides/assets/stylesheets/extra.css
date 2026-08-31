@@ -198,21 +198,24 @@ h6 {
   margin: 0 0 1.1rem;
 }
 
-/* --- Hero --- */
+/* --- Hero: copy on the left, pixel map on the right --- */
 .lp-hero {
-  padding: 5.5rem 1.5rem 3.5rem;
-  text-align: center;
+  padding: 5rem 1.5rem 3rem;
 }
 
 .lp-hero-inner {
-  max-width: 900px;
+  max-width: 1080px;
   margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 58fr) minmax(0, 42fr);
+  gap: 3.5rem;
+  align-items: center;
 }
 
 .landing-page .lp-title {
   font-family: var(--lp-serif);
   font-weight: 400;
-  font-size: 3.9rem;
+  font-size: 3.3rem;
   line-height: 1.05;
   letter-spacing: -0.01em;
   color: var(--am-ink);
@@ -226,21 +229,111 @@ h6 {
 }
 
 .landing-page .lp-lead {
-  font-size: 1.18rem;
+  font-size: 1.12rem;
   line-height: 1.65;
   color: #4b5563;
-  max-width: 690px;
-  margin: 0 auto 1.6rem;
+  max-width: 600px;
+  margin: 0 0 1.6rem;
 }
 
 .landing-page ul.lp-pills {
   list-style: none;
   display: flex;
-  justify-content: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin: 0 0 2.2rem;
+  margin: 0;
   padding: 0;
+}
+
+/* --- Hero pixel map --- */
+.lp-hero-art-svg {
+  display: block;
+  width: 100%;
+  max-width: 440px;
+  height: auto;
+  margin: 0 auto;
+}
+
+/* A light wave scans the code lines in the window (delays are inline) */
+.lp-hero-art-svg .px-code {
+  opacity: 0.5;
+  animation: px-scan 5.4s ease-in-out infinite;
+}
+
+@keyframes px-scan {
+  0%, 24%, 100% { opacity: 0.5; }
+  10% { opacity: 1; }
+}
+
+/* Feed pixels: parsed code flowing down the spine of the graph */
+.lp-hero-art-svg .px-feed {
+  opacity: 0;
+  animation: px-feed 4.6s linear infinite;
+}
+
+@keyframes px-feed {
+  0% { transform: translateY(0); opacity: 0; }
+  8% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(33px); opacity: 0; }
+}
+
+/* The bug crawls in place, one pixel at a time */
+.lp-hero-art-svg .px-bug {
+  animation: px-crawl 2.8s linear infinite;
+}
+
+@keyframes px-crawl {
+  0%, 24% { transform: translate(0, 0); }
+  25%, 49% { transform: translate(1px, 0); }
+  50%, 74% { transform: translate(1px, 1px); }
+  75%, 100% { transform: translate(0, 1px); }
+}
+
+/* The check badges breathe slowly (delays are inline, per chip) */
+.lp-hero-art-svg .px-check {
+  animation: px-stamp 6s ease-in-out infinite;
+}
+
+@keyframes px-stamp {
+  0%, 30%, 100% { opacity: 1; }
+  15% { opacity: 0.55; }
+}
+
+/* Stray pixels twinkle now and then */
+.lp-hero-art-svg .px-spark {
+  animation: px-twinkle 6s ease-in-out infinite;
+}
+
+@keyframes px-twinkle {
+  0%, 24%, 100% { opacity: 0.3; }
+  12% { opacity: 1; }
+}
+
+/* The selection brackets around the hotspot breathe */
+.lp-hero-art-svg .px-target {
+  animation: px-target 2.4s ease-in-out infinite;
+}
+
+@keyframes px-target {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-hero-art-svg .px-spark,
+  .lp-hero-art-svg .px-target,
+  .lp-hero-art-svg .px-code,
+  .lp-hero-art-svg .px-bug,
+  .lp-hero-art-svg .px-check {
+    animation: none;
+  }
+
+  /* Without their travel, the feed pixels would sit as stray dots on an edge */
+  .lp-hero-art-svg .px-feed {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 .landing-page .lp-pills li {
@@ -743,6 +836,26 @@ h6 {
 }
 
 /* --- Responsive --- */
+@media (max-width: 960px) {
+  .lp-hero-inner {
+    grid-template-columns: 1fr;
+    gap: 2.4rem;
+    text-align: center;
+  }
+
+  .landing-page .lp-lead {
+    margin: 0 auto 1.6rem;
+  }
+
+  .landing-page ul.lp-pills {
+    justify-content: center;
+  }
+
+  .lp-hero-art-svg {
+    max-width: 340px;
+  }
+}
+
 @media (max-width: 768px) {
   .lp-hero {
     padding: 3.2rem 1rem 2.4rem;
@@ -750,6 +863,10 @@ h6 {
 
   .landing-page .lp-title {
     font-size: 2.2rem;
+  }
+
+  .lp-hero-art-svg {
+    max-width: 280px;
   }
 
   .landing-page .lp-lead {

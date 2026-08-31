@@ -189,7 +189,7 @@ changing its interface, or which files carry risk before proposing a refactor.
 | Coupling and instability | How entangled components are, and which way dependencies point. |
 | Class cohesion (LCOM4) | Whether the methods of a class belong together. |
 | Community detection | The groups your classes form on the dependency graph, the shared kernel, the cycles between them, and whether the git history agrees with the boundaries. |
-| Architecture map | The dependency graph, including circular dependencies. |
+| Architecture map | The layered map of the communities, the cycles with the dependencies to cut, and the file-level dependency graph. |
 | Bus factor | How concentrated knowledge is, from git history. |
 
 ## Continuous integration
@@ -226,6 +226,7 @@ workflow to every repository of a GitHub organization.
 - [Why AST Metrics?](https://ast-metrics.dev/getting-started/): what it computes and how.
 - [Installation](https://ast-metrics.dev/getting-started/install/): every install method.
 - [First execution](https://ast-metrics.dev/getting-started/first-execution/): the interactive UI.
+- [Tutorial: your first analysis](https://ast-metrics.dev/getting-started/your-first-analysis/): a guided, real-world walkthrough on Monolog.
 - [Reviewing your changes](https://ast-metrics.dev/getting-started/review-changes/): the `review` command in depth.
 - [Understanding the output](https://ast-metrics.dev/getting-started/understand/): AST, graphs, and what is derived from them.
 - [Generating a report](https://ast-metrics.dev/getting-started/generate-reports/): HTML, Markdown, JSON, SARIF, OpenMetrics.

@@ -6,20 +6,27 @@
   <!-- Hero -->
   <section class="lp-hero">
     <div class="lp-hero-inner fade-up">
-      <h1 class="lp-title">
-        AI writes code faster than you can review it.<br>
-        <em>Catch what got worse, in seconds.</em>
-      </h1>
-      <p class="lp-lead">
-        AST Metrics measures complexity, coupling, architecture, bus factor and test
-        quality for PHP, Go, Python, Rust, Java, C# and TypeScript. On a pull request,
-        <code>ast-metrics review</code> flags only what got worse. No server, no noise,
-        same code, same verdict.
-      </p>
-      <ul class="lp-pills">
-        <li>Open source, MIT</li>
-        <li>Nothing leaves your machine</li>
-      </ul>
+      <div class="lp-hero-copy">
+        <h1 class="lp-title">
+          AI writes code faster than you can review it.<br>
+          <em>Catch what got worse, in seconds.</em>
+        </h1>
+        <p class="lp-lead">
+          AST Metrics measures complexity, coupling, architecture, bus factor and test
+          quality for PHP, Go, Python, Rust, Java, C# and TypeScript. On a pull request,
+          <code>ast-metrics review</code> flags only what got worse. No server, no noise,
+          same code, same verdict.
+        </p>
+        <ul class="lp-pills">
+          <li>Open source, MIT</li>
+          <li>Nothing leaves your machine</li>
+        </ul>
+      </div>
+      <!-- Pixel scene: a code window parsed into its graph, with the one
+           node the review would flag -->
+      <div class="lp-hero-art" aria-hidden="true">
+        {% include "partials/hero-art.svg" %}
+      </div>
     </div>
   </section>
 
@@ -220,8 +227,13 @@
       <h2 class="lp-h2">Curious what these metrics <em>actually mean?</em></h2>
       <p class="lp-section-lead">
         Every metric has its own page: what it measures, how to read it, and how to improve it.
+        Or learn by doing: the tutorial walks you through a real analysis of Monolog, number by number.
       </p>
       <a href="metrics/" class="lp-btn lp-btn-dark">Explore the metrics guide</a>
+      <p class="lp-try">
+        Ten minutes to spare?
+        <a href="getting-started/your-first-analysis/">Follow the hands-on tutorial</a>
+      </p>
     </div>
   </section>
 </div>

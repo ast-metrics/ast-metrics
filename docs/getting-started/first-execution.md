@@ -102,6 +102,8 @@ browser right away.
 
 ## Where to go next
 
+- [Tutorial: your first analysis](your-first-analysis.md): a guided walkthrough
+  on a real open source project, reading the output number by number.
 - [Review your changes](review-changes.md): compare a branch with its base and
   report only what you made worse. This is the command to run on pull requests.
 - [Run it in CI](../ci/github-actions.md): the GitHub Action needs a single
