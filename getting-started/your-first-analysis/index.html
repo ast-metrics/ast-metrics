@@ -6,19 +6,19 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Generate HTML, Markdown, JSON, SARIF and OpenMetrics reports from a single ast-metrics analyze run.">
+        <meta name="description" content="A hands-on tutorial: analyze Monolog with AST Metrics, read the real output line by line, and find the code worth refactoring.">
       
       
         <meta name="author" content="Jean-François Lépine">
       
       
-        <link rel="canonical" href="https://ast-metrics.dev/getting-started/generate-reports/">
+        <link rel="canonical" href="https://ast-metrics.dev/getting-started/your-first-analysis/">
       
       
-        <link rel="prev" href="../understand/">
+        <link rel="prev" href="../first-execution/">
       
       
-        <link rel="next" href="../../advanced-usage/watch-directory/">
+        <link rel="next" href="../install/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Generating a report - AST Metrics documentation</title>
+        <title>Tutorial: your first analysis - AST Metrics documentation</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#generate-reports" class="md-skip">
+        <a href="#tutorial-your-first-analysis" class="md-skip">
           Skip to content
         </a>
       
@@ -115,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Generating a report
+              Tutorial: your first analysis
             
           </span>
         </div>
@@ -494,10 +494,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../your-first-analysis/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -513,6 +540,164 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-grab-a-real-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Grab a real project
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-run-the-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Run the analysis
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-read-the-verdict-top-to-bottom" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Read the verdict, top to bottom
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Read the verdict, top to bottom">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#maintainability-the-health-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintainability: the health check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#complexity-where-the-logic-piles-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Complexity: where the logic piles up
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#size-the-shape-of-the-project" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Size: the shape of the project
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#architecture-the-shape-in-five-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture: the shape in five lines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tests-what-the-suite-actually-protects" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests: what the suite actually protects
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hotspots-where-to-look-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hotspots: where to look first
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-open-the-visual-report" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Open the visual report
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-now-your-codebase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Now, your codebase
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-to-go-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where to go next
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -606,37 +791,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Generating a report
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../generate-reports/" class="md-nav__link">
         
   
   
@@ -652,98 +810,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#html-report" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        🌐 HTML report
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown-report" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        📄 Markdown report
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#json-report" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        📄 JSON report
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#sarif-report" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        📄 SARIF report
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="📄 SARIF report">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#use-cases" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Use Cases
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#openmetrics-report-gitlab-ci" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        📄 OpenMetrics report (Gitlab CI)
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1574,7 +1640,7 @@
 
 
   
-    <a href="https://github.com/ast-metrics/ast-metrics/edit/documentation/docs/getting-started/generate-reports.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/ast-metrics/ast-metrics/edit/documentation/docs/getting-started/your-first-analysis.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1582,68 +1648,161 @@
   
 
 
-<h1 id="generate-reports">Generate reports</h1>
-<p>All report options belong to the <code>analyze</code> command, and several can be combined in
-a single run:</p>
-<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>--report-html<span class="o">=</span>./report<span class="w"> </span>--report-json<span class="o">=</span>./report.json<span class="w"> </span>.
+<h1 id="tutorial-your-first-analysis">Tutorial: your first analysis</h1>
+<p>The best way to understand what AST Metrics tells you is to run it on code you
+did not write. In this tutorial you will analyze <a href="https://github.com/Seldaek/monolog">Monolog</a>,
+one of the most installed PHP libraries in the world, and read the results
+together, number by number.</p>
+<p>It takes about ten minutes. You need <code>git</code>, a terminal, and
+<a href="../install/">AST Metrics installed</a>, nothing else. Monolog is PHP, but you
+won't read a line of PHP here: the point is learning to read the metrics, and
+they look exactly the same for Go, Python, TypeScript, Rust, Java or C#.</p>
+<h2 id="1-grab-a-real-project">1. Grab a real project</h2>
+<p>Clone Monolog with its full history:</p>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/Seldaek/monolog.git
+<span class="nb">cd</span><span class="w"> </span>monolog
 </code></pre></div>
-<div class="admonition tip">
-<p class="admonition-title">Generating everything at once</p>
-<p>In a pipeline, use <a href="../../ci/tips/"><code>ast-metrics ci</code></a> instead: it runs the
-linter, then produces every report in one go.</p>
-</div>
-<h2 id="html-report">🌐 HTML report</h2>
-<p>The HTML report is the one to share with your team. Every page opens on a sentence
-that states what the analysis found, backed by the few figures that support it:</p>
+<p>Don't use <code>--depth 1</code> here. AST Metrics reads the git history to compute churn
+(how often files change) and the bus factor (who knows what). A shallow clone
+would blind those metrics.</p>
+<h2 id="2-run-the-analysis">2. Run the analysis</h2>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>.
+</code></pre></div>
+<p>A few seconds later, a summary lands in your terminal. Let's read it block by
+block. The numbers below come from a real run (v0.43 on Monolog's main branch,
+yours may differ slightly).</p>
+<h2 id="3-read-the-verdict-top-to-bottom">3. Read the verdict, top to bottom</h2>
+<h3 id="maintainability-the-health-check">Maintainability: the health check</h3>
+<div class="highlight"><pre><span></span><code>Maintainability
+  Maintainability index              81  (moderate)
+  Classes below the 65 threshold     5 of 111 measured
+</code></pre></div>
+<p>One number to start with: <strong>81 out of 100</strong>. Monolog is a healthy codebase,
+which is what you would expect from a library this popular. Only 5 classes out
+of 111 fall below the warning threshold. If you remember one number from an
+analysis, make it this one: it blends size, complexity and documentation into
+a single health score.</p>
+<h3 id="complexity-where-the-logic-piles-up">Complexity: where the logic piles up</h3>
+<div class="highlight"><pre><span></span><code>Complexity
+  Cyclomatic complexity (total)      3247
+    per class (avg / max)            14.06 / 72.00
+    per method (avg / max)           2.44 / 20.00
+</code></pre></div>
+<p>The average method makes <strong>2.44 decisions</strong> (ifs, loops, cases). That's low,
+and low is good: simple methods are easy to test and hard to break.</p>
+<p>But look at the max per class: <strong>72</strong>. One class concentrates 72 decision
+points. Which one? The HTML report (we generate it in a minute) has a Classes
+page where every column sorts. Do it and one name tops the complexity column:
+<code>Logger.php</code>, the heart of the library, 751 lines, complexity 72. Is that
+a problem? Not necessarily. <code>Logger</code> is Monolog's front door, everything goes
+through it, and it is heavily tested. A metric is a question, not a verdict:
+"this class carries a lot of logic, does someone have it under control?" Here
+the answer is yes.</p>
+<h3 id="size-the-shape-of-the-project">Size: the shape of the project</h3>
+<div class="highlight"><pre><span></span><code>Size
+  Files                              217
+    production                       125
+    test                             92
+  Production lines of code (LOC)     14936
+  Test lines of code (LOC)           13352
+</code></pre></div>
+<p>Almost as much test code as production code. That ratio alone tells you a lot
+about how Monolog survived 15 years of changes.</p>
+<h3 id="architecture-the-shape-in-five-lines">Architecture: the shape in five lines</h3>
+<p>Inside the <code>Coupling</code> block, five lines describe the whole structure:</p>
+<div class="highlight"><pre><span></span><code>  Communities detected               6
+    largest one                      32 classes
+    dependencies kept inside         38%
+    cycles between communities       1
+    commits agreeing with them       67%
+</code></pre></div>
+<p>Monolog's 115 classes naturally form <strong>6 communities</strong>: groups that depend on
+each other more than on the rest, found from the dependency graph alone,
+never from folder names. One <strong>cycle</strong> ties three of them together, and 67%
+of last year's commits stayed within one community: the boundaries mostly
+match how people actually work on the code. The report turns these five lines
+into a full page, with a map and the exact dependencies to cut; we'll open it
+in a minute.</p>
+<h3 id="tests-what-the-suite-actually-protects">Tests: what the suite actually protects</h3>
+<div class="highlight"><pre><span></span><code>Tests
+  Classes covered by a test          74.4%  (96 / 129)
+  Isolation score                    57  (Semi-isolated)
+  God tests                          15
+  Classes without any test           33
+</code></pre></div>
 <ul>
-<li>a dashboard, with the distribution of your metrics</li>
-<li>one page per concern (complexity, coupling, class cohesion, risk, bus factor)</li>
-<li>a <strong>class explorer</strong>, sortable and filterable, exposing every computed metric</li>
-<li>a <strong>dependency graph</strong> you can search and zoom, which highlights circular
-  dependencies</li>
-<li>one view per analyzed folder, next to the global and per-language views</li>
+<li><strong>74.4%</strong> of production classes are referenced by at least one test. The
+  other 33 have no test at all: not "low coverage", <em>zero</em> tests.</li>
+<li>The <strong>isolation score</strong> of 57 says the average test drags a few
+  collaborators along: a failure points at a neighborhood, not always at a
+  single class.</li>
+<li><strong>15 god tests</strong> touch five or more classes each: when one of those fails,
+  you get to guess which of its many dependencies broke.</li>
 </ul>
-<p>To generate a report, run the following command in your terminal:</p>
-<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>--report-html<span class="o">=</span>&lt;report-directory&gt;<span class="w"> </span>/path/to/your/project
+<p>No test was executed to compute this. It's all static analysis, which is why
+it takes seconds. The <a href="../../metrics/test-quality/">Test Quality</a> page explains
+each number.</p>
+<h3 id="hotspots-where-to-look-first">Hotspots: where to look first</h3>
+<p>The summary ends with the list you should read first:</p>
+<div class="highlight"><pre><span></span><code>Hotspots (top 5 of 21 files at risk)
+  1.43  src/Monolog/Handler/StreamHandler.php  (MI 66, 5 commits)
+  1.08  src/Monolog/Handler/RotatingFileHandler.php  (MI 72, 5 commits)
+  0.93  src/Monolog/Handler/TelegramBotHandler.php  (MI 82, 4 commits)
+  0.75  src/Monolog/Formatter/JsonFormatter.php  (MI 78, 3 commits)
+  0.71  src/Monolog/Formatter/LineFormatter.php  (MI 63, 2 commits)
 </code></pre></div>
-<p>Where <code>&lt;report-directory&gt;</code> is the directory where the report will be saved. Add
-<code>--open-html</code> to open it in your browser as soon as it is ready.</p>
-<h2 id="markdown-report">📄 Markdown report</h2>
-<p>AST Metrics can also generate Markdown reports. The reports provide an overview of the codebase, in markdown format.</p>
-<p>To generate a report, run the following command in your terminal:</p>
-<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>--report-markdown<span class="o">=</span>&lt;report-file.md&gt;<span class="w"> </span>/path/to/your/project
+<p>This is complexity crossed with git activity, and it changes how you
+prioritize. <code>Logger.php</code>, our complexity champion, is <strong>not</strong> on the list: it
+barely changes anymore, so its complexity is dormant. <code>StreamHandler.php</code> is
+less complex but modified five times recently: complex code that people keep
+touching is where the next bug gets written. If you were about to refactor
+Monolog, the metrics just handed you the priority order.</p>
+<p>That's the core skill of reading an analysis: <strong>a scary number on frozen code
+matters less than a mediocre number on code your team edits every week.</strong></p>
+<h2 id="4-open-the-visual-report">4. Open the visual report</h2>
+<p>The terminal gives you the verdict; the HTML report lets you explore it:</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>--report-html<span class="o">=</span>report<span class="w"> </span>--open-html<span class="w"> </span>.
 </code></pre></div>
-<p>Where <code>&lt;report-file.md&gt;</code> is the file where the report will be saved.</p>
-<h2 id="json-report">📄 JSON report</h2>
-<p>AST Metrics can also generate JSON reports. The reports provide an overview of the codebase, in JSON format.</p>
-<p>To generate a report, run the following command in your terminal:</p>
-<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>--report-json<span class="o">=</span>&lt;report-file.json&gt;<span class="w"> </span>/path/to/your/project
-</code></pre></div>
-<p>Where <code>&lt;report-file.json&gt;</code> is the file where the report will be saved.</p>
-<h2 id="sarif-report">📄 SARIF report</h2>
-<p>AST Metrics can generate <a href="https://sarifweb.azurewebsites.net/">SARIF</a> (Static Analysis Results Interchange Format) reports. SARIF is a standard format for the output of static analysis tools, widely supported by security and code quality platforms like GitHub Advanced Security, Azure DevOps, and many CI/CD tools.</p>
-<p>To generate a SARIF report, run the following command in your terminal:</p>
-<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>--report-sarif<span class="o">=</span>&lt;report-file.sarif&gt;<span class="w"> </span>/path/to/your/project
-</code></pre></div>
-<p>Where <code>&lt;report-file.sarif&gt;</code> is the file where the report will be saved.</p>
-<p>Use <code>--sarif-max-level</code> to cap the severity of the results (<code>error</code>, <code>warning</code> or
-<code>note</code>). GitHub code scanning fails its own check as soon as a new <code>error</code> alert
-appears, so keeping the ceiling at <code>warning</code> makes the upload informative rather
-than blocking.</p>
-<h3 id="use-cases">Use Cases</h3>
-<p>SARIF reports are particularly useful for:</p>
+<p>Three pages are worth your first visit:</p>
 <ul>
-<li><strong>GitHub Code Scanning</strong>: Upload SARIF files to GitHub to display code quality issues directly in pull requests</li>
-<li><strong>CI/CD Integration</strong>: Many CI/CD platforms support SARIF for automated code quality checks</li>
-<li><strong>Security Analysis</strong>: SARIF is the standard format for security scanning tools</li>
-<li><strong>Tool Interoperability</strong>: Share analysis results between different static analysis tools</li>
+<li><strong>Overview</strong>: a plain-language paragraph about the codebase, followed by the
+  code map: one bubble per class, size is lines of code, color is complexity,
+  the ring is recent git activity. Big red ringed bubbles are your hotspots.</li>
+<li><strong>Architecture → Natural groups</strong>: the architecture stated in plain words.
+  On Monolog the verdict reads "Some of these communities cannot change
+  alone", names the three communities locked in a cycle, calls the shared
+  kernel what it is (a centre of gravity: 7 classes receive 56% of all
+  dependencies), and lists where to start: the first cut frees a community
+  for the price of 3 references. The
+  <a href="../../metrics/architecture-map/">Architecture Map</a> page teaches you to read
+  it.</li>
+<li><strong>Test quality</strong>: the god tests and untested classes, sorted so the worst
+  offenders come first.</li>
 </ul>
-<h2 id="openmetrics-report-gitlab-ci">📄 OpenMetrics report (Gitlab CI)</h2>
-<p><a href="../../ci/gitlab-ci/">OpenMetrics</a> is a standard for metrics exposition. AST Metrics can generate OpenMetrics reports, which can be easily integrated into your CI/CD pipeline, like GitLab CI.</p>
-<p>To generate an OpenMetrics report, run the following command in your terminal:</p>
-<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>--report-openmetrics<span class="o">=</span>&lt;report-file.openmetrics&gt;<span class="w"> </span>/path/to/your/project
+<h2 id="5-now-your-codebase">5. Now, your codebase</h2>
+<p>Run the same command at the root of a project you know well:</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>.
 </code></pre></div>
-<p>Where <code>&lt;report-file.openmetrics&gt;</code> is the file where the report will be saved.</p>
+<p>Then check your instincts against the numbers:</p>
+<ul>
+<li>Does the hotspot list match the files you already dread touching? (It
+  usually does. Now you have evidence.)</li>
+<li>Is your untested-classes count a surprise?</li>
+<li>Does the maintainability index confirm what your gut says about the oldest
+  module?</li>
+</ul>
+<p>Nothing leaves your machine: the analysis, the git history reading and the
+report generation are all local.</p>
+<h2 id="where-to-go-next">Where to go next</h2>
+<ul>
+<li><a href="../review-changes/">Review your changes</a>: on a pull request,
+  <code>ast-metrics review</code> compares your branch to its base and flags only what
+  got worse. This is the command that turns metrics into a daily habit.</li>
+<li><a href="../../metrics/">The metrics guide</a>: every number from this tutorial,
+  explained with thresholds and refactoring advice.</li>
+<li><a href="../../ci/github-actions/">Run it in CI</a>: one line of YAML and every PR gets
+  this analysis automatically.</li>
+</ul>
 
 
 
@@ -1664,7 +1823,7 @@ than blocking.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 31, 2026 13:36:07 UTC">2026-08-31</span>
   </span>
 
     
@@ -1700,7 +1859,7 @@ than blocking.</p>
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../understand/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Understanding the output">
+          <a href="../first-execution/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Quickstart">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1710,20 +1869,20 @@ than blocking.</p>
                 Previous
               </span>
               <div class="md-ellipsis">
-                Understanding the output
+                Quickstart
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../advanced-usage/watch-directory/" class="md-footer__link md-footer__link--next" aria-label="Next: Watch mode">
+          <a href="../install/" class="md-footer__link md-footer__link--next" aria-label="Next: Installation">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Watch mode
+                Installation
               </div>
             </div>
             <div class="md-footer__button md-icon">

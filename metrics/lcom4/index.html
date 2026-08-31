@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#lcom4-lack-of-cohesion-of-methods" class="md-skip">
+        <a href="#class-cohesion-lcom4" class="md-skip">
           Skip to content
         </a>
       
@@ -401,6 +401,8 @@
       
         
       
+        
+      
     
     
     
@@ -470,6 +472,34 @@
     
   
     Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/your-first-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
   
 
     
@@ -621,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
             
   
   
@@ -642,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1023,10 +1053,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-is-it" class="md-nav__link">
+  <a href="#count-it-yourself-once" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What is it?
+        Count it yourself, once
       
     </span>
   </a>
@@ -1034,10 +1064,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
+  <a href="#how-to-read-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How it works
+        How to read it
       
     </span>
   </a>
@@ -1045,10 +1075,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#visualizing-lcom4" class="md-nav__link">
+  <a href="#when-to-tolerate-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Visualizing LCOM4
+        When to tolerate it
       
     </span>
   </a>
@@ -1056,10 +1086,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-to-fix-it" class="md-nav__link">
+  <a href="#see-it-on-your-code" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How to fix it?
+        See it on your code
       
     </span>
   </a>
@@ -1521,37 +1551,92 @@
   
 
 
-<h1 id="lcom4-lack-of-cohesion-of-methods">LCOM4 (Lack of Cohesion of Methods)</h1>
-<video controls preload="none" src="../../animations/lcom.webm" title="How LCOM4 detects a class doing several unrelated things"></video>
+<h1 id="class-cohesion-lcom4">Class Cohesion (LCOM4)</h1>
+<p>LCOM4 answers a question you've asked in every code review: <strong>is this class
+one thing, or several things sharing a filename?</strong> It doesn't judge style; it
+counts, and the count is the number of classes hiding inside.</p>
+<h2 id="count-it-yourself-once">Count it yourself, once</h2>
+<p>Draw an (imaginary) line between two methods when they touch the same field or
+call each other. LCOM4 is the number of islands left when you're done:</p>
+<div class="highlight"><pre><span></span><code><span class="x">class UserService</span>
+<span class="x">{</span>
+<span class="x">    private Database $db;</span>
+<span class="x">    private Mailer $mailer;</span>
 
-<h2 id="what-is-it">What is it?</h2>
-<p>LCOM4 measures how well the methods in a class belong together. It checks if methods use the same fields.</p>
-<p>It answers the question: <strong>"Is this class doing one thing, or multiple unrelated things?"</strong></p>
-<p><img alt="what is Lack of Cohesion of Methods" src="../../images/ill-lcom4.webp" /></p>
-<h2 id="how-it-works">How it works</h2>
-<p>Imagine a graph where:
-- <strong>Nodes</strong> are methods.
-- <strong>Edges</strong> connect methods if they access the same field or call each other.</p>
-<p>LCOM4 is the number of connected components in this graph.</p>
-<ul>
-<li><strong>LCOM4 = 1</strong>: <strong>Cohesive</strong>. All methods are related. The class acts as a single unit.</li>
-<li><strong>LCOM4 &gt; 1</strong>: <strong>Not Cohesive</strong>. The class is doing too many things. It might be two or more classes stuck together.</li>
-<li><strong>LCOM4 = 0</strong>: Empty class or no methods.</li>
-</ul>
-<h2 id="visualizing-lcom4">Visualizing LCOM4</h2>
-<p>Imagine drawing lines between methods and the fields they use.
-- If everything is connected, LCOM4 = 1.
-- If you have two separate islands of connections, LCOM4 = 2.</p>
-<h2 id="how-to-fix-it">How to fix it?</h2>
-<div class="admonition warning">
-<p class="admonition-title">Refactoring Opportunity</p>
-<p>If LCOM4 &gt; 1, you can usually split the class into two separate classes without breaking anything.</p>
-</div>
-<ol>
-<li>Identify the "islands" of methods/fields.</li>
-<li>Extract each island into a new class.</li>
-<li>Inject the new classes into the original one (or replace usages).</li>
-</ol>
+<span class="x">    // Island 1: these two methods share $db...</span>
+<span class="x">    public function find(int $id): User</span>
+<span class="x">    {</span>
+<span class="x">        return $this-&gt;db-&gt;find($id);</span>
+<span class="x">    }</span>
+
+<span class="x">    public function save(User $user): void</span>
+<span class="x">    {</span>
+<span class="x">        $this-&gt;db-&gt;save($user);</span>
+<span class="x">    }</span>
+
+<span class="x">    // Island 2: ...and these two share $mailer. No bridge between islands.</span>
+<span class="x">    public function sendWelcome(string $email): void</span>
+<span class="x">    {</span>
+<span class="x">        $this-&gt;mailer-&gt;send($email, 'welcome');</span>
+<span class="x">    }</span>
+
+<span class="x">    public function sendGoodbye(string $email): void</span>
+<span class="x">    {</span>
+<span class="x">        $this-&gt;mailer-&gt;send($email, 'goodbye');</span>
+<span class="x">    }</span>
+<span class="x">}</span>
+</code></pre></div>
+<p><code>find</code> and <code>save</code> connect through <code>$db</code>. <code>sendWelcome</code> and <code>sendGoodbye</code>
+connect through <code>$mailer</code>. Nothing connects the two groups: <strong>LCOM4 = 2</strong>.
+This "service" is a repository and a notifier that happen to share a
+constructor.</p>
+<h2 id="how-to-read-it">How to read it</h2>
+<table>
+<thead>
+<tr>
+<th>LCOM4</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1</strong></td>
+<td>Cohesive. All methods work on the same state. This is the goal.</td>
+</tr>
+<tr>
+<td><strong>2+</strong></td>
+<td>The class contains that many independent classes.</td>
+</tr>
+<tr>
+<td><strong>0</strong></td>
+<td>No methods (interfaces, empty classes). Nothing to measure.</td>
+</tr>
+</tbody>
+</table>
+<p>The beautiful property of LCOM4 is that it comes with its own refactoring
+plan: the islands <em>are</em> the new classes.</p>
+<div class="highlight"><pre><span></span><code><span class="x">class UserRepository      // island 1, with $db</span>
+<span class="x">class WelcomeNotifier     // island 2, with $mailer</span>
+</code></pre></div>
+<p>Split along the islands and nothing breaks, because by definition no method
+of one island touched the state of the other.</p>
+<h2 id="when-to-tolerate-it">When to tolerate it</h2>
+<p>An LCOM4 of 2 is not automatically an emergency. Some patterns legitimately score
+above 1: a class of pure static helpers, or a DTO whose getters each touch
+their own field. Read the number together with size: a 40-line class at
+LCOM4 = 2 is a shrug, a 400-line god class at LCOM4 = 4 is four refactorings
+you already know how to do. On
+<a href="../../getting-started/your-first-analysis/">Monolog</a>, the average is 1.47
+with a maximum of 10: one class somewhere is really ten.</p>
+<h2 id="see-it-on-your-code">See it on your code</h2>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>.
+</code></pre></div>
+<p>The <code>Coupling</code> block of the summary reports the average and maximum LCOM4.
+The HTML report lists the score per class on the Classes page. To cap it, the
+<code>architecture</code> ruleset ships a <code>max_responsibilities</code> rule for your
+<a href="../../ci/linting-architecture/"><code>.ast-metrics.yaml</code></a>:</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>ruleset<span class="w"> </span>add<span class="w"> </span>architecture
+</code></pre></div>
 
 
 
@@ -1572,7 +1657,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 31, 2026 13:36:07 UTC">2026-08-31</span>
   </span>
 
     

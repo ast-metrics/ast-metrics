@@ -401,6 +401,8 @@
       
         
       
+        
+      
     
     
     
@@ -470,6 +472,34 @@
     
   
     Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/your-first-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
   
 
     
@@ -621,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
             
   
   
@@ -642,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1394,6 +1424,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#freezing-the-community-boundaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freezing the community boundaries
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1694,6 +1735,18 @@ ast-metrics<span class="w"> </span>ruleset<span class="w"> </span>add<span class
 <td><strong>no_god_class</strong></td>
 <td>Avoid God Classes (too many methods/properties)</td>
 </tr>
+<tr>
+<td><strong>no_community_cycles</strong></td>
+<td>Fails when communities depend on each other in a cycle</td>
+</tr>
+<tr>
+<td><strong>max_community_cross_share</strong></td>
+<td>Maximum share (%) of dependencies crossing from one community to another</td>
+</tr>
+<tr>
+<td><strong>no_cross_community_dependencies</strong></td>
+<td>Fails on every dependency crossing between communities; meant to be frozen with <code>ast-metrics baseline</code></td>
+</tr>
 </tbody>
 </table>
 <h4 id="volume-ruleset">📏 Volume Ruleset</h4>
@@ -1855,6 +1908,30 @@ recorded violations and only fails on new ones.</p>
 <p>Re-run <code>ast-metrics baseline</code> whenever you want to shrink the file as you pay off
 the debt. If you keep the file somewhere else, point the linter at it with
 <code>ast-metrics lint --baseline=&lt;path&gt;</code>.</p>
+<h2 id="freezing-the-community-boundaries">Freezing the community boundaries</h2>
+<p>Three project rules read the <a href="../../metrics/community-detection/">communities</a>
+the analysis finds on the dependency graph. They all pass when the project has
+fewer than two communities.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">requirements</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">rules</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">architecture</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">no_community_cycles</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">max_community_cross_share</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">      </span><span class="nt">no_cross_community_dependencies</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<p><code>no_community_cycles</code> fails once per cycle and names the arrows to cut, lightest
+first. <code>max_community_cross_share</code> fails when more than the given percentage of
+the dependencies cross from one community to another, the shared kernel left
+aside. <code>no_cross_community_dependencies</code> fails on every single crossing, so it
+only makes sense with a baseline:</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>baseline<span class="w">   </span><span class="c1"># accept today's crossings</span>
+ast-metrics<span class="w"> </span>lint<span class="w">       </span><span class="c1"># fails only on a crossing added since</span>
+</code></pre></div>
+<p>Each crossing is filed under the file of the class that depends, with the
+message <code>Foo depends on Bar, which sits in another community</code>. Community names
+stay out of the message on purpose: they change as the code moves, and the
+baseline recognizes an entry by rule, file and message. The communities page of
+the HTML report shows how many crossings are frozen and how many are new.</p>
 <div class="admonition note">
 <p class="admonition-title">Baseline or review?</p>
 <p>The two mechanisms are complementary. The <strong>baseline</strong> freezes today's violations
@@ -1882,7 +1959,7 @@ on the fly and needs no stored file: it is what gates your pull requests.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 18, 2026 09:26:57 UTC">2026-08-18</span>
   </span>
 
     

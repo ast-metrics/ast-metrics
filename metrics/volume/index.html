@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#volume-metrics" class="md-skip">
+        <a href="#volume" class="md-skip">
           Skip to content
         </a>
       
@@ -401,6 +401,8 @@
       
         
       
+        
+      
     
     
     
@@ -470,6 +472,34 @@
     
   
     Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/your-first-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
   
 
     
@@ -621,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
             
   
   
@@ -642,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -883,21 +913,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-is-it" class="md-nav__link">
+  <a href="#the-three-counters" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What is it?
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#why-it-matters" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Why it matters?
+        The three counters
       
     </span>
   </a>
@@ -908,7 +927,29 @@
   <a href="#how-to-read-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How to read it?
+        How to read it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-it-on-your-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See it on your code
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#keep-it-in-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keep it in check
       
     </span>
   </a>
@@ -1510,28 +1551,65 @@
   
 
 
-<h1 id="volume-metrics">Volume Metrics</h1>
-<h2 id="what-is-it">What is it?</h2>
-<p>Volume metrics are the simplest form of measurement: <strong>counting things</strong>.</p>
+<h1 id="volume">Volume</h1>
+<p>Volume answers the simplest question there is: <strong>how much code is this?</strong> It
+looks trivial next to the fancier metrics, but size is the measurement that
+correlates most strongly with defects. More code, more bugs. Everything else
+you'll read in this guide should be interpreted <em>relative to volume</em>.</p>
+<h2 id="the-three-counters">The three counters</h2>
+<p>Take this file:</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// Applies the yearly discount policy.</span>
+<span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">discount</span><span class="p">(</span><span class="nx">order</span><span class="o">:</span><span class="w"> </span><span class="kt">Order</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// VIPs always get 10%.</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">order</span><span class="p">.</span><span class="nx">customer</span><span class="p">.</span><span class="nx">isVip</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">order</span><span class="p">.</span><span class="nx">total</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mf">0.10</span><span class="p">;</span>
+<span class="w">  </span><span class="p">}</span>
+
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="mf">0</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>AST Metrics counts it three ways:</p>
 <ul>
-<li><strong>LOC (Lines of Code)</strong>: The total number of lines in a file.</li>
-<li><strong>LLOC (Logical Lines of Code)</strong>: The number of executable statements (ignoring comments and whitespace).</li>
-<li><strong>CLOC (Comment Lines of Code)</strong>: The number of comment lines.</li>
+<li><strong>LOC (lines of code)</strong>: 9. Every line, including comments and blanks. This
+  is the size of the file as your eyes experience it.</li>
+<li><strong>LLOC (logical lines of code)</strong>: 3. Only the executable statements (the
+  <code>if</code> and the two <code>return</code>s). This is how much the file actually <em>does</em>.</li>
+<li><strong>CLOC (comment lines of code)</strong>: 2. The comment lines.</li>
 </ul>
-<h2 id="why-it-matters">Why it matters?</h2>
-<p>It might seem basic, but <strong>Volume is the metric that correlates most strongly with defects</strong>.
-Statistically, the more code you have, the more bugs you will have. It's a law of nature in software engineering.</p>
-<div class="admonition tip">
-<p class="admonition-title">Use Volume as a baseline</p>
-<p>A class with high complexity is bad. A <em>huge</em> class with high complexity is worse.
-Always look at other metrics in the context of volume.</p>
-</div>
-<h2 id="how-to-read-it">How to read it?</h2>
+<p>The gap between LOC and LLOC is interesting on its own. A file with 700 LOC
+and 80 LLOC is mostly comments and formatting, probably fine. A file with 700
+LOC and 500 LLOC is a dense wall of logic.</p>
+<h2 id="how-to-read-it">How to read it</h2>
+<p>Volume is rarely a problem alone; it's a multiplier for every other problem:</p>
 <ul>
-<li><strong>High Volume + High Complexity</strong>: 🚩 <strong>Red Flag</strong>. Hard to maintain, prone to bugs.</li>
-<li><strong>High Volume + Low Complexity</strong>: Often data structures or configuration. Usually safe.</li>
-<li><strong>Low Volume</strong>: Generally safe, unless it's "code golf" (overly clever one-liners).</li>
+<li><strong>Big and complex</strong>: the classic danger zone. Hard to understand, hard to
+  test, and statistically where bugs live. This is what the
+  <a href="../risk/">risk score</a> hunts for.</li>
+<li><strong>Big and simple</strong>: usually configuration, data tables, generated code.
+  Boring, and boring is fine.</li>
+<li><strong>Small</strong>: usually safe. Watch only for "code golf", where three lines do
+  the work of thirty and nobody can read them.</li>
 </ul>
+<p>On <a href="../../getting-started/your-first-analysis/">Monolog</a>, the analysis counts
+14 936 production lines, of which 3 041 are logical. The biggest file,
+<code>Logger.php</code>, is 751 lines: five times the size of an average file in the
+project, which is exactly why the other metrics keep an eye on it.</p>
+<h2 id="see-it-on-your-code">See it on your code</h2>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>.
+</code></pre></div>
+<p>The <code>Size</code> block of the summary gives the project totals, split between
+production and test code. In the HTML report, the code map on the overview
+page draws every class as a bubble whose <strong>size is its LOC</strong>: the big bubbles
+are your big files, no table needed.</p>
+<h2 id="keep-it-in-check">Keep it in check</h2>
+<p>The <code>volume</code> ruleset turns size into <a href="../../ci/linting-architecture/">lint rules</a>:</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>ruleset<span class="w"> </span>add<span class="w"> </span>volume
+</code></pre></div>
+<p>It gives you <code>max_loc</code> and <code>max_logical_loc</code> per file, <code>max_loc_by_method</code>,
+<code>max_methods_per_class</code>, <code>max_parameters_per_method</code> and <code>max_nested_blocks</code>,
+with thresholds you can adjust in <code>.ast-metrics.yaml</code>. On a pull request,
+<a href="../../getting-started/review-changes/"><code>ast-metrics review</code></a> only flags the
+files your branch made bigger than the rules allow.</p>
 
 
 
@@ -1552,7 +1630,7 @@ Always look at other metrics in the context of volume.</p>
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 31, 2026 13:36:07 UTC">2026-08-31</span>
   </span>
 
     

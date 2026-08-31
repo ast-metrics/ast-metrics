@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The architecture map shows your real dependency structure: layers, hidden coupling and circular dependencies.">
+        <meta name="description" content="How AST Metrics reads your real architecture: the plain-language verdict, the layered community map, the cycles to cut and the boundaries to freeze.">
       
       
         <meta name="author" content="Jean-François Lépine">
@@ -401,6 +401,8 @@
       
         
       
+        
+      
     
     
     
@@ -470,6 +472,34 @@
     
   
     Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/your-first-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
   
 
     
@@ -621,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
             
   
   
@@ -642,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1107,69 +1137,57 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-it-reveals" class="md-nav__link">
+  <a href="#start-with-the-verdict" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What It Reveals
+        Start with the verdict
       
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="What It Reveals">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#what-to-look-for" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What to Look For
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-it-works" class="md-nav__link">
+  <a href="#read-the-map" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How It Works
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="How It Works">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-community-detection" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Community Detection
+        Read the map
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#2-dependency-layering" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#then-do-something-about-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Dependency Layering
+        Then do something about it
       
     </span>
   </a>
   
 </li>
-        
-      </ul>
-    </nav>
+      
+        <li class="md-nav__item">
+  <a href="#freeze-the-shape-you-want" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freeze the shape you want
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-other-two-views" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The other two views
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1545,38 +1563,92 @@
 
 
 <h1 id="architecture-map">Architecture Map</h1>
-<h2 id="what-it-reveals">What It Reveals</h2>
-<p>The Architecture Map shows you the <strong>truth about your code structure</strong>.</p>
-<p>Developers often believe their architecture follows a certain pattern: "We have clean layers," "Our domain is isolated," "We follow hexagonal architecture." But code tells a different story.</p>
-<p><strong>The Architecture Map doesn't lie.</strong> It reveals:</p>
+<p>Every team has two architectures: the one on the whiteboard and the one in
+the code. AST Metrics draws the second one and answers the question: <strong>does my
+system actually have the shape I believe it has?</strong> Not with a diagram to
+decipher, but with a verdict in plain words, a map, and the first three moves
+to make.</p>
+<p>Generate the report and open the <strong>Architecture → Natural groups</strong> page:</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>--report-html<span class="o">=</span>report<span class="w"> </span>--open-html<span class="w"> </span>.
+</code></pre></div>
+<h2 id="start-with-the-verdict">Start with the verdict</h2>
+<p>The page opens with a sentence, not a chart. On
+<a href="../../getting-started/your-first-analysis/">Monolog</a>, it reads:</p>
+<p><img alt="The verdict on Monolog: 3 of the 6 communities depend on each other in 1 cycle, and the shared kernel is heavy" src="../../images/architecture-monolog-verdict.png" /></p>
+<p>Everything in that sentence is computed, and everything is clickable: the
+names link to the communities they describe. Under it, five numbers summarize
+the whole structure:</p>
 <ul>
-<li><strong>The real dependencies</strong>, not the intended ones</li>
-<li><strong>Hidden coupling</strong> between modules you thought were independent</li>
-<li><strong>Circular dependencies</strong> that make refactoring painful</li>
-<li><strong>Layer violations</strong> where low-level code depends on high-level code</li>
+<li><strong>6 communities</strong>: the groups the classes actually form on the dependency
+  graph, found without ever reading a folder name.</li>
+<li><strong>38% / 56% / 6%</strong>: where dependencies go. Inside their own community
+  (healthy), to the <strong>shared kernel</strong> (expected, unless it grows into a
+  centre of gravity, as it has here), or <strong>crossing</strong> from one community to
+  another (the share to watch: amber above 15%).</li>
+<li><strong>1 cycle</strong>: communities that need each other to compile, so none of them
+  can be understood, tested or extracted alone.</li>
+<li><strong>67% of commits agree</strong>: the git history read against the boundaries. When
+  most commits stay inside one community, the structure matches how the team
+  actually works.</li>
 </ul>
-<p><img alt="Architecture Map" src="../../images/architecture-vertical.png" /></p>
-<h3 id="what-to-look-for">What to Look For</h3>
-<p><strong>Vertical Strata</strong>: If your application is well-layered, you'll see clear vertical levels. High-level components (controllers, UI) at the top, low-level utilities at the bottom.</p>
-<p><strong>Flat Horizontal Graph</strong>: Everything at the same level means your code lacks proper separation of concerns. No clear boundaries between layers.</p>
-<p><strong>Cycles</strong>: Circular dependencies appear as loops. These create rigid, hard-to-test code.</p>
-<div class="admonition tip">
-<p class="admonition-title">Reality check</p>
-<p>If you think you have a layered architecture but the map shows a flat horizontal line, your code is not as decoupled as you think. The graph doesn't lie.</p>
-</div>
-<hr />
-<h2 id="how-it-works">How It Works</h2>
-<h3 id="1-community-detection">1. Community Detection</h3>
-<p>Instead of showing thousands of individual classes, AST Metrics groups them into <strong>Communities</strong> using the <strong>Louvain Algorithm</strong>.</p>
-<p>A Community is a cluster of classes that interact more with each other than with the rest of the system.</p>
-<p><img alt="Community Detection" src="../../images/community-detection-explainer.png" /></p>
-<h3 id="2-dependency-layering">2. Dependency Layering</h3>
-<p>Once communities are identified, the graph arranges them based on <strong>Dependency Degree</strong>:</p>
+<p>Even one of the most respected PHP codebases in the world gets findings.
+That's the point: the goal is not a trophy, it's knowing where the structure
+and the work disagree.</p>
+<h2 id="read-the-map">Read the map</h2>
+<p><img alt="The layered map of Monolog, with the red dashed arrows closing the cycle and the ranked actions underneath" src="../../images/architecture-monolog-map.png" /></p>
+<p>The map draws communities, not classes, and the layout carries the meaning:</p>
 <ul>
-<li><strong>Top Layers</strong>: High-level components (Controllers, Presentation). They depend on many things but are rarely depended upon.</li>
-<li><strong>Bottom Layers</strong>: Low-level components (Utilities, Core Domain, Infrastructure). Used by everyone but depend on few.</li>
+<li><strong>What nobody depends on sits at the top, what everything rests on sits at
+  the bottom.</strong> The vertical order is computed from the arrows alone. If your
+  layers exist, you'll see strata; if everything sits at the same level,
+  everything depends on everything.</li>
+<li><strong>A red dashed arrow climbing back up closes a cycle</strong>, and it's chosen as
+  one of the lightest to cut. The toggles show the graph <strong>as it is</strong>, <strong>only
+  the cycles to cut</strong>, or <strong>after the cuts</strong>.</li>
+<li><strong>The dashed grey box is the shared kernel</strong>: the classes everyone uses
+  (<code>LogRecord</code>, <code>Level</code>, ...), set apart so they don't glue unrelated
+  communities together.</li>
+<li><strong>Zoom on a folder</strong> redraws the map inside any folder, as if it were the
+  whole project. Useful when the top-level map says "fine" but one module
+  feels wrong.</li>
 </ul>
-<p>The vertical position is purely mathematical, based on how many dependencies point <em>to</em> vs <em>from</em> each component.</p>
+<h2 id="then-do-something-about-it">Then do something about it</h2>
+<p>Under the map, <strong>Where to start</strong> turns the analysis into a short ranked
+list. On Monolog: cut <code>Handler → Handler (MissingExtensionException)</code>, 3
+references carried by three named classes, and one community leaves the
+cycle. Each action names the exact dependencies to break and what you gain.
+The <strong>What stands out</strong> tab goes further: each finding is one observation
+(a cycle, a folder split across communities, two communities the same
+commits keep touching, a kernel that depends on its users), with the numbers
+behind it.</p>
+<p><a href="../community-detection/">Community Detection</a> documents how all of this is
+computed: the Louvain detection, the kernel criteria, every finding and every
+threshold.</p>
+<h2 id="freeze-the-shape-you-want">Freeze the shape you want</h2>
+<p>Seeing the drift is half the job; blocking it is one rule away. Three
+<a href="../../ci/linting-architecture/">project rules</a> guard the boundaries:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">requirements</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">rules</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">architecture</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">no_community_cycles</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">max_community_cross_share</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">      </span><span class="nt">no_cross_community_dependencies</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<p>The last one fails on <em>every</em> crossing, so it's meant to be frozen once:</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>baseline
+</code></pre></div>
+<p>Today's crossings are accepted; from now on, only a <strong>new</strong> crossing fails
+<code>ast-metrics lint</code>. Your architecture stops degrading silently, and legacy
+code never blocks a build.</p>
+<h2 id="the-other-two-views">The other two views</h2>
+<ul>
+<li><strong>Architecture → Dependencies</strong>: the same truth at file level. The graph of
+  who imports whom, circular chains, the "handle with care" files that
+  everything depends on.</li>
+<li><strong>Architecture → Roles</strong>: an optional AI classification of each class's
+  role in the system. It runs locally and only when you pass
+  <code>--architecture</code> to <code>ast-metrics analyze</code>.</li>
+</ul>
 
 
 
@@ -1597,7 +1669,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 31, 2026 13:36:07 UTC">2026-08-31</span>
   </span>
 
     

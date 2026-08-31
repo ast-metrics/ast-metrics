@@ -125,6 +125,8 @@ requirements:
       max_efferent_coupling: 10
       min_maintainability: 70
       no_circular_dependencies: true
+      no_community_cycles: true
+      max_community_cross_share: 20
     volume:
       max_loc_by_method: 30
       max_methods_per_class: 20
@@ -169,7 +171,7 @@ Nine tools are exposed over stdio:
 | `find_risky_code` | Components with the highest risk score. |
 | `get_coupling` | Afferent and efferent coupling for a component. |
 | `get_dependencies` | The dependency subgraph around a component. |
-| `get_communities` | Detected architectural communities and their metrics. |
+| `get_communities` | The communities the code forms on the dependency graph: members, kernel, cycles, findings, actions. |
 | `get_test_quality` | Test isolation, traceability, god tests, orphan classes. |
 | `list_components` | Inventory of classes, functions and components. |
 
@@ -186,8 +188,8 @@ changing its interface, or which files carry risk before proposing a refactor.
 | Risk score | Complexity crossed with churn: where bugs are likely to hide. |
 | Coupling and instability | How entangled components are, and which way dependencies point. |
 | Class cohesion (LCOM4) | Whether the methods of a class belong together. |
-| Community detection | The groups your code actually forms, via the Louvain algorithm. |
-| Architecture map | The dependency graph, including circular dependencies. |
+| Community detection | The groups your classes form on the dependency graph, the shared kernel, the cycles between them, and whether the git history agrees with the boundaries. |
+| Architecture map | The layered map of the communities, the cycles with the dependencies to cut, and the file-level dependency graph. |
 | Bus factor | How concentrated knowledge is, from git history. |
 
 ## Continuous integration
@@ -224,11 +226,13 @@ workflow to every repository of a GitHub organization.
 - [Why AST Metrics?](https://ast-metrics.dev/getting-started/): what it computes and how.
 - [Installation](https://ast-metrics.dev/getting-started/install/): every install method.
 - [First execution](https://ast-metrics.dev/getting-started/first-execution/): the interactive UI.
+- [Tutorial: your first analysis](https://ast-metrics.dev/getting-started/your-first-analysis/): a guided, real-world walkthrough on Monolog.
 - [Reviewing your changes](https://ast-metrics.dev/getting-started/review-changes/): the `review` command in depth.
 - [Understanding the output](https://ast-metrics.dev/getting-started/understand/): AST, graphs, and what is derived from them.
 - [Generating a report](https://ast-metrics.dev/getting-started/generate-reports/): HTML, Markdown, JSON, SARIF, OpenMetrics.
 - [Metrics guide](https://ast-metrics.dev/metrics/): one page per metric, with thresholds and how to act.
 - [GitHub Actions](https://ast-metrics.dev/ci/github-actions/): all inputs and permissions.
 - [Rulesets and linting](https://ast-metrics.dev/ci/linting-architecture/): every available rule.
+- [Community detection](https://ast-metrics.dev/metrics/community-detection/): how the communities are found, the map, the findings, freezing the boundaries with `no_cross_community_dependencies` and `ast-metrics baseline`.
 - [GitLab CI](https://ast-metrics.dev/ci/gitlab-ci/)
 - [MCP server](https://ast-metrics.dev/ai/mcp-server/): setup for Claude, Cursor and other clients.

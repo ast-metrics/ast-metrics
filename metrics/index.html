@@ -401,6 +401,8 @@
       
         
       
+        
+      
     
     
     
@@ -470,6 +472,34 @@
     
   
     Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/your-first-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
   
 
     
@@ -621,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
             
   
   
@@ -642,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1431,36 +1461,62 @@
 
 
 <h1 id="metrics-overview">Metrics Overview</h1>
-<p>AST Metrics provides a comprehensive set of metrics to help you understand the quality, structure, and health of your codebase.</p>
-<p>We believe that <strong>code quality is not just about style</strong>. It's about:</p>
+<p>Every metric in AST Metrics exists to answer one practical question about your
+code. You don't need to learn them all: start from the question you're asking,
+and read the page that answers it.</p>
+<p>If you have never run an analysis, do the
+<a href="../getting-started/your-first-analysis/">hands-on tutorial</a> first: it walks
+through a real analysis of Monolog and teaches you to read the numbers in ten
+minutes. Every page below then goes deeper on one metric, always in the same
+shape: what it measures, how to read it, and what to do about it.</p>
+<h2 id="where-should-i-start-refactoring">"Where should I start refactoring?"</h2>
 <ul>
-<li><strong>Reliability</strong>: How likely is it to break?</li>
-<li><strong>Maintainability</strong>: How easy is it to change?</li>
-<li><strong>Architecture</strong>: Does the code structure match your mental model?</li>
+<li><a href="risk/"><strong>Risk Score</strong></a> crosses complexity with git activity and points at
+  the handful of files where the next bug is statistically waiting. This is
+  the first list to read on any codebase.</li>
 </ul>
-<h2 id="available-metrics">Available Metrics</h2>
-<h3 id="volume-complexity">📏 Volume &amp; Complexity</h3>
+<h2 id="is-this-code-too-complicated">"Is this code too complicated?"</h2>
 <ul>
-<li><a href="volume/"><strong>Volume</strong></a>: Lines of code, logical lines, comments. The baseline for everything.</li>
-<li><a href="cyclomatic-complexity/"><strong>Cyclomatic Complexity</strong></a>: How many paths through your code?</li>
-<li><a href="maintainability-index/"><strong>Maintainability Index</strong></a>: A global score for code health.</li>
-<li><a href="risk/"><strong>Risk Score</strong></a>: Complexity × Churn. Where are the bugs hiding?</li>
+<li><a href="cyclomatic-complexity/"><strong>Cyclomatic Complexity</strong></a> counts the independent
+  paths through a function: every path is something to understand and to test.</li>
+<li><a href="volume/"><strong>Volume</strong></a> counts lines of code, logical lines and comments.
+  Basic, but size is the metric that correlates most strongly with defects.</li>
+<li><a href="maintainability-index/"><strong>Maintainability Index</strong></a> blends both into a
+  single 0-100 health score per file, perfect for trends and thresholds.</li>
 </ul>
-<h3 id="coupling-cohesion">🔗 Coupling &amp; Cohesion</h3>
+<h2 id="is-this-class-well-designed">"Is this class well designed?"</h2>
 <ul>
-<li><a href="coupling/"><strong>Coupling &amp; Instability</strong></a>: How classes depend on each other.</li>
-<li><a href="lcom4/"><strong>LCOM4</strong></a>: Do methods in a class belong together?</li>
+<li><a href="lcom4/"><strong>Class Cohesion (LCOM4)</strong></a> detects classes that are really two
+  or three unrelated classes stuck together.</li>
+<li><a href="coupling/"><strong>Coupling &amp; Instability</strong></a> measures who depends on whom, and
+  whether your dependencies point in a direction that keeps change cheap.</li>
 </ul>
-<h3 id="tests">🧪 Tests</h3>
+<h2 id="do-my-tests-actually-protect-me">"Do my tests actually protect me?"</h2>
 <ul>
-<li><a href="test-quality/"><strong>Test Quality</strong></a>: Isolation, traceability, god tests and untested classes.</li>
+<li><a href="test-quality/"><strong>Test Quality</strong></a> measures test isolation, god tests, and
+  the production classes that have no test at all, without running a single
+  test.</li>
 </ul>
-<h3 id="architecture-team">🏗️ Architecture &amp; Team</h3>
+<h2 id="does-my-architecture-match-what-i-think-it-is">"Does my architecture match what I think it is?"</h2>
 <ul>
-<li><a href="community-detection/"><strong>Community Detection</strong></a>: The natural structure of your code.</li>
-<li><a href="bus-factor/"><strong>Bus Factor</strong></a>: Knowledge distribution and risk.</li>
-<li><a href="architecture-map/"><strong>Architecture Map</strong></a>: Visualizing the system.</li>
+<li><a href="architecture-map/"><strong>Architecture Map</strong></a> reads your real structure and
+  states it in plain words: the communities your classes form, the layered
+  map, the cycles with the exact dependencies to cut, and the rules that
+  freeze the boundaries in CI.</li>
+<li><a href="community-detection/"><strong>Community Detection</strong></a> is the deep dive behind
+  it: how the communities are found, every finding, the git history read
+  against the boundaries.</li>
 </ul>
+<h2 id="what-happens-if-someone-leaves">"What happens if someone leaves?"</h2>
+<ul>
+<li><a href="bus-factor/"><strong>Bus Factor</strong></a> reads the git history to find the parts of
+  the codebase only one person knows.</li>
+</ul>
+<hr />
+<p>Every metric is available in the terminal summary (<code>ast-metrics analyze</code>), the
+HTML report (<code>--report-html</code>), the JSON report, and to AI agents through the
+<a href="../ai/mcp-server/">MCP server</a>. Most of them can also be enforced as
+<a href="../ci/linting-architecture/">lint rules</a> with thresholds you choose.</p>
 
 
 
@@ -1481,7 +1537,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 31, 2026 13:36:07 UTC">2026-08-31</span>
   </span>
 
     

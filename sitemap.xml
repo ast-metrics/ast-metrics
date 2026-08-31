@@ -14,7 +14,7 @@
     </url>
     <url>
          <loc>https://ast-metrics.dev/ai/mcp-server/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-18</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/ci/deploy-github-org/</loc>
@@ -30,7 +30,7 @@
     </url>
     <url>
          <loc>https://ast-metrics.dev/ci/linting-architecture/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-18</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/ci/tips/</loc>
@@ -42,7 +42,7 @@
     </url>
     <url>
          <loc>https://ast-metrics.dev/getting-started/first-execution/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-31</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/getting-started/generate-reports/</loc>
@@ -61,40 +61,44 @@
          <lastmod>2026-08-15</lastmod>
     </url>
     <url>
+         <loc>https://ast-metrics.dev/getting-started/your-first-analysis/</loc>
+         <lastmod>2026-08-31</lastmod>
+    </url>
+    <url>
          <loc>https://ast-metrics.dev/metrics/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-31</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/metrics/architecture-map/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-31</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/metrics/bus-factor/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-31</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/metrics/community-detection/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-18</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/metrics/coupling/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-31</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/metrics/cyclomatic-complexity/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-31</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/metrics/lcom4/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-31</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/metrics/maintainability-index/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-31</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/metrics/risk/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-31</lastmod>
     </url>
     <url>
          <loc>https://ast-metrics.dev/metrics/test-quality/</loc>
@@ -102,6 +106,6 @@
     </url>
     <url>
          <loc>https://ast-metrics.dev/metrics/volume/</loc>
-         <lastmod>2026-08-15</lastmod>
+         <lastmod>2026-08-31</lastmod>
     </url>
 </urlset>

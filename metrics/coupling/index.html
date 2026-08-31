@@ -401,6 +401,8 @@
       
         
       
+        
+      
     
     
     
@@ -470,6 +472,34 @@
     
   
     Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/your-first-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
   
 
     
@@ -621,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
             
   
   
@@ -642,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -995,10 +1025,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#afferent-coupling-ca" class="md-nav__link">
+  <a href="#afferent-coupling-ca-who-uses-me" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Afferent Coupling (Ca)
+        Afferent coupling (Ca): who uses me?
       
     </span>
   </a>
@@ -1006,10 +1036,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#efferent-coupling-ce" class="md-nav__link">
+  <a href="#efferent-coupling-ce-whom-do-i-use" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Efferent Coupling (Ce)
+        Efferent coupling (Ce): whom do I use?
       
     </span>
   </a>
@@ -1017,41 +1047,24 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#instability-i" class="md-nav__link">
+  <a href="#instability-which-way-should-the-arrow-point" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Instability (I)
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Instability (I)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#0-stable" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        0: Stable
+        Instability: which way should the arrow point?
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#1-unstable" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#see-it-on-your-code" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1: Unstable
+        See it on your code
       
     </span>
   </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -1539,38 +1552,66 @@
 
 
 <h1 id="coupling-instability">Coupling &amp; Instability</h1>
-<p>Coupling measures how dependent classes are on each other. High coupling makes code rigid and fragile.</p>
-<h2 id="afferent-coupling-ca">Afferent Coupling (Ca)</h2>
-<p><strong>"Who uses me?"</strong>
-- The number of classes that depend on this class.
-- <strong>High Ca</strong>: This class is <strong>Critical</strong> or <strong>Responsible</strong>.
-- Examples: Core domain entities, Utility classes, Shared libraries.
-- <strong>Risk</strong>: If you change this class, you might break many things (high impact).</p>
-<h2 id="efferent-coupling-ce">Efferent Coupling (Ce)</h2>
-<p><strong>"Who do I use?"</strong>
-- The number of classes this class depends on.
-- <strong>High Ce</strong>: This class is <strong>Dependent</strong>.
-- Examples: Orchestrators, Facades.
-- <strong>Risk</strong>: This class is fragile because it breaks if any of its dependencies change.</p>
-<h2 id="instability-i">Instability (I)</h2>
-<p>Instability is a ratio between 0 and 1 derived from coupling.</p>
-<p><code>I = Ce / (Ca + Ce)</code></p>
-<h3 id="0-stable">0: Stable</h3>
-<p><strong>I am used by many, but I use no one.</strong>
-- Hard to change because many depend on it.
-- Should be very robust and abstract.
-- Example: <code>String</code>, <code>Integer</code>, Core Interfaces.</p>
-<h3 id="1-unstable">1: Unstable</h3>
-<p><strong>I use many, but nobody uses me.</strong>
-- Easy to change because nobody depends on it.
-- Can be concrete and volatile.
-- Example: Controllers, CLI Commands, Scripts.</p>
+<p>Coupling answers: <strong>when I change this class, what else moves?</strong> Two numbers
+describe it, and they are just the two directions of the same arrow.</p>
+<h2 id="afferent-coupling-ca-who-uses-me">Afferent coupling (Ca): who uses me?</h2>
+<p>Ca counts the classes that depend on this one. Say <code>Money</code> is used by 40
+classes: its Ca is 40.</p>
+<ul>
+<li>High Ca means <strong>responsibility</strong>: change <code>Money</code> and 40 classes feel it.</li>
+<li>Typical high-Ca citizens: domain entities, core interfaces, shared
+  utilities.</li>
+<li>The requirement that comes with it: be stable, be tested, break nothing.</li>
+</ul>
+<h2 id="efferent-coupling-ce-whom-do-i-use">Efferent coupling (Ce): whom do I use?</h2>
+<p>Ce counts the classes this one depends on. A <code>CheckoutController</code> that pulls
+in twelve services has a Ce of 12.</p>
+<ul>
+<li>High Ce means <strong>fragility</strong>: this class breaks when any of its twelve
+  dependencies changes.</li>
+<li>Typical high-Ce citizens: controllers, orchestrators, facades.</li>
+</ul>
+<h2 id="instability-which-way-should-the-arrow-point">Instability: which way should the arrow point?</h2>
+<p>Instability folds both into a ratio from 0 to 1:</p>
+<div class="highlight"><pre><span></span><code>I = Ce / (Ca + Ce)
+</code></pre></div>
+<ul>
+<li><strong>I close to 0</strong>: everyone depends on me, I depend on nobody. Stable.
+  <code>Money</code> again: hard to change, and that's fine, because it shouldn't.</li>
+<li><strong>I close to 1</strong>: I depend on many, nobody depends on me. Volatile.
+  A controller: easy to change, and that's exactly what you want from it.</li>
+</ul>
+<p>Neither end is bad. What's bad is the <em>direction of dependencies</em> between
+them, which is the Stable Dependencies Principle:</p>
 <div class="admonition tip">
-<p class="admonition-title">The Stable Dependencies Principle (SDP)</p>
-<p>Dependencies should point in the direction of stability.
-A component should only depend on components that are more stable than itself.</p>
-<p><strong>Unstable (Variable)</strong> → <strong>Stable (Abstract)</strong></p>
+<p class="admonition-title">Depend toward stability</p>
+<p>A component should only depend on components more stable than itself.
+Controllers (unstable) depending on entities (stable): healthy. An entity
+depending on a controller: every UI whim now shakes your domain model.</p>
 </div>
+<p>A concrete smell: a class with <strong>both</strong> high Ca and high Ce. Half the codebase
+depends on it, and it depends on half the codebase. Congratulations, you've
+found the class nobody dares to touch.</p>
+<p>On <a href="../../getting-started/your-first-analysis/">Monolog</a>, seven classes
+(<code>LogRecord</code>, <code>Level</code>, <code>FormatterInterface</code>...) receive 56% of all
+dependencies: extreme afferent coupling, largely deliberate in a library
+whose core contracts everyone implements. The
+<a href="../architecture-map/">architecture analysis</a> sets those classes apart as the
+shared kernel, and says out loud when such a centre of gravity stops looking
+deliberate.</p>
+<h2 id="see-it-on-your-code">See it on your code</h2>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>.
+</code></pre></div>
+<p>The <code>Coupling</code> block of the summary gives the averages and the instability.
+The HTML report's Dependencies page shows the graph itself, and the
+<a href="../architecture-map/">Architecture Map</a> shows how coupling shapes your layers.</p>
+<p>To enforce limits, the <code>architecture</code> ruleset provides <code>max_afferent_coupling</code>
+and <code>max_efferent_coupling</code>, plus a <code>coupling</code> rule to forbid specific
+dependencies by name (for instance, <code>Controller</code> must never reach
+<code>Repository</code> directly). See
+<a href="../../ci/linting-architecture/">Rulesets &amp; Linting</a>:</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>ruleset<span class="w"> </span>add<span class="w"> </span>architecture
+</code></pre></div>
 
 
 
@@ -1591,7 +1632,7 @@ A component should only depend on components that are more stable than itself.</
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 31, 2026 13:36:07 UTC">2026-08-31</span>
   </span>
 
     

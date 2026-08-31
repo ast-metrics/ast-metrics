@@ -401,6 +401,8 @@
       
         
       
+        
+      
     
     
     
@@ -470,6 +472,34 @@
     
   
     Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/your-first-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
   
 
     
@@ -621,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
             
   
   
@@ -642,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -939,21 +969,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-is-it" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        What is it?
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#how-to-read-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How to read it?
+        How to read it
       
     </span>
   </a>
@@ -961,10 +980,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#limitations" class="md-nav__link">
+  <a href="#the-exception-to-know" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Limitations
+        The exception to know
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-it-on-your-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See it on your code
       
     </span>
   </a>
@@ -1511,14 +1541,19 @@
 
 
 <h1 id="maintainability-index">Maintainability Index</h1>
-<h2 id="what-is-it">What is it?</h2>
-<p>The Maintainability Index (MI) is a composite score (0-100) designed to indicate how maintainable (easy to support and change) the source code is.</p>
-<p>It is calculated using a polynomial equation that combines:
-- <strong>Halstead Volume</strong>: Measures the size of the implementation (vocabulary and length).
-- <strong>Cyclomatic Complexity</strong>: Measures the control flow complexity.
-- <strong>Lines of Code</strong>: Measures the physical size.</p>
-<h2 id="how-to-read-it">How to read it?</h2>
-<p>It gives you a single number to judge a file's health at a glance.</p>
+<p>The maintainability index (MI) answers: <strong>if I had to change this file
+tomorrow, how much would it hurt?</strong> It compresses three measurements into one
+score from 0 to 100:</p>
+<ul>
+<li><strong>Halstead volume</strong>: how much vocabulary the code juggles (operators,
+  operands, their repetitions).</li>
+<li><strong><a href="../cyclomatic-complexity/">Cyclomatic complexity</a></strong>: how many execution
+  paths run through it.</li>
+<li><strong><a href="../volume/">Lines of code</a></strong>: how physically big it is.</li>
+</ul>
+<p>A short, simple, documented file scores near 100. A long file full of branches
+scores badly, whatever the language.</p>
+<h2 id="how-to-read-it">How to read it</h2>
 <table>
 <thead>
 <tr>
@@ -1530,27 +1565,48 @@
 <tbody>
 <tr>
 <td><strong>85-100</strong></td>
-<td>🟢 A</td>
-<td><strong>Excellent</strong>. Easy to maintain.</td>
+<td>🟢</td>
+<td>Easy to change. Touch it without fear.</td>
 </tr>
 <tr>
 <td><strong>65-84</strong></td>
-<td>🟡 B</td>
-<td><strong>Good</strong>. Moderate maintainability.</td>
+<td>🟡</td>
+<td>Moderate. Changes need attention, not heroism.</td>
 </tr>
 <tr>
 <td><strong>&lt; 65</strong></td>
-<td>🔴 C</td>
-<td><strong>Bad</strong>. Hard to maintain. Consider refactoring.</td>
+<td>🔴</td>
+<td>Hard to change safely. Refactor before you need to.</td>
 </tr>
 </tbody>
 </table>
-<h2 id="limitations">Limitations</h2>
-<div class="admonition note">
-<p class="admonition-title">Context matters</p>
-<p>A complex algorithm (like a parser or a mathematical computation) might naturally have a lower score. But for standard business logic, controllers, or services, you should aim for green.</p>
-</div>
-<p>The Maintainability Index is best used as a <strong>trend metric</strong>. If it drops over time, your technical debt is increasing.</p>
+<p>Two habits make this metric useful rather than decorative:</p>
+<p><strong>Read the worst files, not the average.</strong> A project average of 81, like
+<a href="../../getting-started/your-first-analysis/">Monolog</a>'s, is reassuring, but the
+actionable information is the 5 classes that score below 65. On Monolog the
+worst is <code>LineFormatter.php</code> at 63: that's the file where a "quick change"
+takes an afternoon.</p>
+<p><strong>Watch the trend.</strong> A file whose MI drifts from 80 to 70 over six months is
+telling you where technical debt is accumulating, long before anyone says the
+word "rewrite". This is what
+<a href="../../getting-started/review-changes/"><code>ast-metrics review</code></a> automates on
+every pull request: it compares your branch to its base and flags the files
+whose maintainability got worse.</p>
+<h2 id="the-exception-to-know">The exception to know</h2>
+<p>Some code is irreducibly dense: parsers, cryptographic routines, numeric
+algorithms. A low MI there describes the domain, not the developer. Don't
+chase green on a Fourier transform; do chase it on controllers, services and
+everything a teammate edits weekly.</p>
+<h2 id="see-it-on-your-code">See it on your code</h2>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>.
+</code></pre></div>
+<p>The <code>Maintainability</code> block opens the summary: the project index, and the
+count of classes below the 65 threshold. The HTML report shows the score per
+class, sortable, on the Classes page. To enforce a floor, the <code>architecture</code>
+ruleset ships a <code>min_maintainability</code> rule for your
+<a href="../../ci/linting-architecture/"><code>.ast-metrics.yaml</code></a>:</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>ruleset<span class="w"> </span>add<span class="w"> </span>architecture
+</code></pre></div>
 
 
 
@@ -1571,7 +1627,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 31, 2026 13:36:07 UTC">2026-08-31</span>
   </span>
 
     

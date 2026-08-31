@@ -401,6 +401,8 @@
       
         
       
+        
+      
     
     
     
@@ -470,6 +472,34 @@
     
   
     Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/your-first-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
   
 
     
@@ -621,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
             
   
   
@@ -642,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -911,21 +941,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-is-it" class="md-nav__link">
+  <a href="#count-it-yourself-once" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What is it?
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#why-it-matters" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Why it matters?
+        Count it yourself, once
       
     </span>
   </a>
@@ -947,7 +966,18 @@
   <a href="#how-to-reduce-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How to reduce it?
+        How to reduce it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-it-on-your-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See it on your code
       
     </span>
   </a>
@@ -1522,70 +1552,117 @@
 
 
 <h1 id="cyclomatic-complexity">Cyclomatic Complexity</h1>
-<video controls preload="none" src="../../animations/Cyclomatic-complexity.webm" title="How cyclomatic complexity counts the paths through a function"></video>
-
-<h2 id="what-is-it">What is it?</h2>
-<p>Cyclomatic Complexity (often denoted as <code>V(G)</code>) measures the <strong>number of independent paths</strong> through your code.
-Think of your code as a maze. Every control structure adds a turn or a branch in the maze.</p>
-<p>It counts:</p>
-<ul>
-<li><code>if</code>, <code>else</code>, <code>elseif</code></li>
-<li><code>while</code>, <code>for</code>, <code>foreach</code></li>
-<li><code>case</code>, <code>default</code></li>
-<li><code>catch</code></li>
-<li>Boolean operators (<code>&amp;&amp;</code>, <code>||</code>)</li>
-</ul>
-<h2 id="why-it-matters">Why it matters?</h2>
-<p>High complexity means:
-1.  <strong>Harder to understand</strong>: You can't hold the logic in your head.
-2.  <strong>Harder to test</strong>: You need at least one test case per path to cover everything. A complexity of 10 means you need at least 10 unit tests to achieve 100% branch coverage.</p>
-<p><img alt="what is Cyclomatic complexity" src="../../images/ill-ccn.webp" /></p>
-<ul>
-<li><strong>Complexity = 1</strong>: A straight road. No decisions.</li>
-<li><strong>Complexity = 5</strong>: A small neighborhood with a few turns.</li>
-<li><strong>Complexity = 50</strong>: A chaotic bowl of spaghetti.</li>
-</ul>
+<p>Cyclomatic complexity answers the question: <strong>how many different journeys can
+the execution take through this function?</strong> Every <code>if</code> opens a fork, every
+loop a detour, every <code>&amp;&amp;</code> a shortcut. Each journey is something you must
+understand when you read the code, and something you must exercise when you
+test it.</p>
+<h2 id="count-it-yourself-once">Count it yourself, once</h2>
+<p>A function starts at 1 (the straight road with no decisions). Then each
+<code>if</code>, <code>elseif</code>, loop, <code>case</code>, <code>catch</code>, <code>&amp;&amp;</code> and <code>||</code> adds one:</p>
+<div class="highlight"><pre><span></span><code><span class="kd">function</span><span class="w"> </span><span class="nx">shippingCost</span><span class="p">(</span><span class="nx">order</span><span class="o">:</span><span class="w"> </span><span class="kt">Order</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="p">{</span><span class="w">  </span><span class="c1">// 1: the function itself</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">order</span><span class="p">.</span><span class="nx">isDigital</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">                       </span><span class="c1">// +1 → 2</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mf">0</span><span class="p">;</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="kd">let</span><span class="w"> </span><span class="nx">cost</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">5</span><span class="p">;</span>
+<span class="w">  </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kd">const</span><span class="w"> </span><span class="nx">item</span><span class="w"> </span><span class="k">of</span><span class="w"> </span><span class="nx">order</span><span class="p">.</span><span class="nx">items</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">            </span><span class="c1">// +1 → 3</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">item</span><span class="p">.</span><span class="nx">fragile</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">item</span><span class="p">.</span><span class="nx">weight</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mf">10</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">    </span><span class="c1">// +2 → 5 (the if, the &amp;&amp;)</span>
+<span class="w">      </span><span class="nx">cost</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mf">12</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">cost</span><span class="p">;</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Complexity: <strong>5</strong>. And that number has a very concrete meaning: you need at
+least 5 test cases to cover every branch of this function. A function with a
+complexity of 40 needs at least 40. That's why complexity is really a
+testability metric wearing a readability costume.</p>
+<p><img alt="Low, high and critical complexity, seen as mazes" src="../../images/ill-ccn.webp" /></p>
 <h2 id="thresholds">Thresholds</h2>
-<div class="admonition important">
-<p class="admonition-title">Keep it under 10.</p>
-</div>
 <table>
 <thead>
 <tr>
 <th>Score</th>
 <th>Risk</th>
-<th>Recommendation</th>
+<th>What to do</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><strong>1-10</strong></td>
 <td>Low</td>
-<td>Simple code. Good.</td>
+<td>Nothing. This is what good code looks like.</td>
 </tr>
 <tr>
 <td><strong>11-20</strong></td>
 <td>Moderate</td>
-<td>More complex. Needs thorough testing.</td>
+<td>Acceptable, but test it thoroughly.</td>
 </tr>
 <tr>
 <td><strong>21-50</strong></td>
 <td>High</td>
-<td>High risk. <strong>Refactor</strong>. Split into smaller methods.</td>
+<td>Refactor: split it into smaller functions.</td>
 </tr>
 <tr>
 <td><strong>&gt; 50</strong></td>
 <td>Critical</td>
-<td>Untestable. <strong>Rewrite</strong>.</td>
+<td>Effectively untestable. Plan a rewrite.</td>
 </tr>
 </tbody>
 </table>
-<h2 id="how-to-reduce-it">How to reduce it?</h2>
-<ul>
-<li><strong>Extract Method</strong>: Take a complex part of the logic and move it to a new private method.</li>
-<li><strong>Early Return</strong>: Use <code>return</code> early to avoid deep nesting of <code>if/else</code>.</li>
-<li><strong>Strategy Pattern</strong>: Replace complex <code>switch</code> statements with polymorphism.</li>
-</ul>
+<p>Keep the averages low and worry about the maximums. On
+<a href="../../getting-started/your-first-analysis/">Monolog</a>, the average method has a
+complexity of 2.44, textbook healthy, while the <code>Logger</code> class concentrates
+72. One number describes the codebase, the other points at the class that
+needs the most careful tests.</p>
+<h2 id="how-to-reduce-it">How to reduce it</h2>
+<p><strong>Return early.</strong> Deep nesting multiplies paths; flipping conditions into
+guard clauses flattens them:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Before: three levels of nesting</label><label for="__tabbed_1_2">After: guard clauses</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kd">function</span><span class="w"> </span><span class="nx">pay</span><span class="p">(</span><span class="nx">o</span><span class="o">:</span><span class="w"> </span><span class="kt">Order</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="p">.</span><span class="nx">isPaid</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">false</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="p">.</span><span class="nx">total</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mf">0</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">charge</span><span class="p">(</span><span class="nx">o</span><span class="p">);</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="kd">function</span><span class="w"> </span><span class="nx">pay</span><span class="p">(</span><span class="nx">o</span><span class="o">:</span><span class="w"> </span><span class="kt">Order</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">null</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="p">.</span><span class="nx">isPaid</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+<span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="p">.</span><span class="nx">total</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mf">0</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="p">;</span>
+
+<span class="w">  </span><span class="nx">charge</span><span class="p">(</span><span class="nx">o</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<p><strong>Extract methods.</strong> A complexity-30 function is usually three complexity-10
+functions wearing a trench coat. Each extracted piece gets a name, and names
+are documentation.</p>
+<p><strong>Replace <code>switch</code> with polymorphism.</strong> A <code>switch</code> on a type code that appears
+in several places is complexity paid repeatedly; moving each branch into its
+own class pays it once.</p>
+<h2 id="see-it-on-your-code">See it on your code</h2>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>.
+</code></pre></div>
+<p>The <code>Complexity</code> block of the summary gives the totals, averages and maximums.
+In the HTML report, the code map colors every bubble by complexity, and the
+Classes page sorts by it. To enforce a ceiling:</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>ruleset<span class="w"> </span>add<span class="w"> </span>complexity
+</code></pre></div>
+<p>adds a <code>max_cyclomatic</code> rule to your
+<a href="../../ci/linting-architecture/"><code>.ast-metrics.yaml</code></a>. Existing offenders can
+be <a href="../../ci/linting-architecture/">baselined</a>, so
+<a href="../../getting-started/review-changes/"><code>ast-metrics review</code></a> only blocks the
+functions your pull request made worse.</p>
 
 
 
@@ -1606,7 +1683,7 @@ Think of your code as a maze. Every control structure adds a turn or a branch in
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 31, 2026 13:36:07 UTC">2026-08-31</span>
   </span>
 
     

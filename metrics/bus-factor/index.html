@@ -401,6 +401,8 @@
       
         
       
+        
+      
     
     
     
@@ -470,6 +472,34 @@
     
   
     Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/your-first-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
   
 
     
@@ -621,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
             
   
   
@@ -642,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1135,10 +1165,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-is-it" class="md-nav__link">
+  <a href="#how-its-computed" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What is it?
+        How it's computed
       
     </span>
   </a>
@@ -1146,10 +1176,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-is-it-calculated" class="md-nav__link">
+  <a href="#how-to-read-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How is it calculated?
+        How to read it
       
     </span>
   </a>
@@ -1157,10 +1187,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#how-to-improve-it" class="md-nav__link">
+  <a href="#how-to-raise-it" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How to improve it?
+        How to raise it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-it-on-your-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See it on your code
       
     </span>
   </a>
@@ -1511,30 +1552,55 @@
 
 
 <h1 id="bus-factor">Bus Factor</h1>
-<video controls preload="none" src="../../animations/bus-factor.webm" title="How the bus factor measures knowledge concentration"></video>
-
-<h2 id="what-is-it">What is it?</h2>
-<p>The Bus Factor is a risk metric that answers: <strong>"How many team members have to be hit by a bus for the project to stall?"</strong></p>
-<p>It estimates the concentration of knowledge in your codebase.</p>
-<ul>
-<li><strong>Bus Factor = 1</strong>: <strong>Critical Risk</strong>. Only one person understands a key part of the system. If they leave, that knowledge is lost.</li>
-<li><strong>Bus Factor = High</strong>: <strong>Healthy</strong>. Knowledge is shared among multiple developers.</li>
-</ul>
-<h2 id="how-is-it-calculated">How is it calculated?</h2>
-<p>AST Metrics analyzes the <strong>Git history</strong> (authorship of lines).
-1.  It calculates the "ownership" of each file (who wrote the most lines).
-2.  It aggregates this ownership by <strong>Community</strong> (not just folders).
-3.  If a community is 80%+ owned by a single person, the Bus Factor for that community is 1.</p>
-<h2 id="how-to-improve-it">How to improve it?</h2>
-<div class="admonition important">
-<p class="admonition-title">Share Knowledge</p>
-<p>If you have a low Bus Factor:</p>
+<p>The bus factor asks the uncomfortable question: <strong>how many people can leave
+before part of this codebase becomes an archaeology site?</strong> A bus factor of 1
+on a component means exactly one person understands it. Every team has such a
+component; few teams know which one it is before the person resigns.</p>
+<h2 id="how-its-computed">How it's computed</h2>
+<p>No survey, no guesswork: AST Metrics reads your <strong>git history</strong>.</p>
 <ol>
-<li><strong>Pair Programming</strong>: Have the expert pair with others on that component.</li>
-<li><strong>Code Reviews</strong>: Ensure others review changes to critical files.</li>
-<li><strong>Documentation</strong>: Write down the implicit knowledge.</li>
+<li>For each file, it measures ownership: who wrote and rewrote its lines.</li>
+<li>Ownership is aggregated by <a href="../community-detection/">community</a>, the groups
+   of classes that actually work together, rather than by folder. Folders
+   lie about structure; the dependency graph doesn't.</li>
+<li>A community overwhelmingly owned by one person (80%+ of the knowledge) gets
+   a bus factor of 1: that whole functional area lives in one head.</li>
 </ol>
-</div>
+<p>Because it's git-based, analyze a clone with real history. A <code>--depth 1</code>
+checkout has no authorship to read.</p>
+<h2 id="how-to-read-it">How to read it</h2>
+<ul>
+<li><strong>Bus factor 1 on a community</strong>: critical. It's not "Alice wrote a file",
+  it's "the entire payment area is Alice".</li>
+<li><strong>Bus factor 1 on a community that also contains
+  <a href="../risk/">hotspots</a></strong>: your single most urgent staffing problem. Complex
+  code, changing weekly, understood by one person.</li>
+<li><strong>Higher values</strong>: knowledge is genuinely shared there.</li>
+</ul>
+<p>The point is not to blame the expert. Concentrated ownership is the natural
+result of someone doing good work fast; the metric just makes the resulting
+fragility visible while it's still cheap to fix.</p>
+<h2 id="how-to-raise-it">How to raise it</h2>
+<ol>
+<li><strong>Route reviews to non-owners.</strong> The second-best way to learn a component
+   is to review changes to it.</li>
+<li><strong>Pair on the expert's next tickets.</strong> The best way is to modify it with
+   the expert watching.</li>
+<li><strong>Write down the "why".</strong> The owner documents intent and invariants: the
+   things a newcomer cannot reverse-engineer from the code.</li>
+<li><strong>Check the trend.</strong> Re-run the analysis a quarter later; the chips should
+   change color.</li>
+</ol>
+<h2 id="see-it-on-your-code">See it on your code</h2>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>--report-html<span class="o">=</span>report<span class="w"> </span>--open-html<span class="w"> </span>.
+</code></pre></div>
+<p>The report's <strong>Team</strong> page shows who carries the knowledge: the key people
+(how many developers write half the commits), the ownership per area, and a
+chip per folder, red when a single person holds it. On
+<a href="../../getting-started/your-first-analysis/">Monolog</a> it opens with a
+reassuring verdict, "Knowledge is shared, no single person owns this code",
+and names the four people who write half the commits. Run it on your own
+repository before assuming you'd get the same sentence.</p>
 
 
 
@@ -1555,7 +1621,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 31, 2026 13:36:07 UTC">2026-08-31</span>
   </span>
 
     

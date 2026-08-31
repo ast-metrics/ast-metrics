@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="AST Metrics uses the Louvain algorithm to detect the communities your classes naturally form in the dependency graph.">
+        <meta name="description" content="How AST Metrics finds the communities your code forms on the dependency graph, how to read the map, the findings and the history, and how to freeze the boundaries in CI.">
       
       
         <meta name="author" content="Jean-François Lépine">
@@ -401,6 +401,8 @@
       
         
       
+        
+      
     
     
     
@@ -470,6 +472,34 @@
     
   
     Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/your-first-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial: your first analysis
   
 
     
@@ -621,10 +651,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_7" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_7" id="__nav_2_7_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
             
   
   
@@ -642,8 +672,8 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_7_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_2_7">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
   
@@ -1079,10 +1109,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#what-is-it" class="md-nav__link">
+  <a href="#what-a-community-is" class="md-nav__link">
     <span class="md-ellipsis">
       
-        What is it?
+        What a community is
       
     </span>
   </a>
@@ -1090,10 +1120,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#why-it-matters" class="md-nav__link">
+  <a href="#reading-the-page" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Why it matters?
+        Reading the page
       
     </span>
   </a>
@@ -1101,41 +1131,57 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#interpreting-the-results" class="md-nav__link">
+  <a href="#what-stands-out" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Interpreting the Results
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Interpreting the Results">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#purity" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Purity
+        What stands out
       
     </span>
   </a>
   
 </li>
-        
-          <li class="md-nav__item">
-  <a href="#modularity-score" class="md-nav__link">
+      
+        <li class="md-nav__item">
+  <a href="#the-communities-table" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Modularity Score
+        The communities table
       
     </span>
   </a>
   
 </li>
-        
-      </ul>
-    </nav>
+      
+        <li class="md-nav__item">
+  <a href="#freezing-the-boundaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Freezing the boundaries
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-the-data" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting the data
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Limits
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1539,25 +1585,229 @@
 
 
 <h1 id="community-detection">Community Detection</h1>
-<h2 id="what-is-it">What is it?</h2>
-<p>Your code naturally forms "neighborhoods" or <strong>communities</strong>. Even if you didn't plan it, some classes talk to each other more than others.</p>
-<p>AST Metrics uses the <a href="https://en.wikipedia.org/wiki/Louvain_modularity"><strong>Louvain Algorithm</strong></a> (a graph clustering algorithm) to detect these communities automatically based on the dependency graph.</p>
-<h2 id="why-it-matters">Why it matters?</h2>
+<p>A <strong>community</strong> is a group of classes (or packages) that depend on each other
+more than on the rest of the code. AST Metrics finds them on the dependency
+graph alone, without reading folder names, so the page shows the modules the
+code actually forms next to the ones the namespaces declare. It is the
+<strong>Natural groups</strong> page of the HTML report, under Architecture.</p>
+<h2 id="what-a-community-is">What a community is</h2>
+<p><strong>Units.</strong> In PHP, Java, C#, TypeScript and Python that imports names, a unit
+is a class (or interface); a file holding only top-level code counts as a unit
+of its own. In Go, Rust and any language whose imports name modules rather
+than classes, a unit is a package: the granularity is decided per language on
+what its dependencies name. Only the project's own code takes part: foreign
+packages are not units (the row panel lists them under "Relies on"), test
+files are left out, and so is anything under a test support directory
+(<code>test</code>, <code>tests</code>, <code>__tests__</code>, <code>spec</code>, <code>fixtures</code>, <code>testdata</code>, <code>stubs</code>,
+<code>mocks</code>, and so on). An edge from A to B is weighted by the number of distinct
+places in A where B is used.</p>
+<p><strong>The shared kernel.</strong> Some units are used by everyone: a base class, a value
+object, an interface everybody implements. Left in the graph, they would land
+in one community by chance and tie it to all the others. A unit is set aside
+in the kernel when at least 3 units from at least 3 namespaces use it, it
+receives at least 3 references, and at most 15% of the pairs of its users
+know each other (that last condition tells a kernel from the heart of a
+feature: an entity used by its repository, its controller and its form is used
+from several namespaces too, but those three know each other). The kernel is
+only looked for when the project has at least 4 namespaces. It belongs to
+every community and to none, takes no part in the cycles, and a reference to
+it never counts as a crossing.</p>
+<p><strong>How the communities are found.</strong> The kernel is taken out first, then a
+weighted <a href="https://en.wikipedia.org/wiki/Louvain_method">Louvain</a> detection
+runs on the remaining graph at resolution 1. The implementation is
+deterministic: nodes are visited in the order of their ids and ties are broken
+the same way every time, so two runs on the same code draw the same map.
+Communities of fewer than 3 units are folded into the neighbour they exchange
+the most with (two classes are a pair, not a module); a small group linked to
+nothing stays apart and is counted with the units that take no part.
+Communities are numbered largest first. One is named after its namespace
+when that namespace holds at least half of its members; otherwise after the
+word its class names share (<code>Billing</code>, <code>Repository</code>), joined to the dominant
+namespace when that word names a layer (<code>Repository · Component\Scm</code>), and
+failing that after the class at its heart. A community drawn at least 75%
+from one namespace is called <strong>cohesive</strong>.</p>
+<h2 id="reading-the-page">Reading the page</h2>
+<p><img alt="Verdict and KPIs" src="../../images/communities-verdict.png" /></p>
+<p><strong>The verdict</strong> is one sentence: how many communities the code forms, around a
+shared kernel of how many units, followed by the one thing that qualifies it,
+in this order of priority: cycles (one cycle holding at least 4 communities and
+at least 34% of them is called "one indissociable block"), a kernel that is the
+centre of gravity (at least 25% of the dependencies lead to it, or it holds at
+least 10% of the units), then whether the communities stay inside their
+namespaces or cut across them.</p>
+<p><strong>The KPIs</strong> split every dependency between placed units into three shares
+that add up to 100%: the ones staying <strong>inside</strong> a community, the ones going
+to the <strong>kernel</strong>, the ones <strong>crossing</strong> from one community to another. The
+cross share turns amber above 15% and red above 30%; it is also amber when a
+cycle holds 4 communities or more, because a low figure means little when the
+communities cannot be told apart. <strong>Cycles</strong> counts the groups of communities
+that reach each other. <strong>History agrees</strong> is the share of the commits of the
+last year touching several files whose files all sit in one community, the
+kernel allowed: green from 70%, amber from 40%.</p>
+<p><img alt="The map and where to start" src="../../images/communities-map.png" /></p>
+<p><strong>The map.</strong> Arrows point to what a community depends on, thicker for more
+references. What nobody depends on sits at the top, what everything rests on
+at the bottom. A <strong>red dashed arrow climbing back up</strong> closes a cycle, and it
+is one of the lightest to cut: they are chosen by a greedy heuristic that
+orders the communities of each cycle and marks the arrows going against that
+order. The dashed grey box is the shared kernel; the boxes under a line are
+linked to no other community. When there are cycles, three views are offered:
+<strong>As it is</strong>, <strong>Only the cycles to cut</strong>, and <strong>After the cuts</strong>, which hides
+the red arrows and says how many layers are left without them. The panel on
+the right zooms on a folder: every folder holding at least 6 units (300
+folders at most) is analysed on its own, as if it were the whole project.</p>
+<p><strong>Where to start</strong> lists at most three actions derived from the findings, the
+most valuable first: <strong>cut</strong> a back edge (the two lightest at most, with the
+references that carry it), <strong>move</strong> a file next to the one it keeps changing
+with, <strong>gather</strong> the entries of the most exposed community behind its three
+most used members, <strong>invert</strong> the references the kernel makes into the
+community it uses the most.</p>
+<h2 id="what-stands-out">What stands out</h2>
+<p><img alt="What stands out" src="../../images/communities-findings.png" /></p>
+<p>The first tab lists the findings, most important first: cycles, then what the
+history says, then the kernel, then where the folders and the dependencies
+disagree. At most 5 findings of each kind, 3 for the history ones. The pill
+says which kind:</p>
 <ul>
-<li><strong>Reality Check</strong>: Does the code structure match your folder structure?</li>
-<li><strong>Leak Detection</strong>: Are "Domain" classes talking to "Infrastructure" classes when they shouldn't?</li>
-<li><strong>Modularity</strong>: Helps identify natural boundaries for microservices or modules.</li>
+<li><strong>cycle</strong>: communities that reach each other. For a pair, the lighter
+  direction is the one to cut; for a longer cycle, the detail names the back
+  edges and their total weight.</li>
+<li><strong>changes together</strong>: two communities the same commits keep touching, at
+  least 5 shared commits making at least 30% of the commits of the less active
+  one, with the pair of files most often changed together. What changes
+  together belongs together: either the boundary sits in the wrong place, or
+  an abstraction is missing.</li>
+<li><strong>never as a whole</strong>: a community of at least 5 units, touched by at least
+  20 commits, where fewer than 10% of the multi-file commits stayed inside it.
+  The dependencies group these units, the work does not.</li>
+<li><strong>shared kernel</strong>: the units set aside, how many communities lean on them
+  and what share of the dependencies lead there. Expected of a kernel; the
+  finding changes tone when the kernel is the centre of gravity.</li>
+<li><strong>kernel leak</strong>: the kernel depends on the code that uses it. A kernel that
+  knows its users cannot change without them: those references should be
+  inverted or moved out.</li>
+<li><strong>no boundary</strong>: a community of at least 5 units where at least half of the
+  members are used from outside. Nothing acts as its entry, so it cannot be
+  extracted or given an interface as it is.</li>
+<li><strong>split folder</strong>: a namespace of at least 6 units whose members fall in at
+  least 3 communities, none holding half of them. The folder gathers several
+  concerns rather than one module.</li>
+<li><strong>spread</strong>: a community of at least 5 units drawn from several namespaces,
+  none holding 75% of it. One module filed in several places, or one namespace
+  leaking into the others.</li>
+<li><strong>layers</strong>: when half or more of the communities are not cohesive, the
+  spread findings are replaced by one observation about the whole project.
+  When the namespaces are named after technical layers (Controller, Entity,
+  Repository...), the communities are the features running through them; the
+  finding says so and notes that a layout by feature would file each community
+  together.</li>
+<li><strong>bridge</strong>: a unit, outside the kernel, that exchanges references with at
+  least 2 other communities. It is a de facto contract between them and its
+  interface deserves to be explicit.</li>
 </ul>
-<p><img alt="Communities Explanation" src="../../images/communities-help.png" /></p>
-<h2 id="interpreting-the-results">Interpreting the Results</h2>
-<h3 id="purity">Purity</h3>
-<p>AST Metrics calculates the "purity" of a community by checking if its members belong to the same namespace.</p>
+<h2 id="the-communities-table">The communities table</h2>
+<p><img alt="The communities table" src="../../images/communities-table.png" /></p>
+<p>The <strong>Communities</strong> tab lists them largest first, the kernel last. <strong>Filed
+under</strong> shows the namespace holding most of the members with its share, and
+how many other namespaces contribute. <strong>Boundary</strong> counts the <strong>entries</strong>: the
+members referenced from another community or from the kernel, the surface the
+community offers to the rest of the code. The bar is green up to 25% of the
+members, amber up to 50%, red beyond. Under it, <strong>settled</strong> means at least 90%
+of the members stay put when the detection is tuned differently; otherwise the
+cell says how many are <strong>mobile</strong>. To tell them, the detection is run four
+more times, at resolutions 0.7, 0.85, 1.2 and 1.4; a member that sided with
+another community in at least one run sits on the border. The kernel has no
+boundary: it is exposed by definition.</p>
+<p>Open a row for its detail: every namespace it draws from, what it <strong>depends
+on</strong> and what it is <strong>used by</strong> with the five heaviest class-to-class
+references behind each link, the foreign packages it relies on, and its
+members. An <strong>entry</strong> tag marks the members reached from outside; a dotted
+name is a mobile member.</p>
+<p><img alt="The history tab" src="../../images/communities-history.png" /></p>
+<p>When the files carry git history, the <strong>History</strong> tab reads the same table
+from the commits of the last year. <strong>Commits</strong> is the number of distinct
+commits touching at least one file of the community. <strong>Changes as a whole</strong> is
+the share of the multi-file commits touching the community that stayed inside
+it, the kernel allowed; it is left blank under 5 such commits. <strong>Changes with</strong>
+lists the other communities the same commits touch, with the share of this
+community's commits they take. <strong>Owners</strong> gives the bus factor, the number of
+people who together made half of the commits, and the three heaviest
+committers. Commits touching more than 30 analysed files are ignored as bulk
+changes.</p>
+<h2 id="freezing-the-boundaries">Freezing the boundaries</h2>
+<p>Three project rules read the analysis in <code>ast-metrics lint</code> and <code>ast-metrics
+ci</code>. All three pass when the project has fewer than two communities.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">requirements</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">rules</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">architecture</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">no_community_cycles</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">      </span><span class="nt">max_community_cross_share</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">      </span><span class="nt">no_cross_community_dependencies</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
 <ul>
-<li><strong>High Purity</strong>: The community corresponds to a namespace. Good modularity.</li>
-<li><strong>Low Purity</strong>: The community is a mix of unrelated namespaces. This often indicates <strong>Spaghetti Architecture</strong> or hidden dependencies.</li>
+<li><strong><code>no_community_cycles</code></strong> fails once for each cycle, naming its communities
+  and up to three arrows to cut, lightest first:
+  <code>Communities depend on each other: A, B; to cut: B → A (2)</code>.</li>
+<li><strong><code>max_community_cross_share</code></strong> takes a percentage and fails when the cross
+  share of the KPIs goes over it:
+  <code>Too many dependencies cross between communities: 33% (max: 20%)</code>.</li>
+<li><strong><code>no_cross_community_dependencies</code></strong> fails once for every reference from a
+  unit of one community to a unit of another, the kernel left aside. On its
+  own it is unusable on an existing project; it is meant to be frozen:</li>
 </ul>
-<h3 id="modularity-score">Modularity Score</h3>
-<p>A global score (0-1) indicating how well the network divides into modular communities. High modularity means dense connections within modules and sparse connections between them.</p>
+<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>baseline
+</code></pre></div>
+<p><code>ast-metrics baseline</code> writes today's crossings into
+<code>.ast-metrics-baseline.yaml</code>; from then on <code>ast-metrics lint</code> ignores them and
+fails only on a crossing added since. Each violation is filed under the file
+declaring the unit that depends, with the message
+<code>Foo depends on Bar, which sits in another community</code>. The message carries no
+community name, id or weight on purpose: a community is renamed as soon as its
+hub moves, and the baseline recognizes an entry by rule, file and message, so
+only stable text may reach it. The two class names are what identifies a
+crossing.</p>
+<p>The report shows the state of that rule under the KPIs: <strong>Freeze these
+boundaries</strong> with the snippet above when the rule is off, <strong>Boundaries
+watched, not frozen yet</strong> with the number of crossings failing the lint when
+it is on without a baseline, and <strong>Boundaries frozen</strong> with the number of
+crossings in the baseline and how many are new since.</p>
+<p>See <a href="../../ci/linting-architecture/">Rulesets &amp; Linting</a> for the rest of the
+configuration.</p>
+<h2 id="getting-the-data">Getting the data</h2>
+<p>The JSON report (<code>--report-json</code>) carries the whole analysis under the
+<code>communities</code> key: <code>verdict</code>, <code>granularity</code> (<code>class</code> or <code>namespace</code>),
+<code>communitiesCount</code>, <code>largestSize</code>, <code>unitsGrouped</code>, <code>unitsIsolated</code>,
+<code>internalShare</code>, <code>sharedShare</code>, <code>crossShare</code>, <code>modularity</code>, <code>confidence</code>,
+<code>largestCycle</code>, <code>cohesiveCount</code>, <code>historyAvailable</code>, <code>historyCommits</code>,
+<code>historyAgreement</code>, then <code>communities</code>, <code>edges</code>, <code>cycles</code>, <code>findings</code> and
+<code>actions</code>. Each community lists its <code>id</code>, <code>name</code>, <code>shortName</code>, <code>shared</code>,
+<code>size</code>, <code>cohesive</code>, <code>namespaces</code>, <code>hubs</code>, <code>members</code>, <code>uses</code> and <code>usedBy</code> with
+their <code>references</code> and <code>details</code>, <code>externals</code>, <code>internalReferences</code>,
+<code>outboundReferences</code>, <code>inboundReferences</code>, <code>exposedCount</code>, <code>exposedShare</code>,
+<code>exposed</code>, <code>foreignUsesCount</code>, <code>border</code>, <code>confidence</code>, <code>busFactor</code>,
+<code>topCommitters</code>, <code>historyCommits</code>, <code>historyCohesion</code> and <code>changesWith</code>. Each
+edge carries <code>from</code>, <code>to</code>, <code>references</code>, <code>inCycle</code>, <code>back</code> and <code>shared</code>. Ids
+are <code>"0"</code>, <code>"1"</code>, ... largest first, and <code>"shared"</code> for the kernel.</p>
+<p>The <a href="../../ai/mcp-server/">MCP server</a> exposes the same payload through
+<code>get_communities</code>. By default it lists the hubs of each community only;
+<code>with_members: true</code> adds every member, the entries and the border, and
+<code>force_refresh: true</code> ignores the cache.</p>
+<h2 id="limits">Limits</h2>
+<ul>
+<li><strong>One year of history.</strong> The git analysis reads the commits of the last
+  year only. A community that was written and then left alone shows as
+  untouched, and "changes together" can only be judged on active code.</li>
+<li><strong>Packages are coarser than classes.</strong> In Go and Rust the units are packages,
+  so a project of a dozen packages forms a handful of communities and the
+  findings speak of packages. The class-level reading needs a language whose
+  imports name classes.</li>
+<li><strong>A community is a reading, not a truth.</strong> Louvain optimises modularity, and
+  another resolution draws slightly different borders: that is what the mobile
+  members and the confidence make visible. The thresholds above (3 units, 75%
+  cohesion, 50% exposed, 5 shared commits...) are choices; read the figures
+  behind each finding before acting on it, and prefer the settled communities
+  and the heaviest links when deciding where a boundary should go.</li>
+</ul>
 
 
 
@@ -1578,7 +1828,7 @@
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 15, 2026 15:09:03 UTC">2026-08-15</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 18, 2026 09:28:16 UTC">2026-08-18</span>
   </span>
 
     
