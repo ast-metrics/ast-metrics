@@ -147,8 +147,10 @@ Its syntax-level limits, in short:
   function;
 - out-of-class definitions keep their written qualification
   (`ns::Class::method`), but without semantic analysis an unqualified type
-  reference resolves against the namespace of the class that uses it, never
-  across files.
+  reference is conservatively qualified with the namespace of the class that
+  uses it. The shared project index can then match that qualified class in
+  another analyzed file; C++ lookup rules and compiler include paths are not
+  inferred.
 
 ## Contributing
 
