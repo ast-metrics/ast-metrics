@@ -57,8 +57,20 @@ func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
 		declarator := n.ChildByFieldName("declarator")
 		// Recovery inside a body must not erase an otherwise sound function:
 		// macro-heavy real code often contains one unsupported construct while
-		// the declaration, scope and most metrics remain useful. Only an error in
-		// the declarator makes the identity of the function untrustworthy.
+		// the declaration, scope and most metrics remain useful. An error
+		// anywhere outside the body — in the type region or as a stray node
+		// between type and declarator — means the "definition" is macro
+		// fallout: the declarator may parse cleanly, but the node then spans
+		// code that is not a function at all.
+		for i := 0; i < int(n.ChildCount()); i++ {
+			switch n.FieldNameForChild(i) {
+			case "declarator", "body":
+				continue
+			}
+			if a.hasErrorDescendant(n.Child(i)) {
+				return false
+			}
+		}
 		if a.hasErrorDescendant(declarator) || isCppKeyword(a.declaratorName(declarator)) {
 			return false
 		}

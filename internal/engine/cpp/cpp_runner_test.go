@@ -183,6 +183,18 @@ FMT_END_NAMESPACE
 	require.Len(t, classes, 1)
 	assert.Equal(t, "Formatter", classes[0].Name.Short)
 	assert.Equal(t, []string{"value"}, functionNames(classes[0].Stmts.StmtFunction))
+
+	// The macro can also wrap a bare class with no namespace block: the ERROR
+	// region then swallows the class body (which is legitimately not
+	// recovered), but no fake function may surface from the fallout.
+	file = parseCpp(t, `
+#define FMT_BEGIN_NAMESPACE namespace fmt {
+#define FMT_END_NAMESPACE }
+FMT_BEGIN_NAMESPACE
+class Formatter { public: void format(); };
+FMT_END_NAMESPACE
+`)
+	assert.Empty(t, file.Stmts.StmtFunction)
 }
 
 func TestCppBodyRecoveryDoesNotEraseFunction(t *testing.T) {
