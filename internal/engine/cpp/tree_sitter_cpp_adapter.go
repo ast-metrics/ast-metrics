@@ -574,9 +574,10 @@ func (a *TreeSitterAdapter) referenceSegment(n *sitter.Node) string {
 }
 
 // templateParameterNames collects the names introduced by the template
-// declarations enclosing the class. Those names are parameters, not types: a
-// reference to `T` inside `template <typename T> class Foo` is not a
-// dependency of Foo.
+// declarations enclosing the class and by the member templates declared
+// inside it. Those names are parameters, not types: a reference to `T`
+// inside `template <typename T> class Foo` or a member
+// `template <typename T> void Foo::load()` is not a dependency of Foo.
 func (a *TreeSitterAdapter) templateParameterNames(class *sitter.Node) map[string]bool {
 	names := map[string]bool{}
 	for p := class.Parent(); p != nil; p = p.Parent() {
@@ -589,6 +590,27 @@ func (a *TreeSitterAdapter) templateParameterNames(class *sitter.Node) map[strin
 			}
 		}
 	}
+	// Member function templates are declared inside the class body, so their
+	// parameters appear in template_declaration descendants of the class.
+	var walk func(*sitter.Node)
+	walk = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		// A nested class owns its own member templates.
+		if node != class && a.IsClass(node) {
+			return
+		}
+		if node.Type() == "template_declaration" {
+			if params := node.ChildByFieldName("parameters"); params != nil {
+				collectIdentifierTexts(a.src, params, names)
+			}
+		}
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			walk(node.NamedChild(i))
+		}
+	}
+	walk(class)
 	return names
 }
 

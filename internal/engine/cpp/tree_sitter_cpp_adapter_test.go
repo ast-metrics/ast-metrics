@@ -146,6 +146,36 @@ private:
 	assert.Empty(t, holder.Stmts.StmtExternalDependencies)
 }
 
+func TestCppClassMemberTemplateParametersAreNotDependencies(t *testing.T) {
+	file := parseCpp(t, `
+namespace app {
+class Store {};
+class Widget {
+public:
+    template <typename T> void load(const std::vector<T>& items) { target_.load(items); }
+    template <typename... Args> void log(Args&&... args) { target_.log(args...); }
+    void bind(Store* store) { target_ = store; }
+private:
+    Store* target_ = nullptr;
+};
+}
+`)
+	require.Len(t, file.Stmts.StmtClass, 2)
+	widget := file.Stmts.StmtClass[1]
+	for _, dep := range widget.Stmts.StmtExternalDependencies {
+		assert.NotEqual(t, "T", dep.ClassName, "member template parameters are not dependencies")
+		assert.NotEqual(t, "app::T", dep.Namespace, "member template parameters are not dependencies")
+		assert.NotEqual(t, "Args", dep.ClassName, "member template parameter packs are not dependencies")
+		assert.NotEqual(t, "app::Args", dep.Namespace, "member template parameter packs are not dependencies")
+	}
+	// The positive control: real dependencies from the same class still appear.
+	depNames := make([]string, 0, len(widget.Stmts.StmtExternalDependencies))
+	for _, dep := range widget.Stmts.StmtExternalDependencies {
+		depNames = append(depNames, dep.Namespace)
+	}
+	assert.ElementsMatch(t, []string{"app::Store"}, depNames)
+}
+
 func TestCppClassDependenciesUseTemplateNameWithoutArguments(t *testing.T) {
 	file := parseCpp(t, `
 namespace other { template <typename Y> class Thing {}; }
