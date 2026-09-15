@@ -16,6 +16,7 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/cpp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/csharp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/golang"
 	"github.com/ast-metrics/ast-metrics/internal/engine/java"
@@ -34,6 +35,7 @@ const (
 	langJava   = "java"
 	langCSharp = "csharp"
 	langRust   = "rust"
+	langCpp    = "cpp"
 )
 
 func runnerFor(lang string) engine.Engine {
@@ -52,6 +54,8 @@ func runnerFor(lang string) engine.Engine {
 		return &csharp.CSharpRunner{}
 	case langRust:
 		return &rust.RustRunner{}
+	case langCpp:
+		return &cpp.CppRunner{}
 	}
 	return nil
 }
@@ -310,7 +314,7 @@ func TestEveryLanguageCoversEveryUniversalConstruct(t *testing.T) {
 		"logical_operators_in_condition":              true,
 		"nested_function_does_not_inflate_its_parent": true,
 	}
-	all := []string{langGo, langPHP, langPython, langTS, langJava, langCSharp, langRust}
+	all := []string{langGo, langPHP, langPython, langTS, langJava, langCSharp, langRust, langCpp}
 	for _, sc := range scenarios {
 		if !universal[sc.name] {
 			continue
