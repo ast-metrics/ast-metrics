@@ -13,6 +13,7 @@ import (
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/pterm/pterm"
 	sitter "github.com/smacker/go-tree-sitter"
+	tsCpp "github.com/smacker/go-tree-sitter/cpp"
 )
 
 // CppRunner provides initial, syntax-level C++ support through Tree-sitter.
@@ -125,12 +126,48 @@ func looksLikeCpp(src []byte) bool {
 	if strings.Contains(content, "@interface") || strings.Contains(content, "@implementation") {
 		return false
 	}
+	content = string(cppCodeOnly(src))
 	for _, marker := range cppContentMarkers {
 		if marker.MatchString(content) {
 			return true
 		}
 	}
 	return false
+}
+
+// cppCodeOnly masks comments and literals before the discovery heuristics run.
+// A C header documenting a C++ caller or containing "std::" in a diagnostic
+// string is still a C header. Tree-sitter already knows these lexical regions,
+// so discovery uses the same grammar as analysis instead of maintaining a
+// second comment/string scanner.
+func cppCodeOnly(src []byte) []byte {
+	masked := append([]byte(nil), src...)
+	parser := sitter.NewParser()
+	parser.SetLanguage(tsCpp.GetLanguage())
+	tree := parser.Parse(nil, src)
+	if tree == nil {
+		return masked
+	}
+	var walk func(*sitter.Node)
+	walk = func(node *sitter.Node) {
+		if node == nil {
+			return
+		}
+		switch node.Type() {
+		case "comment", "string_literal", "char_literal", "raw_string_literal":
+			for i := node.StartByte(); i < node.EndByte() && i < uint32(len(masked)); i++ {
+				if masked[i] != '\n' && masked[i] != '\r' {
+					masked[i] = ' '
+				}
+			}
+			return
+		}
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			walk(node.NamedChild(i))
+		}
+	}
+	walk(tree.RootNode())
+	return masked
 }
 
 // isTestFile determines if a C++ file is a test file based on the file name

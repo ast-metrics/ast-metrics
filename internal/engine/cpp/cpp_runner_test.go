@@ -302,6 +302,17 @@ template <typename T> T identity(T value);
 	}
 }
 
+func TestCppHeaderDetectionIgnoresCommentsAndLiterals(t *testing.T) {
+	plainC := []byte(`
+/* C++ callers pass std::vector values to this C API. */
+// namespace documentation { class Example; }
+static const char *help = "template <typename T> and value::member";
+struct point { int x; int y; };
+`)
+	assert.False(t, looksLikeCpp(plainC))
+	assert.True(t, looksLikeCpp([]byte(`namespace devices { class Relay {}; }`)))
+}
+
 func TestCppConfiguredExtensionsAreUsed(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "widget.inl"), []byte("int f() { return 1; }"), 0o644))
