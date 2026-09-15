@@ -185,6 +185,19 @@ FMT_END_NAMESPACE
 	assert.Equal(t, []string{"value"}, functionNames(classes[0].Stmts.StmtFunction))
 }
 
+func TestCppBodyRecoveryDoesNotEraseFunction(t *testing.T) {
+	file := parseCpp(t, `
+int calculate(int value) {
+    @vendor_extension(value);
+    if (value > 0) return value;
+    return 0;
+}
+`)
+	require.Len(t, file.Stmts.StmtFunction, 1)
+	assert.Equal(t, "calculate", file.Stmts.StmtFunction[0].Name.Short)
+	assert.Len(t, file.Stmts.StmtFunction[0].Stmts.StmtDecisionIf, 1)
+}
+
 func TestCppConversionOperatorHasAName(t *testing.T) {
 	file := parseCpp(t, `
 struct Token {

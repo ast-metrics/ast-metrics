@@ -54,7 +54,12 @@ func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
 		if body == nil || body.Type() != "compound_statement" {
 			return false
 		}
-		if a.hasErrorDescendant(n) || isCppKeyword(a.declaratorName(n.ChildByFieldName("declarator"))) {
+		declarator := n.ChildByFieldName("declarator")
+		// Recovery inside a body must not erase an otherwise sound function:
+		// macro-heavy real code often contains one unsupported construct while
+		// the declaration, scope and most metrics remain useful. Only an error in
+		// the declarator makes the identity of the function untrustworthy.
+		if a.hasErrorDescendant(declarator) || isCppKeyword(a.declaratorName(declarator)) {
 			return false
 		}
 		return true
