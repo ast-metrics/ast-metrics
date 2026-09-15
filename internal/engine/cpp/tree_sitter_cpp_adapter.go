@@ -117,7 +117,7 @@ func (a *TreeSitterAdapter) hasErrorDescendant(n *sitter.Node) bool {
 // testMacros are unit-test frameworks whose test cases look like function
 // calls followed by a body, and are named from their arguments rather than
 // from the macro itself.
-var testMacros = map[string]bool{"TEST": true, "TEST_F": true, "TYPED_TEST": true, "TEST_CASE": true, "SCENARIO": true}
+var testMacros = map[string]bool{"TEST": true, "TEST_F": true, "TEST_P": true, "TYPED_TEST": true, "TYPED_TEST_P": true, "TEST_CASE": true, "SCENARIO": true}
 
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	if n == nil {
@@ -275,8 +275,9 @@ func (a *TreeSitterAdapter) macroTestName(fn *sitter.Node) string {
 }
 
 // testMacroBodyName recognizes the body of a Catch2-style test macro: a
-// compound_statement whose previous sibling is a call to TEST_CASE or
-// SCENARIO. The name comes from the first string argument of the call.
+// compound_statement whose previous sibling is a call to TEST_CASE,
+// SCENARIO, or doctest's TEST_CASE_FIXTURE. The name comes from the first
+// string argument of the call.
 func (a *TreeSitterAdapter) testMacroBodyName(n *sitter.Node) string {
 	parent := n.Parent()
 	if parent == nil || (parent.Type() != "translation_unit" && parent.Type() != "declaration_list") {
@@ -295,7 +296,7 @@ func (a *TreeSitterAdapter) testMacroBodyName(n *sitter.Node) string {
 		return ""
 	}
 	macro := nodeText(a.src, function)
-	if macro != "TEST_CASE" && macro != "SCENARIO" {
+	if macro != "TEST_CASE" && macro != "SCENARIO" && macro != "TEST_CASE_FIXTURE" {
 		return ""
 	}
 	if args := firstDescendantOfType(call, "argument_list"); args != nil {

@@ -191,7 +191,7 @@ func (r CppRunner) isTestFile(path string, src []byte) bool {
 	}
 
 	source := string(src)
-	for _, marker := range []string{"TEST", "TEST_F", "TYPED_TEST", "TEST_CASE", "SCENARIO"} {
+	for _, marker := range []string{"TEST", "TEST_F", "TEST_P", "TYPED_TEST", "TYPED_TEST_P", "TEST_CASE", "TEST_CASE_FIXTURE", "SCENARIO"} {
 		if containsIdentifierCall(source, marker) {
 			return true
 		}

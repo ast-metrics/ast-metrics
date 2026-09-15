@@ -227,11 +227,24 @@ func TestCppGTestMacrosAreNamedTestFunctions(t *testing.T) {
 	file := parseCpp(t, `
 TEST(Parser, HandlesEmptyInput) { int x = 1; }
 TEST_F(ParserFixture, HandlesComments) {}
+TEST_P(ParserParam, HandlesValues) {}
+TYPED_TEST(TypedParser, HandlesTypes) {}
+TYPED_TEST_P(TypedParserParam, HandlesTypedValues) {}
 `)
-	require.Len(t, file.Stmts.StmtFunction, 2)
+	require.Len(t, file.Stmts.StmtFunction, 5)
 	assert.Equal(t, "Parser.HandlesEmptyInput", file.Stmts.StmtFunction[0].Name.Short)
 	assert.Equal(t, "ParserFixture.HandlesComments", file.Stmts.StmtFunction[1].Name.Short)
+	assert.Equal(t, "ParserParam.HandlesValues", file.Stmts.StmtFunction[2].Name.Short, "TEST_P is named from its arguments, not the macro")
+	assert.Equal(t, "TypedParser.HandlesTypes", file.Stmts.StmtFunction[3].Name.Short)
+	assert.Equal(t, "TypedParserParam.HandlesTypedValues", file.Stmts.StmtFunction[4].Name.Short, "TYPED_TEST_P is named from its arguments, not the macro")
 	assert.True(t, file.GetIsTest(), "gtest macros mark the file as a test file")
+}
+
+func TestCppDoctestFixtureMacroIsANamedTestFunction(t *testing.T) {
+	file := parseCpp(t, `TEST_CASE_FIXTURE(MyFixture, "fixture is set up") { int x = 1; }`)
+	require.Len(t, file.Stmts.StmtFunction, 1)
+	assert.Equal(t, "fixture is set up", file.Stmts.StmtFunction[0].Name.Short)
+	assert.True(t, file.GetIsTest(), "doctest fixture macros mark the file as a test file")
 }
 
 func TestCppCatch2MacrosAreNamedTestFunctions(t *testing.T) {
@@ -292,6 +305,9 @@ func TestCppTestFileDetection(t *testing.T) {
 	assert.True(t, runner.isTestFile("/src/widget.cpp", []byte(`#include <gtest/gtest.h>
 int main() { return 0; }`)), "gtest includes mark the file as a test file")
 	assert.False(t, runner.isTestFile("/src/widget.cpp", []byte(`int latest() { return CONTEST(1); }`)), "TEST( must be a call of the identifier TEST")
+	assert.True(t, runner.isTestFile("/src/widget.cpp", []byte(`TEST_P(MySuite, HandlesX) {}`)), "a file whose only signal is TEST_P( is a test file")
+	assert.True(t, runner.isTestFile("/src/widget.cpp", []byte(`TYPED_TEST_P(MyTypes, HandlesY) {}`)), "a file whose only signal is TYPED_TEST_P( is a test file")
+	assert.True(t, runner.isTestFile("/src/widget.cpp", []byte(`TEST_CASE_FIXTURE(MyFixture, "name") {}`)), "a file whose only signal is TEST_CASE_FIXTURE( is a test file")
 }
 
 func TestCppHeaderClaiming(t *testing.T) {
