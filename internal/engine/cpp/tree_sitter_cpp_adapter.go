@@ -133,6 +133,10 @@ func (a *TreeSitterAdapter) NodeQualifiedName(n *sitter.Node) (string, string) {
 	}
 	if a.IsClass(n) {
 		short := a.declaratorName(n.ChildByFieldName("name"))
+		if outer := a.enclosingClass(n); outer != nil {
+			_, outerQualified := a.NodeQualifiedName(outer)
+			return short, a.AttachQualified(outerQualified, short)
+		}
 		return short, a.qualify(a.namespaceChain(n), short)
 	}
 	if n.Type() == "compound_statement" {

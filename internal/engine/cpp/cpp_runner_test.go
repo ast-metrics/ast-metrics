@@ -105,6 +105,25 @@ namespace a::b { class Flat {}; void free(); }
 	assert.Equal(t, "a::b::Flat", byShort["Flat"].Name.Qualified)
 }
 
+func TestCppNestedClassIncludesItsEnclosingClass(t *testing.T) {
+	file := parseCpp(t, `
+namespace devices {
+class Controller {
+public:
+    class State { public: bool active; };
+};
+}
+`)
+	classes := engine.GetClassesInFile(file)
+	require.Len(t, classes, 2)
+	byShort := map[string]*pb.StmtClass{}
+	for _, class := range classes {
+		byShort[class.Name.Short] = class
+	}
+	assert.Equal(t, "devices::Controller", byShort["Controller"].Name.Qualified)
+	assert.Equal(t, "devices::Controller::State", byShort["State"].Name.Qualified)
+}
+
 func TestCppOutOfClassDefinitionKeepsQualificationWithoutLocalClass(t *testing.T) {
 	// The class lives in another translation unit (e.g. a .cpp defining the
 	// methods of a class declared in a .hpp): the definition keeps the
