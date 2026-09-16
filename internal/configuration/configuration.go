@@ -255,9 +255,12 @@ func (c *Configuration) SetExcludePatterns(patterns []string) {
 	(*c).ExcludePatterns = patterns
 }
 
-var defaultExtensions = map[string]string{
-	"php": ".php", "go": ".go", "python": ".py", "rust": ".rs", "typescript": ".ts",
-	"java": ".java", "csharp": ".cs",
+var defaultExtensions = map[string][]string{
+	"php": {".php"}, "go": {".go"}, "python": {".py"}, "rust": {".rs"}, "typescript": {".ts"},
+	"java": {".java"}, "csharp": {".cs"},
+	// C++ lives in several extensions. `.h` is not claimed here: it may hold
+	// plain C, so the C++ runner claims it only when its content looks like C++.
+	"cpp": {".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"},
 }
 
 // GetExtensionsForLanguage returns every extension a file of lang can carry:
@@ -266,7 +269,7 @@ var defaultExtensions = map[string]string{
 // which files a scope actually owns is decided there, against the extensions
 // that scope itself declares.
 func (c *Configuration) GetExtensionsForLanguage(lang string) []string {
-	base := []string{defaultExtensions[lang]}
+	base := append([]string{}, defaultExtensions[lang]...)
 	base = append(base, normalizeExtensions(c.Extensions[lang])...)
 	for _, scope := range c.Scopes {
 		if scope.Configuration == nil || scope.Configuration == c {
@@ -287,6 +290,20 @@ func (c *Configuration) DeclaredExtensions() []string {
 	}
 
 	return declared
+}
+
+// AllExtensions returns every extension this configuration may look for: the
+// built-in ones of every supported language, plus the extra ones it declares.
+// Discovery needs the union, because a language is only scanned when its
+// files were looked for in the first place.
+func (c *Configuration) AllExtensions() []string {
+	var all []string
+	for _, extensions := range defaultExtensions {
+		all = append(all, extensions...)
+	}
+	all = append(all, c.DeclaredExtensions()...)
+
+	return uniqueStrings(all)
 }
 
 // normalizeExtensions makes every extension start with a dot, so that a

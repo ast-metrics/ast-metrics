@@ -88,3 +88,37 @@ func TestConfigurationAcceptsExcludePatterns(t *testing.T) {
 		t.Errorf("ExcludePatterns = %s; want %s", configuration.ExcludePatterns[0], "/foo")
 	}
 }
+
+func TestConfigurationAllExtensions(t *testing.T) {
+	configuration := NewConfiguration()
+
+	all := configuration.AllExtensions()
+
+	for _, ext := range []string{".php", ".go", ".py", ".rs", ".ts", ".java", ".cs", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"} {
+		found := false
+		for _, candidate := range all {
+			if candidate == ext {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("AllExtensions() = %v, want it to contain built-in %s", all, ext)
+		}
+	}
+
+	configuration.Extensions = map[string][]string{"cpp": {".h", ".ino"}}
+	all = configuration.AllExtensions()
+	for _, ext := range []string{".h", ".ino"} {
+		found := false
+		for _, candidate := range all {
+			if candidate == ext {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("AllExtensions() = %v, want it to contain declared %s", all, ext)
+		}
+	}
+}
