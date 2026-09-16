@@ -292,6 +292,20 @@ func (c *Configuration) DeclaredExtensions() []string {
 	return declared
 }
 
+// AllExtensions returns every extension this configuration may look for: the
+// built-in ones of every supported language, plus the extra ones it declares.
+// Discovery needs the union, because a language is only scanned when its
+// files were looked for in the first place.
+func (c *Configuration) AllExtensions() []string {
+	var all []string
+	for _, extensions := range defaultExtensions {
+		all = append(all, extensions...)
+	}
+	all = append(all, c.DeclaredExtensions()...)
+
+	return uniqueStrings(all)
+}
+
 // normalizeExtensions makes every extension start with a dot, so that a
 // configuration can write "inc" as well as ".inc".
 func normalizeExtensions(extensions []string) []string {
