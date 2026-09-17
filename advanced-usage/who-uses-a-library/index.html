@@ -6,19 +6,19 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The maintainability index is a 0-100 score of how easy code is to change, combining volume, complexity and comments.">
+        <meta name="description" content="Find which parts of your code depend on a library, directly or through other files, with ast-metrics who-uses: the question a vulnerability report or a sovereignty review raises, answered from the dependency graph.">
       
       
         <meta name="author" content="Jean-François Lépine">
       
       
-        <link rel="canonical" href="https://ast-metrics.dev/metrics/maintainability-index/">
+        <link rel="canonical" href="https://ast-metrics.dev/advanced-usage/who-uses-a-library/">
       
       
-        <link rel="prev" href="../cyclomatic-complexity/">
+        <link rel="prev" href="../compare-versions/">
       
       
-        <link rel="next" href="../risk/">
+        <link rel="next" href="../../metrics/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Maintainability Index - AST Metrics documentation</title>
+        <title>Who depends on a library - AST Metrics documentation</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#maintainability-index" class="md-skip">
+        <a href="#who-depends-on-this-library" class="md-skip">
           Skip to content
         </a>
       
@@ -115,7 +115,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Maintainability Index
+              Who depends on a library
             
           </span>
         </div>
@@ -211,10 +211,12 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
+      <li class="md-tabs__item md-tabs__item--active">
         <a href="../../getting-started/" class="md-tabs__link">
           
   
@@ -233,13 +235,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../metrics/" class="md-tabs__link">
           
   
   
@@ -380,6 +380,8 @@
       
   
   
+    
+  
   
   
     
@@ -407,16 +409,19 @@
     
     
       
+        
+        
+      
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
         
           
           <div class="md-nav__link md-nav__container">
@@ -438,13 +443,13 @@
             </a>
             
               
-              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
                 <span class="md-nav__icon md-icon"></span>
               </label>
             
           </div>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2">
             <span class="md-nav__icon md-icon"></span>
             
@@ -629,8 +634,10 @@
                 
   
   
+    
   
   
+  
     
     
       
@@ -645,18 +652,21 @@
     
       
       
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" >
         
           
-          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="0">
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_8" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_8" id="__nav_2_8_label" tabindex="">
             
   
   
@@ -674,7 +684,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_8_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_2_8">
             <span class="md-nav__icon md-icon"></span>
             
@@ -692,7 +702,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../advanced-usage/watch-directory/" class="md-nav__link">
+      <a href="../watch-directory/" class="md-nav__link">
         
   
   
@@ -720,7 +730,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../advanced-usage/compare-versions/" class="md-nav__link">
+      <a href="../compare-versions/" class="md-nav__link">
         
   
   
@@ -728,197 +738,6 @@
     
   
     Compare versions
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../advanced-usage/who-uses-a-library/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Who depends on a library
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
-    </li>
-  
-
-    
-      
-      
-  
-  
-    
-  
-  
-  
-    
-    
-      
-        
-          
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-    
-    
-    
-      
-        
-        
-      
-      
-        
-      
-    
-    
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
-      
-        
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
-        
-          
-          <div class="md-nav__link md-nav__container">
-            <a href="../" class="md-nav__link ">
-              
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Metrics
-  
-
-    
-  </span>
-  
-  
-
-            </a>
-            
-              
-              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
-                <span class="md-nav__icon md-icon"></span>
-              </label>
-            
-          </div>
-        
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_3">
-            <span class="md-nav__icon md-icon"></span>
-            
-  
-    Metrics
-  
-
-          </label>
-          <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../volume/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Volume
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../cyclomatic-complexity/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Cyclomatic Complexity
   
 
     
@@ -955,7 +774,7 @@
   <span class="md-ellipsis">
     
   
-    Maintainability Index
+    Who depends on a library
   
 
     
@@ -973,7 +792,7 @@
   <span class="md-ellipsis">
     
   
-    Maintainability Index
+    Who depends on a library
   
 
     
@@ -999,10 +818,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#how-to-read-it" class="md-nav__link">
+  <a href="#why-a-grep-is-not-enough" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How to read it
+        Why a grep is not enough
       
     </span>
   </a>
@@ -1010,10 +829,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-exception-to-know" class="md-nav__link">
+  <a href="#how-it-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The exception to know
+        How it works
       
     </span>
   </a>
@@ -1021,10 +840,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#see-it-on-your-code" class="md-nav__link">
+  <a href="#options" class="md-nav__link">
     <span class="md-ellipsis">
       
-        See it on your code
+        Options
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#where-else-the-answer-lives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Where else the answer lives
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-it-does-not-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it does not do
       
     </span>
   </a>
@@ -1040,6 +881,108 @@
 
               
             
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../metrics/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metrics
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Metrics
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
               
                 
   
@@ -1047,7 +990,91 @@
   
   
     <li class="md-nav__item">
-      <a href="../risk/" class="md-nav__link">
+      <a href="../../metrics/volume/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Volume
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../metrics/cyclomatic-complexity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cyclomatic Complexity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../metrics/maintainability-index/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Maintainability Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../metrics/risk/" class="md-nav__link">
         
   
   
@@ -1075,7 +1102,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../coupling/" class="md-nav__link">
+      <a href="../../metrics/coupling/" class="md-nav__link">
         
   
   
@@ -1103,7 +1130,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../lcom4/" class="md-nav__link">
+      <a href="../../metrics/lcom4/" class="md-nav__link">
         
   
   
@@ -1131,7 +1158,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../test-quality/" class="md-nav__link">
+      <a href="../../metrics/test-quality/" class="md-nav__link">
         
   
   
@@ -1159,7 +1186,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../community-detection/" class="md-nav__link">
+      <a href="../../metrics/community-detection/" class="md-nav__link">
         
   
   
@@ -1187,7 +1214,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../architecture-map/" class="md-nav__link">
+      <a href="../../metrics/architecture-map/" class="md-nav__link">
         
   
   
@@ -1215,7 +1242,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../bus-factor/" class="md-nav__link">
+      <a href="../../metrics/bus-factor/" class="md-nav__link">
         
   
   
@@ -1562,7 +1589,7 @@
 
 
   
-    <a href="https://github.com/ast-metrics/ast-metrics/edit/documentation/docs/metrics/maintainability-index.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/ast-metrics/ast-metrics/edit/documentation/docs/advanced-usage/who-uses-a-library.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -1570,73 +1597,144 @@
   
 
 
-<h1 id="maintainability-index">Maintainability Index</h1>
-<p>The maintainability index (MI) answers: <strong>if I had to change this file
-tomorrow, how much would it hurt?</strong> It compresses three measurements into one
-score from 0 to 100:</p>
-<ul>
-<li><strong>Halstead volume</strong>: how much vocabulary the code juggles (operators,
-  operands, their repetitions).</li>
-<li><strong><a href="../cyclomatic-complexity/">Cyclomatic complexity</a></strong>: how many execution
-  paths run through it.</li>
-<li><strong><a href="../volume/">Lines of code</a></strong>: how physically big it is.</li>
-</ul>
-<p>A short, simple, documented file scores near 100. A long file full of branches
-scores badly, whatever the language.</p>
-<h2 id="how-to-read-it">How to read it</h2>
+<h1 id="who-depends-on-this-library">Who depends on this library?</h1>
+<p>A critical vulnerability is published on a Friday evening. Within hours,
+every team asks the same question: <em>do we use it, and where?</em> Many took days
+to answer in December 2021, when Log4Shell dropped, and the difficulty was
+never the flaw itself. It was that few teams knew the real structure of
+their own system.</p>
+<p><code>ast-metrics who-uses</code> answers that question from the dependency graph:</p>
+<div class="highlight"><pre><span></span><code><span class="go">ast-metrics who-uses log4j ./src</span>
+</code></pre></div>
+<h2 id="why-a-grep-is-not-enough">Why a grep is not enough</h2>
+<p>A grep on the library's name finds the files that import it. That is the
+right first move, and it is often wrong by an order of magnitude.</p>
+<p>Picture a team that wrapped its logging library in a <code>Logger</code> class six years
+ago, to be able to swap it one day. Good engineering. The grep returns one
+file, and everyone concludes the library is barely used. In fact three
+hundred files go through that wrapper, including the ones that log incoming
+HTTP headers. The grep found the name; the chain of dependencies is written
+nowhere as text, so it never saw it.</p>
+<p>A software bill of materials (SBOM) and a composition scanner answer <em>do we
+have this component?</em> in thirty seconds, and you should have them. They give
+you an inventory. The graph answers <em>who, in our code, depends on it, how
+far does that go, and which parts of the system are exposed?</em> That is a
+topology. The two are complementary, and the second one is what decides
+where to look first when you cannot audit everything.</p>
+<p>The same question comes up outside of security. Knowing what your system
+stands on, and how much of it, is a matter of sovereignty: a framework or a
+vendor SDK that eighty percent of the code reaches is a dependency you do not
+choose anymore. The answer is worth having before the licence changes, the
+maintainer leaves or the region it is hosted in becomes a problem.</p>
+<h2 id="how-it-works">How it works</h2>
+<p>Every engine records the modules a file imports, spelled the way the import
+spells them: <code>org.apache.logging.log4j</code> in Java, <code>github.com/sirupsen/logrus</code>
+in Go, <code>react</code> in TypeScript, <code>Monolog\Logger</code> in PHP, <code>tracing</code> in Rust,
+<code>loguru</code> in Python, <code>Serilog</code> in C#. The ones that resolve to no file of the
+project are its libraries.</p>
+<p>The name you give is matched anywhere in those modules, case-insensitively:
+<code>log4j</code> finds <code>org.apache.logging.log4j</code> and <code>org.apache.logging.log4j.core</code>
+alike. From the files importing them, AST Metrics follows the dependents
+level by level on the file graph: the files depending on an importer, then
+the files depending on those, until nothing new is reached. Each file is
+reported once, at the shortest distance found.</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>ast-metrics<span class="w"> </span>who-uses<span class="w"> </span>--limit<span class="w"> </span><span class="m">3</span><span class="w"> </span>psr<span class="w"> </span>./src
+
+<span class="go">  21 imported modules matching</span>
+<span class="go">    Psr\Http\Message\RequestInterface</span>
+<span class="go">    Psr\Http\Message\ResponseInterface</span>
+<span class="go">    ...</span>
+
+<span class="go">  38 of 41 files depend on it (93%)</span>
+<span class="go">  A file that imports it is one step away; a file depending on that file is two steps away, and so on.</span>
+
+<span class="go">  Import it directly · 29 files</span>
+<span class="go">    BodySummarizer.php</span>
+<span class="go">    Client.php</span>
+<span class="go">    ...</span>
+<span class="go">  Depend on a file that imports it · 9 files</span>
+<span class="go">    Cookie/FileCookieJar.php</span>
+<span class="go">    ...</span>
+
+<span class="go">  Communities reached</span>
+<span class="go">    GuzzleHttp    ██████████  21 of 21 files (100%)</span>
+<span class="go">    Cookie        ████████░░  4 of 5 files (80%)</span>
+</code></pre></div>
+<p>The distance matters more than the total. In a monolith, the closure from any
+widely used module covers most of the project, and a total alone would say
+that everything depends on everything. What the levels tell you is where the
+exposure is concentrated: the files importing the library, and the ones one
+step behind them, are where a review starts.</p>
+<p>The last block maps the reached files onto the
+<a href="../../metrics/community-detection/">communities</a> the code forms, the most
+exposed first. This is the answer in the words of an architecture diagram
+rather than a file list: <em>billing is entirely exposed, the catalog is not</em>.</p>
+<h2 id="options">Options</h2>
 <table>
 <thead>
 <tr>
-<th>Score</th>
-<th>Rating</th>
-<th>Meaning</th>
+<th>Option</th>
+<th>Effect</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>85-100</strong></td>
-<td>🟢</td>
-<td>Easy to change. Touch it without fear.</td>
+<td><code>--format json</code></td>
+<td>The full answer as JSON: matched modules, files per level, scope, communities.</td>
 </tr>
 <tr>
-<td><strong>65-84</strong></td>
-<td>🟡</td>
-<td>Moderate. Changes need attention, not heroism.</td>
+<td><code>--max-depth N</code></td>
+<td>Stop N steps past the importing files. <code>0</code> (the default) follows to the end.</td>
 </tr>
 <tr>
-<td><strong>&lt; 65</strong></td>
-<td>🔴</td>
-<td>Hard to change safely. Refactor before you need to.</td>
+<td><code>--limit N</code></td>
+<td>Files listed per level in the text output, <code>20</code> by default. <code>0</code> lists them all.</td>
+</tr>
+<tr>
+<td><code>--exclude</code>, <code>--config</code>, <code>--*-extensions</code></td>
+<td>The same file selection options as <code>analyze</code>.</td>
 </tr>
 </tbody>
 </table>
-<p>Two habits make this metric useful rather than decorative:</p>
-<p><strong>Read the worst files, not the average.</strong> A project average of 81, like
-<a href="../../getting-started/your-first-analysis/">Monolog</a>'s, is reassuring, but the
-actionable information is the 5 classes that score below 65. On Monolog the
-worst is <code>LineFormatter.php</code> at 63: that's the file where a "quick change"
-takes an afternoon.</p>
-<p><strong>Watch the trend.</strong> A file whose MI drifts from 80 to 70 over six months is
-telling you where technical debt is accumulating, long before anyone says the
-word "rewrite". This is what
-<a href="../../getting-started/review-changes/"><code>ast-metrics review</code></a> automates on
-every pull request: it compares your branch to its base and flags the files
-whose maintainability got worse.</p>
-<h2 id="the-exception-to-know">The exception to know</h2>
-<p>Some code is irreducibly dense: parsers, cryptographic routines, numeric
-algorithms. A low MI there describes the domain, not the developer. Don't
-chase green on a Fourier transform; do chase it on controllers, services and
-everything a teammate edits weekly.</p>
-<h2 id="see-it-on-your-code">See it on your code</h2>
-<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>analyze<span class="w"> </span>.
+<p>Flags go before the library name and the paths. The command exits with a
+non-zero status when no imported module matches, so a script can tell
+"nobody depends on it" from "the analysis did not run".</p>
+<h2 id="where-else-the-answer-lives">Where else the answer lives</h2>
+<p><strong>The JSON report</strong> of <code>ast-metrics analyze --report-json</code> carries a
+<code>libraries</code> section: every imported module with the number of files
+importing it (<code>importers</code>), the number of files depending on it at any
+distance (<code>reach</code>), and <code>standard: true</code> for the modules of the language
+itself (<code>fmt</code>, <code>java.util</code>, <code>System.IO</code>, <code>std::collections</code>, PHP's global
+classes). A job can watch it over time:</p>
+<div class="highlight"><pre><span></span><code><span class="gp">$ </span>jq<span class="w"> </span><span class="s1">'.libraries[] | select(.standard | not) | select(.reach &gt; 100) | .module'</span><span class="w"> </span>report.json
 </code></pre></div>
-<p>The <code>Maintainability</code> block opens the summary: the project index, and the
-count of classes below the 65 threshold. The HTML report shows the score per
-class, sortable, on the Classes page. To enforce a floor, the <code>architecture</code>
-ruleset ships a <code>min_maintainability</code> rule for your
-<a href="../../ci/linting-architecture/"><code>.ast-metrics.yaml</code></a>:</p>
-<div class="highlight"><pre><span></span><code>ast-metrics<span class="w"> </span>ruleset<span class="w"> </span>add<span class="w"> </span>architecture
+<p><strong>The MCP server</strong> exposes the same question as the <code>who_uses</code> tool, so an
+AI assistant wired to <a href="../../ai/mcp-server/">the server</a> can answer <em>what
+would be exposed if this package had a flaw?</em> from the code rather than from
+a guess.</p>
+<h2 id="what-it-does-not-do">What it does not do</h2>
+<p>The graph describes the code, not its execution: a possible path is not a
+path taken. Static analysis also misses reflection, dependency-injection
+containers and dynamic loading, so the answer is an upper bound of what a
+flaw can touch, and an incomplete one where the wiring is dynamic. An import
+is not a data flow either: the command tells you which files stand on the
+library, not whether the tainted input reaches it.</p>
+<p>Versions are out of scope on purpose. Whether the log4j you depend on is the
+vulnerable release is the job of your SBOM and your composition scanner; this
+command tells you how much of your code stands behind the answer.</p>
+<div class="admonition tip">
+<p class="admonition-title">Forbid a library where it does not belong</p>
+<p>The <a href="../../ci/linting-architecture/"><code>coupling</code> rule</a> of the linter can
+forbid a dependency from a part of the code, by class or by package:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">requirements</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">rules</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">architecture</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">coupling</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">forbidden</span><span class="p">:</span>
+<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">from</span><span class="p">:</span><span class="w"> </span><span class="s">"Domain"</span>
+<span class="w">            </span><span class="nt">to</span><span class="p">:</span><span class="w"> </span><span class="s">"org\\.apache\\.logging"</span>
 </code></pre></div>
+</div>
 
 
 
@@ -1657,7 +1755,7 @@ ruleset ships a <code>min_maintainability</code> rule for your
     <span class="md-icon" title="Last update">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 13.1c-.1 0-.3.1-.4.2l-1 1 2.1 2.1 1-1c.2-.2.2-.6 0-.8l-1.3-1.3c-.1-.1-.2-.2-.4-.2m-1.9 1.8-6.1 6V23h2.1l6.1-6.1zM12.5 7v5.2l4 2.4-1 1L11 13V7zM11 21.9c-5.1-.5-9-4.8-9-9.9C2 6.5 6.5 2 12 2c5.3 0 9.6 4.1 10 9.3-.3-.1-.6-.2-1-.2s-.7.1-1 .2C19.6 7.2 16.2 4 12 4c-4.4 0-8 3.6-8 8 0 4.1 3.1 7.5 7.1 7.9l-.1.2z"/></svg>
     </span>
-    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="August 31, 2026 13:36:07 UTC">2026-08-31</span>
+    <span class="git-revision-date-localized-plugin git-revision-date-localized-plugin-iso_date" title="September 17, 2026 13:15:54 UTC">2026-09-17</span>
   </span>
 
     
@@ -1693,7 +1791,7 @@ ruleset ships a <code>min_maintainability</code> rule for your
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../cyclomatic-complexity/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Cyclomatic Complexity">
+          <a href="../compare-versions/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Compare versions">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -1703,20 +1801,20 @@ ruleset ships a <code>min_maintainability</code> rule for your
                 Previous
               </span>
               <div class="md-ellipsis">
-                Cyclomatic Complexity
+                Compare versions
               </div>
             </div>
           </a>
         
         
           
-          <a href="../risk/" class="md-footer__link md-footer__link--next" aria-label="Next: Risk Score">
+          <a href="../../metrics/" class="md-footer__link md-footer__link--next" aria-label="Next: Metrics Overview">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Risk Score
+                Metrics Overview
               </div>
             </div>
             <div class="md-footer__button md-icon">
