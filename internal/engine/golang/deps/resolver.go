@@ -36,6 +36,7 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 	suffixes := dependency.NewIndex()
 
 	modules := module.NewCache()
+	moduleOfFile := make(map[string]string)
 	for _, file := range files {
 		path := file.GetPath()
 		if file == nil || path == "" || file.GetProgrammingLanguage() != Language {
@@ -44,20 +45,36 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 		directory := filepath.Dir(path)
 		if importPath := modules.ImportPathOf(directory); importPath != "" {
 			packages.Add(importPath, path)
+			moduleOfFile[path] = modules.ModulePathOf(directory)
 		}
 		for _, suffix := range directorySuffixes(directory) {
 			suffixes.Add(suffix, path)
 		}
 	}
-	return &scopedFileDependencyResolver{packages: packages, suffixes: suffixes}
+	return &scopedFileDependencyResolver{packages: packages, suffixes: suffixes, moduleOfFile: moduleOfFile}
 }
 
 type scopedFileDependencyResolver struct {
 	packages *dependency.Index
 	suffixes *dependency.Index
+	// moduleOfFile is the go.mod module path each file sits under.
+	moduleOfFile map[string]string
 }
 
 var _ dependency.ScopedResolver = (*scopedFileDependencyResolver)(nil)
+var _ dependency.LibraryTeller = (*scopedFileDependencyResolver)(nil)
+
+// IsLibrary tells a package of another module from a package of the same
+// module that the analysis was not given: "example.com/demo/internal/x" is
+// the project itself when the importing file sits under the go.mod of
+// example.com/demo, whether or not internal/x was analyzed.
+func (r *scopedFileDependencyResolver) IsLibrary(source *pb.File, importPath string) bool {
+	modulePath := r.moduleOfFile[source.GetPath()]
+	if modulePath == "" {
+		return true
+	}
+	return importPath != modulePath && !strings.HasPrefix(importPath, modulePath+"/")
+}
 
 func (r *scopedFileDependencyResolver) Resolve(source *pb.File, dep *pb.StmtExternalDependency) ([]string, bool) {
 	if source == nil || dep == nil || source.GetProgrammingLanguage() != Language {

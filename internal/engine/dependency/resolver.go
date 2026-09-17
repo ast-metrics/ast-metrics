@@ -24,3 +24,12 @@ type Resolver interface {
 type ScopedResolver interface {
 	Resolve(source *pb.File, dependency *pb.StmtExternalDependency) (targetPaths []string, handled bool)
 }
+
+// LibraryTeller is implemented by a resolver able to tell a library from an
+// import that names no library, once the module resolved to no file of the
+// scope: a file of the project left out of the analysis, or a stylesheet.
+// A resolver leaving it out has every unresolved module counted as a
+// library, the relative ones set aside (see IsRelative).
+type LibraryTeller interface {
+	IsLibrary(source *pb.File, module string) bool
+}
