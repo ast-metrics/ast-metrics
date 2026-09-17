@@ -13,6 +13,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/cli"
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/pterm/pterm"
 	"golang.org/x/term"
 )
@@ -93,50 +94,87 @@ func (c *WhoUsesCommand) Execute() error {
 	return nil
 }
 
+// stepLabel says how far a level stands from the library, in words: a
+// file of level d depends on a file of level d-1, and a file of level 0
+// imports the library itself.
+func stepLabel(depth int) string {
+	switch depth {
+	case 0:
+		return "Import it directly"
+	case 1:
+		return "Depend on a file that imports it"
+	case 2:
+		return "Two imports away"
+	case 3:
+		return "Three imports away"
+	default:
+		return fmt.Sprintf("%d imports away", depth)
+	}
+}
+
 func (c *WhoUsesCommand) printReach(reach analyzer.Reach) {
 	w := c.out
-	fmt.Fprintf(w, "Who uses %q?\n\n", reach.Query)
+	title := lipgloss.NewStyle().Bold(true)
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	accent := lipgloss.NewStyle().Foreground(lipgloss.Color("#73F59F")).Bold(true)
+	warn := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFA500")).Bold(true)
+	bad := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555")).Bold(true)
+	shareStyle := func(part, whole int) lipgloss.Style {
+		switch {
+		case whole > 0 && part*2 >= whole:
+			return bad
+		case whole > 0 && part*5 >= whole:
+			return warn
+		default:
+			return accent
+		}
+	}
+
+	fmt.Fprint(w, cli.ScreenHeader("Who uses "+reach.Query+"?"))
+	fmt.Fprintln(w)
 	if len(reach.Modules) == 0 {
-		fmt.Fprintf(w, "No imported module matches. The names are the ones the imports use, e.g. \"org.apache.logging.log4j\", \"github.com/sirupsen/logrus\" or \"react\".\n")
+		fmt.Fprintln(w, "  No imported module matches "+title.Render(reach.Query)+".")
+		fmt.Fprintln(w, dim.Render("  Names are the ones the imports use: \"org.apache.logging.log4j\", \"github.com/sirupsen/logrus\", \"react\", \"Monolog\"."))
 		return
 	}
 
-	fmt.Fprintf(w, "Imported modules matching (%d):\n", len(reach.Modules))
-	for _, module := range reach.Modules {
-		fmt.Fprintf(w, "  %s\n", module)
+	fmt.Fprintln(w, title.Render(fmt.Sprintf("  %d %s matching", len(reach.Modules), plural(len(reach.Modules), "imported module"))))
+	modules := reach.Modules
+	if len(modules) > 12 {
+		modules = modules[:12]
+	}
+	for _, module := range modules {
+		fmt.Fprintln(w, dim.Render("    "+module))
+	}
+	if hidden := len(reach.Modules) - len(modules); hidden > 0 {
+		fmt.Fprintln(w, dim.Render(fmt.Sprintf("    … and %d more (--format json lists them all)", hidden)))
 	}
 	fmt.Fprintln(w)
 
 	files := reach.Files()
-	fmt.Fprintf(w, "Reach: %d of %d files (%s)", files, reach.Scope, percent(files, reach.Scope))
-	if levels := len(reach.Levels) - 1; levels > 0 {
-		fmt.Fprintf(w, ", up to %d %s away from the import", levels, plural(levels, "level"))
-	}
-	fmt.Fprintln(w)
+	fmt.Fprintf(w, "  %s of %d files depend on it (%s)\n", title.Render(fmt.Sprint(files)), reach.Scope, shareStyle(files, reach.Scope).Render(percent(files, reach.Scope)))
+	fmt.Fprintln(w, dim.Render("  A file that imports it is one step away; a file depending on that file is two steps away, and so on."))
 	fmt.Fprintln(w)
 
 	relative := relativePathsFrom(c.Configuration.SourcesToAnalyzePath)
 	for depth, level := range reach.Levels {
-		if depth == 0 {
-			fmt.Fprintf(w, "Level 0, imports it (%d %s):\n", len(level), plural(len(level), "file"))
-		} else {
-			fmt.Fprintf(w, "Level %d (%d %s):\n", depth, len(level), plural(len(level), "file"))
-		}
+		fmt.Fprintf(w, "  %s %s\n", title.Render(stepLabel(depth)), dim.Render(fmt.Sprintf("· %d %s", len(level), plural(len(level), "file"))))
 		shown := level
 		if c.Limit > 0 && len(shown) > c.Limit {
 			shown = shown[:c.Limit]
 		}
 		for _, file := range shown {
-			fmt.Fprintf(w, "  %s\n", relative(file))
+			fmt.Fprintf(w, "    %s\n", relative(file))
 		}
 		if hidden := len(level) - len(shown); hidden > 0 {
-			fmt.Fprintf(w, "  ... and %d more (--limit 0 lists them all)\n", hidden)
+			fmt.Fprintln(w, dim.Render(fmt.Sprintf("    … and %d more (--limit 0 lists them all)", hidden)))
 		}
+		fmt.Fprintln(w)
 	}
 
 	if len(reach.Communities) > 0 {
-		fmt.Fprintln(w)
-		fmt.Fprintln(w, "Communities reached:")
+		fmt.Fprintln(w, title.Render("  Communities reached"))
+		fmt.Fprintln(w, dim.Render("  The parts of the code the dependents belong to, the most exposed first."))
 		width := 0
 		for _, community := range reach.Communities {
 			if len(community.Name) > width {
@@ -144,9 +182,22 @@ func (c *WhoUsesCommand) printReach(reach analyzer.Reach) {
 			}
 		}
 		for _, community := range reach.Communities {
-			fmt.Fprintf(w, "  %-*s  %d of %d files (%s)\n", width, community.Name, community.Reached, community.Files, percent(community.Reached, community.Files))
+			fmt.Fprintf(w, "    %-*s  %s  %s\n", width, community.Name, meter(community.Reached, community.Files, shareStyle(community.Reached, community.Files)), dim.Render(fmt.Sprintf("%d of %d files (%s)", community.Reached, community.Files, percent(community.Reached, community.Files))))
 		}
+		fmt.Fprintln(w)
 	}
+}
+
+// meter draws a ten-cell bar of a share.
+func meter(part, whole int, style lipgloss.Style) string {
+	filled := 0
+	if whole > 0 {
+		filled = (part*10 + whole/2) / whole
+	}
+	if part > 0 && filled == 0 {
+		filled = 1
+	}
+	return style.Render(strings.Repeat("█", filled)) + lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render(strings.Repeat("░", 10-filled))
 }
 
 // relativePathsFrom spells a path from the analyzed source it sits under,

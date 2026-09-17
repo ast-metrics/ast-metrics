@@ -117,15 +117,15 @@ ast-metrics who-uses log4j ./src
 ```
 
 ```
-Reach: 187 of 312 files (60%), up to 4 levels away from the import
+187 of 312 files depend on it (60%)
 
-Level 0, imports it (1 file):
+Import it directly · 1 file
   src/main/java/com/acme/log/Logger.java
-Level 1 (41 files):
+Depend on a file that imports it · 41 files
   ...
 
-Communities reached:
-  billing   32 of 40 files (80%)
+Communities reached
+  billing   ████████░░  32 of 40 files (80%)
 ```
 
 The names are the ones the imports use: `log4j`, `react`, `github.com/sirupsen/logrus`, `Monolog`. Add `--format json` for scripts. The HTML report lists every imported library with its reach, and the MCP server answers the same question through `who_uses`.

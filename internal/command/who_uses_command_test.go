@@ -52,11 +52,13 @@ func TestWhoUsesCommandListsTheFilesLevelByLevel(t *testing.T) {
 	}
 	text := out.String()
 	for _, expected := range []string{
-		`Who uses "logrus"?`,
+		"Who uses logrus?",
 		"github.com/sirupsen/logrus",
-		"Reach: 2 of 3 files (67%), up to 1 level away from the import",
-		"Level 0, imports it (1 file):\n  internal/log/logger.go",
-		"Level 1 (1 file):\n  internal/billing/service.go",
+		"2 of 3 files depend on it (67%)",
+		"Import it directly",
+		"internal/log/logger.go",
+		"Depend on a file that imports it",
+		"internal/billing/service.go",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("expected the output to contain %q, got:\n%s", expected, text)
