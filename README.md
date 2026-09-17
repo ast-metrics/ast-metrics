@@ -108,28 +108,6 @@ Thresholds live in your YAML config: maximum complexity, coupling limits, forbid
 
 ➡️ [Rulesets, thresholds and baseline](https://ast-metrics.dev/ci/linting-architecture/)
 
-## Who uses this library?
-
-When a vulnerability drops, a grep finds the files importing the library. It does not find the three hundred files standing on the wrapper that imports it. `who-uses` follows the dependents level by level, and tells which parts of the code they belong to:
-
-```bash
-ast-metrics who-uses log4j ./src
-```
-
-```
-187 of 312 files depend on it (60%)
-
-Import it directly · 1 file
-  src/main/java/com/acme/log/Logger.java
-Depend on a file that imports it · 41 files
-  ...
-
-Communities reached
-  billing   ████████░░  32 of 40 files (80%)
-```
-
-The names are the ones the imports use: `log4j`, `react`, `github.com/sirupsen/logrus`, `Monolog`. Add `--format json` for scripts. The JSON report lists every imported library under `libraries`, with how many files import it and how many depend on it, and the MCP server answers the same question through `who_uses`.
-
 ## Run it in CI
 
 `ast-metrics ci` runs the linter, generates every report (HTML, JSON, Markdown, SARIF, OpenMetrics) and exits non-zero when violations are found. On GitHub, a single step is enough:
