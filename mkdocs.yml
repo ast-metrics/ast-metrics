@@ -66,6 +66,7 @@ nav:
     - Advanced usage:
       - Watch mode: advanced-usage/watch-directory.md
       - Compare versions: advanced-usage/compare-versions.md
+      - Who depends on a library: advanced-usage/who-uses-a-library.md
   - Metrics:
     - metrics/index.md
     - Volume: metrics/volume.md
