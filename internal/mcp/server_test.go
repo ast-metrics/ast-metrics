@@ -383,3 +383,31 @@ func TestHandleListComponents(t *testing.T) {
 	files := data["files"].([]any)
 	assert.Equal(t, 3, len(files))
 }
+
+func TestHandleWhoUses(t *testing.T) {
+	svc := NewAnalysisService(nil, nil)
+	agg := newTestAggregated()
+	agg.Combined.FileDependencies = analyzer.FileDependencyGraph{
+		Afferent:     map[string][]string{"/project/pkg/util.go": {"/project/cmd/main.go"}},
+		Libraries:    map[string][]string{"/project/pkg/util.go": {"github.com/sirupsen/logrus"}},
+		LibraryUsers: map[string][]string{"github.com/sirupsen/logrus": {"/project/pkg/util.go"}},
+	}
+	prefillCache(svc, agg)
+
+	handler := handleWhoUses(svc)
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"name": "logrus"}
+
+	result, err := handler(context.Background(), req)
+	assert.NoError(t, err)
+	data := parseToolResult(t, result)
+	assert.Equal(t, "logrus", data["query"])
+	assert.Equal(t, []any{"github.com/sirupsen/logrus"}, data["modules"])
+	assert.Equal(t, float64(2), data["files"])
+	assert.Equal(t, []any{[]any{"/project/pkg/util.go"}, []any{"/project/cmd/main.go"}}, data["levels"])
+
+	req.Params.Arguments = map[string]any{"name": "log4j"}
+	result, err = handler(context.Background(), req)
+	assert.NoError(t, err)
+	assert.Contains(t, parseToolResult(t, result), "error")
+}

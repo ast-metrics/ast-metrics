@@ -16,6 +16,7 @@ import (
 	csharpdeps "github.com/ast-metrics/ast-metrics/internal/engine/csharp/deps"
 	golangdeps "github.com/ast-metrics/ast-metrics/internal/engine/golang/deps"
 	javadeps "github.com/ast-metrics/ast-metrics/internal/engine/java/deps"
+	phpdeps "github.com/ast-metrics/ast-metrics/internal/engine/php/deps"
 	pythondeps "github.com/ast-metrics/ast-metrics/internal/engine/python/deps"
 	rustdeps "github.com/ast-metrics/ast-metrics/internal/engine/rust/deps"
 	typescriptdeps "github.com/ast-metrics/ast-metrics/internal/engine/typescript/deps"
@@ -173,6 +174,7 @@ func NewAggregator(files []*pb.File, gitSummaries []ResultOfGitAnalysis) *Aggreg
 	// packages beside their engine rather than inside it, so that an engine
 	// test may keep importing this package.
 	a.WithAggregateAnalyzer(NewFileDependencyAnalyzer(
+		phpdeps.NewFileDependencyResolver(),
 		typescriptdeps.NewFileDependencyResolver(),
 		golangdeps.NewFileDependencyResolver(),
 		javadeps.NewFileDependencyResolver(),

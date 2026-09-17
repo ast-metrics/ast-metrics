@@ -77,6 +77,9 @@ type CommunityMetrics struct {
 	// UnitFiles gives the file declaring each unit, when it is known: a
 	// class or a file of top-level code. Packages have none.
 	UnitFiles map[string]string
+	// FileCommunities maps every file onto the communities its units were
+	// placed in, sorted; the shared kernel counts as one.
+	FileCommunities map[string][]string
 	// CrossReferences are the references between units of different
 	// communities, the shared kernel included: what the page needs to redraw
 	// the map of a folder.
@@ -334,6 +337,27 @@ func (ca *CommunityAggregator) Calculate(aggregate *Aggregated) {
 	cm := computeCommunities(g, aggregate)
 	aggregate.Community = cm
 	cm.Folders = folderCommunities(g, cm)
+	cm.FileCommunities = fileCommunitiesOf(g, cm)
+}
+
+// fileCommunitiesOf maps every file onto the communities its units were
+// placed in, the shared kernel included. A file declaring classes of
+// several communities belongs to each.
+func fileCommunitiesOf(g *unitGraph, cm *CommunityMetrics) map[string][]string {
+	communities := make(map[string]map[string]struct{})
+	for unit, id := range cm.NodeToCommunity {
+		for path := range g.FilesOf[unit] {
+			if communities[path] == nil {
+				communities[path] = map[string]struct{}{}
+			}
+			communities[path][id] = struct{}{}
+		}
+	}
+	result := make(map[string][]string, len(communities))
+	for path, ids := range communities {
+		result[path] = slices.Sorted(maps.Keys(ids))
+	}
+	return result
 }
 
 // computeCommunities runs the analysis on a unit graph. With an aggregate,

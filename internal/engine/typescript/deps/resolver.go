@@ -1,11 +1,14 @@
 package deps
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/ast-metrics/ast-metrics/internal/engine/dependency"
+	"github.com/ast-metrics/ast-metrics/internal/engine/typescript/module"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
@@ -22,26 +25,82 @@ func NewFileDependencyResolver() *FileDependencyResolver {
 func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedResolver {
 	index := newModuleIndex()
 	moduleDependencies := make(map[*pb.File]map[dependencyIdentity]struct{})
+	packages := module.NewCache()
+	rootOf := make(map[string]string)
+	anchored := make(map[string][]string)
 	for _, file := range files {
 		if file == nil || file.GetProgrammingLanguage() != "TypeScript" {
 			continue
 		}
-		index.add(file.GetPath())
+		path := file.GetPath()
+		index.add(path)
 		moduleDependencies[file] = dependenciesAttachedToModules(file)
+		if location, located := packages.Locate(path); located {
+			rootOf[path] = location.Root
+			key := anchoredKey(location.Root, location.Module)
+			anchored[key] = append(anchored[key], path)
+		}
 	}
 	index.sort()
+	for key := range anchored {
+		sort.Strings(anchored[key])
+	}
 	return &scopedFileDependencyResolver{
 		modules:            index,
 		moduleDependencies: moduleDependencies,
+		rootOf:             rootOf,
+		anchored:           anchored,
+		projectDirs:        make(map[string]bool),
 	}
 }
 
 type scopedFileDependencyResolver struct {
 	modules            *moduleIndex
 	moduleDependencies map[*pb.File]map[dependencyIdentity]struct{}
+	// rootOf is the root of the package each file belongs to, and anchored
+	// maps a module named from that root ("src/log/logger") onto its files.
+	rootOf   map[string]string
+	anchored map[string][]string
+	// projectDirs remembers whether the first segment of a module names a
+	// directory of the package, once looked up on disk.
+	projectDirs map[string]bool
+	mutex       sync.Mutex
 }
 
 var _ dependency.ScopedResolver = (*scopedFileDependencyResolver)(nil)
+var _ dependency.LibraryTeller = (*scopedFileDependencyResolver)(nil)
+
+func anchoredKey(root, module string) string {
+	return root + "\x00" + module
+}
+
+// IsLibrary tells a package from a module of the project that resolved to
+// nothing: the engine anchors a relative import to the root of the package,
+// so "src/styles.css" and a source file left out of the analysis both name
+// a directory of the package, where "react" and "@scope/name" name none.
+func (r *scopedFileDependencyResolver) IsLibrary(source *pb.File, specifier string) bool {
+	root := r.rootOf[source.GetPath()]
+	if root == "" || isRelativeSpecifier(specifier) {
+		return true
+	}
+	first := specifier
+	if i := strings.IndexByte(first, '/'); i >= 0 {
+		first = first[:i]
+	}
+	if first == "" || strings.HasPrefix(first, "@") || strings.Contains(first, ":") {
+		return true
+	}
+	key := anchoredKey(root, first)
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+	isDir, known := r.projectDirs[key]
+	if !known {
+		info, err := os.Stat(filepath.Join(root, first))
+		isDir = err == nil && info.IsDir()
+		r.projectDirs[key] = isDir
+	}
+	return !isDir
+}
 
 func (r *scopedFileDependencyResolver) Resolve(source *pb.File, dep *pb.StmtExternalDependency) ([]string, bool) {
 	if source == nil || dep == nil || source.GetProgrammingLanguage() != "TypeScript" {
@@ -59,6 +118,13 @@ func (r *scopedFileDependencyResolver) Resolve(source *pb.File, dep *pb.StmtExte
 	// class with the same name.
 	if target := r.modules.resolveRelative(source.GetPath(), specifier); target != "" {
 		return []string{target}, true
+	}
+	// The engine anchors a relative import to the root of the package, so
+	// "../log/logger" reaches here as "src/log/logger".
+	if root := r.rootOf[source.GetPath()]; root != "" {
+		if targets := r.anchored[anchoredKey(root, specifier)]; len(targets) > 0 {
+			return targets, true
+		}
 	}
 	return nil, true
 }

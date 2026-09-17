@@ -14,6 +14,17 @@ import (
 type FileDependencyGraph struct {
 	Efferent map[string][]string
 	Afferent map[string][]string
+	// Libraries maps a file onto the modules it imports that resolve to no
+	// file of the scope: the standard library, a framework, a package, or a
+	// file the analysis was not given. A module is spelled the way the import
+	// spells it and nothing is reduced, so that a query can pin
+	// "org.apache.logging.log4j.core" rather than "org.apache".
+	Libraries map[string][]string
+	// LibraryUsers is the inverse of Libraries: the files importing a module.
+	LibraryUsers map[string][]string
+	// StandardLibraries holds the modules of Libraries that ship with the
+	// language, when its engine can tell: "fmt", "java.util", "System.IO".
+	StandardLibraries map[string]struct{}
 }
 
 // FileDependencyAnalyzer resolves AST dependencies to analyzed files. This is
@@ -83,8 +94,11 @@ func (index *uniqueFileIndex) get(language, name string) string {
 
 func resolveFileDependencies(files []*pb.File, resolvers ...dependency.Resolver) FileDependencyGraph {
 	graph := FileDependencyGraph{
-		Efferent: make(map[string][]string),
-		Afferent: make(map[string][]string),
+		Efferent:          make(map[string][]string),
+		Afferent:          make(map[string][]string),
+		Libraries:         make(map[string][]string),
+		LibraryUsers:      make(map[string][]string),
+		StandardLibraries: make(map[string]struct{}),
 	}
 
 	analyzedPaths := make(map[string]struct{}, len(files))
@@ -105,6 +119,13 @@ func resolveFileDependencies(files []*pb.File, resolvers ...dependency.Resolver)
 			classToFile.add(language, class.Name.GetQualified(), file.Path)
 			classToFile.add(language, class.Name.GetShort(), file.Path)
 		}
+		for _, itf := range engine.GetInterfacesInFile(file) {
+			if itf == nil || itf.Name == nil {
+				continue
+			}
+			classToFile.add(language, itf.Name.GetQualified(), file.Path)
+			classToFile.add(language, itf.Name.GetShort(), file.Path)
+		}
 	}
 
 	scopedResolvers := make([]dependency.ScopedResolver, 0, len(resolvers))
@@ -117,6 +138,7 @@ func resolveFileDependencies(files []*pb.File, resolvers ...dependency.Resolver)
 	}
 
 	edges := make(map[string]map[string]struct{})
+	imports := make(map[string]map[string]struct{})
 	for _, file := range files {
 		if file == nil || file.GetPath() == "" || file.Stmts == nil {
 			continue
@@ -127,10 +149,12 @@ func resolveFileDependencies(files []*pb.File, resolvers ...dependency.Resolver)
 			}
 
 			var targets []string
+			var owner dependency.ScopedResolver
 			handled := false
 			for _, resolver := range scopedResolvers {
 				targets, handled = resolver.Resolve(file, external)
 				if handled {
+					owner = resolver
 					break
 				}
 			}
@@ -143,14 +167,39 @@ func resolveFileDependencies(files []*pb.File, resolvers ...dependency.Resolver)
 				targets = []string{target}
 			}
 
+			resolved := false
 			for _, target := range targets {
-				if _, analyzed := analyzedPaths[target]; !analyzed || target == file.Path {
+				if _, analyzed := analyzedPaths[target]; !analyzed {
+					continue
+				}
+				resolved = true
+				if target == file.Path {
 					continue
 				}
 				if edges[file.Path] == nil {
 					edges[file.Path] = make(map[string]struct{})
 				}
 				edges[file.Path][target] = struct{}{}
+			}
+			if resolved {
+				continue
+			}
+			// A simple name with no module ("List", "string") stands for a
+			// type the file did not import; a relative module that resolves
+			// to nothing is a broken import. Neither is a library.
+			module := external.GetNamespace()
+			if module == "" || dependency.IsRelative(module) {
+				continue
+			}
+			if teller, tells := owner.(dependency.LibraryTeller); tells && !teller.IsLibrary(file, module) {
+				continue
+			}
+			if imports[file.Path] == nil {
+				imports[file.Path] = make(map[string]struct{})
+			}
+			imports[file.Path][module] = struct{}{}
+			if teller, tells := owner.(dependency.StandardLibraryTeller); tells && teller.IsStandardLibrary(module) {
+				graph.StandardLibraries[module] = struct{}{}
 			}
 		}
 	}
@@ -166,6 +215,18 @@ func resolveFileDependencies(files []*pb.File, resolvers ...dependency.Resolver)
 	}
 	for target := range graph.Afferent {
 		sort.Strings(graph.Afferent[target])
+	}
+	for file, modules := range imports {
+		for module := range modules {
+			graph.Libraries[file] = append(graph.Libraries[file], module)
+			graph.LibraryUsers[module] = append(graph.LibraryUsers[module], file)
+		}
+	}
+	for file := range graph.Libraries {
+		sort.Strings(graph.Libraries[file])
+	}
+	for module := range graph.LibraryUsers {
+		sort.Strings(graph.LibraryUsers[module])
 	}
 
 	return graph
