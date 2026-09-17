@@ -128,7 +128,7 @@ Communities reached
   billing   ████████░░  32 of 40 files (80%)
 ```
 
-The names are the ones the imports use: `log4j`, `react`, `github.com/sirupsen/logrus`, `Monolog`. Add `--format json` for scripts. The HTML report lists every imported library with its reach, and the MCP server answers the same question through `who_uses`.
+The names are the ones the imports use: `log4j`, `react`, `github.com/sirupsen/logrus`, `Monolog`. Add `--format json` for scripts. The JSON report lists every imported library under `libraries`, with how many files import it and how many depend on it, and the MCP server answers the same question through `who_uses`.
 
 ## Run it in CI
 

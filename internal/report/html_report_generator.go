@@ -42,7 +42,6 @@ type cachedLangData struct {
 	nodeToCommunityJSON string
 	testQualityJSON     string
 	fileDepsJSON        string
-	librariesJSON       string
 	folderDepsJSON      string
 	depFileCount        int
 	dictionaryJSON      string
@@ -231,7 +230,6 @@ func (v *HtmlReportGenerator) prepareScopeData(scope scopeDef, files []*pb.File)
 	}
 
 	cd.fileDepsJSON = buildFileDepsJSON(currentView.FileDependencies, dict)
-	cd.librariesJSON = buildLibrariesJSON(currentView.FileDependencies, dict)
 
 	// Count files for this scope
 	fileCount := 0
@@ -273,12 +271,6 @@ func (v *HtmlReportGenerator) writeScopeData(dataDir string, dataKey string, cd 
 		jsBuilder.WriteString("null")
 	} else {
 		jsBuilder.WriteString(cd.folderDepsJSON)
-	}
-	jsBuilder.WriteString(",libraries:")
-	if cd.librariesJSON == "" {
-		jsBuilder.WriteString("[]")
-	} else {
-		jsBuilder.WriteString(cd.librariesJSON)
 	}
 	jsBuilder.WriteString(",depFileCount:")
 	jsBuilder.WriteString(fmt.Sprintf("%d", cd.depFileCount))
@@ -691,29 +683,6 @@ func sortedMapKeys[V any](values map[string]V) []string {
 }
 
 // buildFolderDepsJSON projects the analyzer's file graph to folders.
-// buildLibrariesJSON lists the modules imported from outside the scope with
-// the files importing each, as dictionary keys. The page follows the
-// dependents itself, level after level, from the file graph it already holds.
-func buildLibrariesJSON(graph analyzer.FileDependencyGraph, dict *StringDictionary) string {
-	if len(graph.LibraryUsers) == 0 {
-		return "[]"
-	}
-	entries := make([]libraryEntry, 0, len(graph.LibraryUsers))
-	for _, use := range graph.LibraryUses() {
-		importers := graph.LibraryUsers[use.Module]
-		entry := libraryEntry{Module: use.Module, Importers: make([]string, 0, len(importers)), Standard: use.Standard}
-		for _, importer := range importers {
-			entry.Importers = append(entry.Importers, dict.Add(importer))
-		}
-		entries = append(entries, entry)
-	}
-	data, err := json.Marshal(entries)
-	if err != nil {
-		return "[]"
-	}
-	return string(data)
-}
-
 func buildFolderDepsJSON(files []*pb.File, graph analyzer.FileDependencyGraph, dict *StringDictionary) string {
 	filesByFolder := map[string]map[string]struct{}{}
 
