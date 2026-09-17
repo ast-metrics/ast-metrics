@@ -215,13 +215,15 @@ func relativePathsFrom(sources []string) func(string) string {
 	// the deepest root first, so that a file under src/billing is spelled
 	// from there rather than from the project
 	sort.Slice(roots, func(i, j int) bool { return len(roots[i]) > len(roots[j]) })
+	// Spelled with forward slashes on every platform, the way an import
+	// and a source of the report spell a path.
 	return func(path string) string {
 		for _, root := range roots {
 			if relative, err := filepath.Rel(root, path); err == nil && !strings.HasPrefix(relative, "..") {
-				return relative
+				return filepath.ToSlash(relative)
 			}
 		}
-		return path
+		return filepath.ToSlash(path)
 	}
 }
 
