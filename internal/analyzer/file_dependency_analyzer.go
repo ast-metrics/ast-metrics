@@ -119,6 +119,13 @@ func resolveFileDependencies(files []*pb.File, resolvers ...dependency.Resolver)
 			classToFile.add(language, class.Name.GetQualified(), file.Path)
 			classToFile.add(language, class.Name.GetShort(), file.Path)
 		}
+		for _, itf := range engine.GetInterfacesInFile(file) {
+			if itf == nil || itf.Name == nil {
+				continue
+			}
+			classToFile.add(language, itf.Name.GetQualified(), file.Path)
+			classToFile.add(language, itf.Name.GetShort(), file.Path)
+		}
 	}
 
 	scopedResolvers := make([]dependency.ScopedResolver, 0, len(resolvers))

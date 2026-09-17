@@ -43,6 +43,11 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 				types.Add(dependency.QualifiedOrShort(name), path)
 			}
 		}
+		for _, itf := range engine.GetInterfacesInFile(file) {
+			if name := itf.GetName(); name != nil {
+				types.Add(dependency.QualifiedOrShort(name), path)
+			}
+		}
 	}
 	return &scopedFileDependencyResolver{types: types, packages: packages}
 }

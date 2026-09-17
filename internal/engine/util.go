@@ -80,6 +80,38 @@ func FactoryStmts() *pb.Stmts {
 	return stmts
 }
 
+// GetInterfacesInFile lists the interfaces a file declares, at its top level
+// and under its namespaces, each once.
+func GetInterfacesInFile(file *pb.File) []*pb.StmtInterface {
+	if file == nil || file.Stmts == nil {
+		return nil
+	}
+	var interfaces []*pb.StmtInterface
+	seen := make(map[*pb.StmtInterface]struct{})
+	add := func(itf *pb.StmtInterface) {
+		if itf == nil {
+			return
+		}
+		if _, known := seen[itf]; known {
+			return
+		}
+		seen[itf] = struct{}{}
+		interfaces = append(interfaces, itf)
+	}
+	for _, itf := range file.Stmts.StmtInterface {
+		add(itf)
+	}
+	for _, namespace := range file.Stmts.StmtNamespace {
+		if namespace == nil || namespace.Stmts == nil {
+			continue
+		}
+		for _, itf := range namespace.Stmts.StmtInterface {
+			add(itf)
+		}
+	}
+	return interfaces
+}
+
 func GetClassesInFile(file *pb.File) []*pb.StmtClass {
 	var classes []*pb.StmtClass
 	if file.Stmts == nil {
