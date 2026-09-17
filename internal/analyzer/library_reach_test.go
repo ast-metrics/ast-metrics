@@ -130,8 +130,7 @@ func TestTouchedCommunitiesAreTheMostCoveredFirst(t *testing.T) {
 			{ID: "c2", ShortName: "catalog"},
 			{ID: "c3", ShortName: "untouched"},
 		},
-		NodeToCommunity: map[string]string{"Invoice": "c1", "Payment": "c1", "Product": "c2", "Price": "c2", "Sku": "c2", "Other": "c3"},
-		UnitFiles:       map[string]string{"Invoice": "invoice", "Payment": "payment", "Product": "product", "Price": "price", "Sku": "sku", "Other": "other"},
+		FileCommunities: map[string][]string{"invoice": {"c1"}, "payment": {"c1"}, "product": {"c2"}, "price": {"c2"}, "sku": {"c2"}, "other": {"c3"}},
 	}
 	touched := metrics.Touched([]string{"invoice", "payment", "product"})
 	want := []CommunityTouch{

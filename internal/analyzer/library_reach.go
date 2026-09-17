@@ -209,43 +209,44 @@ func (g FileDependencyGraph) LibraryUses() []LibraryUse {
 }
 
 // Touched tells which communities a set of files belongs to, and how much of
-// each is covered, the most covered first. A file declaring units of several
+// each is covered, the most covered first. A file holding units of several
 // communities counts for each of them.
 func (m *CommunityMetrics) Touched(files []string) []CommunityTouch {
-	if m == nil || len(m.UnitFiles) == 0 {
+	if m == nil || len(m.FileCommunities) == 0 {
 		return nil
 	}
-	filesOf := make(map[string]map[string]struct{})
-	for unit, path := range m.UnitFiles {
-		id, member := m.NodeToCommunity[unit]
-		if !member {
-			continue
+	total := make(map[string]int)
+	for _, ids := range m.FileCommunities {
+		for _, id := range ids {
+			total[id]++
 		}
-		if filesOf[id] == nil {
-			filesOf[id] = make(map[string]struct{})
-		}
-		filesOf[id][path] = struct{}{}
 	}
-	touched := make([]CommunityTouch, 0)
-	for _, community := range m.Communities {
-		members := filesOf[community.ID]
-		if len(members) == 0 {
-			continue
+	reached := make(map[string]int)
+	for _, file := range files {
+		for _, id := range m.FileCommunities[file] {
+			reached[id]++
 		}
-		reached := 0
-		for _, file := range files {
-			if _, member := members[file]; member {
-				reached++
+	}
+	if len(reached) == 0 {
+		return nil
+	}
+	nameOf := func(id string) string {
+		for _, community := range m.Communities {
+			if community.ID == id {
+				if community.ShortName != "" {
+					return community.ShortName
+				}
+				return community.Name
 			}
 		}
-		if reached == 0 {
-			continue
+		if m.Shared != nil && m.Shared.ID == id {
+			return "shared kernel"
 		}
-		name := community.ShortName
-		if name == "" {
-			name = community.Name
-		}
-		touched = append(touched, CommunityTouch{ID: community.ID, Name: name, Reached: reached, Files: len(members)})
+		return id
+	}
+	touched := make([]CommunityTouch, 0, len(reached))
+	for id, count := range reached {
+		touched = append(touched, CommunityTouch{ID: id, Name: nameOf(id), Reached: count, Files: total[id]})
 	}
 	sort.Slice(touched, func(i, j int) bool {
 		ri := float64(touched[i].Reached) / float64(touched[i].Files)
