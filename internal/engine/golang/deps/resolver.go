@@ -64,6 +64,19 @@ type scopedFileDependencyResolver struct {
 var _ dependency.ScopedResolver = (*scopedFileDependencyResolver)(nil)
 var _ dependency.LibraryTeller = (*scopedFileDependencyResolver)(nil)
 
+// IsStandardLibrary tells the standard library from a module of a host: the
+// first segment of "fmt" or "net/http" holds no dot, the one of
+// "github.com/x/y" or "gopkg.in/yaml.v3" does.
+func (r *scopedFileDependencyResolver) IsStandardLibrary(importPath string) bool {
+	first := importPath
+	if i := strings.IndexByte(first, '/'); i >= 0 {
+		first = first[:i]
+	}
+	return first != "" && !strings.Contains(first, ".")
+}
+
+var _ dependency.StandardLibraryTeller = (*scopedFileDependencyResolver)(nil)
+
 // IsLibrary tells a package of another module from a package of the same
 // module that the analysis was not given: "example.com/demo/internal/x" is
 // the project itself when the importing file sits under the go.mod of

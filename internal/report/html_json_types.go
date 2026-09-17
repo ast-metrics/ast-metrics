@@ -19,6 +19,14 @@ type fileDepsEntry struct {
 	Afferent []depRef `json:"afferent"`
 }
 
+// libraryEntry is a module imported from outside the scope and the files
+// importing it, as dictionary keys.
+type libraryEntry struct {
+	Module    string   `json:"m"`
+	Importers []string `json:"f"`
+	Standard  bool     `json:"s,omitempty"`
+}
+
 // folderDepRef represents a folder dependency reference with an edge count.
 type folderDepRef struct {
 	Path  string `json:"path"`

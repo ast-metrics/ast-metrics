@@ -53,6 +53,8 @@ type LibraryUse struct {
 	// Reach is the number of files depending on it at any distance, the
 	// importers included.
 	Reach int `json:"reach"`
+	// Standard is true for a module shipping with the language.
+	Standard bool `json:"standard,omitempty"`
 }
 
 // WhoUses finds the files of the scope depending on the modules matching a
@@ -194,7 +196,8 @@ func (g FileDependencyGraph) LibraryUses() []LibraryUse {
 			reach = len(queue)
 			reachOf[key] = reach
 		}
-		uses = append(uses, LibraryUse{Module: module, Importers: len(users), Reach: reach})
+		_, standard := g.StandardLibraries[module]
+		uses = append(uses, LibraryUse{Module: module, Importers: len(users), Reach: reach, Standard: standard})
 	}
 	sort.Slice(uses, func(i, j int) bool {
 		if uses[i].Reach != uses[j].Reach {

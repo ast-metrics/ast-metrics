@@ -33,3 +33,11 @@ type ScopedResolver interface {
 type LibraryTeller interface {
 	IsLibrary(source *pb.File, module string) bool
 }
+
+// StandardLibraryTeller is implemented by a resolver able to tell the
+// standard library of its language from a third-party module: "fmt" from
+// "github.com/x/y", "java.util" from "org.apache.x". A resolver leaving it
+// out has every library counted as third-party.
+type StandardLibraryTeller interface {
+	IsStandardLibrary(module string) bool
+}

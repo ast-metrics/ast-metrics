@@ -22,6 +22,9 @@ type FileDependencyGraph struct {
 	Libraries map[string][]string
 	// LibraryUsers is the inverse of Libraries: the files importing a module.
 	LibraryUsers map[string][]string
+	// StandardLibraries holds the modules of Libraries that ship with the
+	// language, when its engine can tell: "fmt", "java.util", "System.IO".
+	StandardLibraries map[string]struct{}
 }
 
 // FileDependencyAnalyzer resolves AST dependencies to analyzed files. This is
@@ -91,10 +94,11 @@ func (index *uniqueFileIndex) get(language, name string) string {
 
 func resolveFileDependencies(files []*pb.File, resolvers ...dependency.Resolver) FileDependencyGraph {
 	graph := FileDependencyGraph{
-		Efferent:     make(map[string][]string),
-		Afferent:     make(map[string][]string),
-		Libraries:    make(map[string][]string),
-		LibraryUsers: make(map[string][]string),
+		Efferent:          make(map[string][]string),
+		Afferent:          make(map[string][]string),
+		Libraries:         make(map[string][]string),
+		LibraryUsers:      make(map[string][]string),
+		StandardLibraries: make(map[string]struct{}),
 	}
 
 	analyzedPaths := make(map[string]struct{}, len(files))
@@ -187,6 +191,9 @@ func resolveFileDependencies(files []*pb.File, resolvers ...dependency.Resolver)
 				imports[file.Path] = make(map[string]struct{})
 			}
 			imports[file.Path][module] = struct{}{}
+			if teller, tells := owner.(dependency.StandardLibraryTeller); tells && teller.IsStandardLibrary(module) {
+				graph.StandardLibraries[module] = struct{}{}
+			}
 		}
 	}
 

@@ -45,3 +45,14 @@ func TestFileDependencyResolverTellsALibraryFromTheModuleItself(t *testing.T) {
 		}
 	}
 }
+
+func TestFileDependencyResolverTellsTheStandardLibrary(t *testing.T) {
+	teller := NewFileDependencyResolver().ForFiles(nil).(dependency.StandardLibraryTeller)
+	for importPath, standard := range map[string]bool{
+		"fmt": true, "net/http": true, "github.com/x/y": false, "gopkg.in/yaml.v3": false, "": false,
+	} {
+		if got := teller.IsStandardLibrary(importPath); got != standard {
+			t.Errorf("IsStandardLibrary(%q) = %v, expected %v", importPath, got, standard)
+		}
+	}
+}

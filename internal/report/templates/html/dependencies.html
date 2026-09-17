@@ -415,6 +415,19 @@
         </details>
     </div>
 
+    <!-- Libraries the code stands on -->
+    <div class="soft-card mt-6 animate-fade-in-up stagger-2" id="dep-libraries">
+        <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div>
+                <h2 class="card-title">Who uses this library?</h2>
+                <p class="card-sub">Modules imported from outside the project. The reach follows the dependents of the importing files, level after level: what a change or a flaw in the library can touch.</p>
+            </div>
+            <input id="dep-libraries-filter" type="search" placeholder="log4j, react, Monolog&hellip;" autocomplete="off"
+                   class="text-sm border border-gray-200 rounded-md px-3 py-1.5 w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+        </div>
+        <div id="dep-libraries-body"></div>
+    </div>
+
     <!-- Circular dependencies -->
     <div class="soft-card mt-6 animate-fade-in-up stagger-2">
         <div class="mb-3">
@@ -710,6 +723,107 @@ document.addEventListener('DOMContentLoaded', function() {
                 html += '<p class="text-xs text-gray-500 mt-2">and ' + (cycles.length - shown.length) + ' more circular chains.</p>';
             }
             body.innerHTML = html;
+        })();
+
+        // ---- Libraries the code stands on -------------------------------------
+        (function renderLibraries() {
+            var body = document.getElementById('dep-libraries-body');
+            var card = document.getElementById('dep-libraries');
+            var filter = document.getElementById('dep-libraries-filter');
+            if (!body || !card) return;
+            var libraries = _d.libraries || [];
+            if (!libraries.length) { card.classList.add('hidden'); return; }
+
+            // who depends on a file, read once from the graph the page holds
+            var inAdj = {};
+            fileKeys.forEach(function(fp) {
+                (deps[fp].afferent || []).forEach(function(d) {
+                    if (!inAdj[fp]) inAdj[fp] = [];
+                    inAdj[fp].push(d.path);
+                });
+            });
+            var scope = _d.depFileCount || fileKeys.length || 1;
+
+            // the importers first, then their dependents, level after level
+            function reachOf(importers) {
+                var seen = {}, levels = [], frontier = [];
+                importers.forEach(function(id) { if (!seen[id]) { seen[id] = true; frontier.push(id); } });
+                while (frontier.length) {
+                    levels.push(frontier.slice().sort());
+                    var next = [];
+                    frontier.forEach(function(id) {
+                        (inAdj[id] || []).forEach(function(user) {
+                            if (!seen[user]) { seen[user] = true; next.push(user); }
+                        });
+                    });
+                    frontier = next;
+                }
+                return levels;
+            }
+            var rows = libraries.map(function(lib) {
+                var levels = reachOf(lib.f);
+                var total = levels.reduce(function(n, l) { return n + l.length; }, 0);
+                return { module: lib.m, importers: lib.f.length, levels: levels, reach: total, standard: !!lib.s };
+            });
+            rows.sort(function(a, b) { return b.reach - a.reach || b.importers - a.importers || (a.module < b.module ? -1 : 1); });
+            var maxReach = rows.length ? rows[0].reach : 0;
+
+            function chips(ids, limit) {
+                var shown = ids.slice(0, limit);
+                var html = shown.map(function(id) {
+                    return '<a class="dep-chip" href="' + explorerUrl(id) + '" title="' + esc(resolve(id)) + '">' + esc(baseName(resolve(id))) + '</a>';
+                }).join('');
+                if (ids.length > shown.length) html += '<span class="row-meta ml-1">and ' + (ids.length - shown.length) + ' more</span>';
+                return html;
+            }
+            function render(query) {
+                var q = (query || '').trim().toLowerCase();
+                // the standard library is what every file stands on: it is
+                // listed only when asked for by name
+                var matching = q ? rows.filter(function(r) { return r.module.toLowerCase().indexOf(q) >= 0; })
+                                 : rows.filter(function(r) { return !r.standard; });
+                var standard = rows.filter(function(r) { return r.standard; }).length;
+                if (!matching.length) {
+                    body.innerHTML = '<div class="insight insight--warn"><span class="dot sev-warn"></span><span>No imported module matches <strong>' + esc(query) + '</strong>. Names are the ones the imports use.</span></div>';
+                    return;
+                }
+                var html = '';
+                if (q) {
+                    var files = {};
+                    matching.forEach(function(r) { r.levels.forEach(function(l) { l.forEach(function(id) { files[id] = true; }); }); });
+                    var count = Object.keys(files).length;
+                    var ratio = count / scope;
+                    var sev = ratio >= 0.5 ? 'bad' : (ratio >= 0.2 ? 'warn' : 'good');
+                    html += '<div class="insight insight--' + sev + '"><span class="dot sev-' + sev + '"></span><span><strong>'
+                        + plural(count, 'file') + '</strong> (' + Math.round(ratio * 100) + '% of the project) stand on <strong>' + esc(query) + '</strong>'
+                        + (fractionPhrase(ratio) ? ', ' + fractionPhrase(ratio) : '') + '.</span></div>';
+                }
+                var shown = q ? matching : matching.slice(0, 10);
+                html += shown.map(function(r) {
+                    var width = maxReach > 0 ? Math.max(4, Math.round(r.reach / maxReach * 100)) : 0;
+                    var sev = sevOf(Math.round(r.reach / scope * 20));
+                    var levelsHtml = r.levels.map(function(level, depth) {
+                        var label = depth === 0 ? 'imports it' : (depth === 1 ? 'one step away' : depth + ' steps away');
+                        return '<div class="dep-cycle-row"><span class="row-meta shrink-0 w-28">' + plural(level.length, 'file') + ', ' + label + '</span>' + chips(level, 12) + '</div>';
+                    }).join('');
+                    return '<details class="dep-library" ' + (q && matching.length <= 3 ? 'open' : '') + '>'
+                        + '<summary class="data-row cursor-pointer list-none" title="' + esc(r.module) + '">'
+                        + '<div class="min-w-0 flex-1"><div class="row-name truncate"><code class="ident">' + esc(r.module) + '</code></div>'
+                        + '<div class="row-meta truncate">' + plural(r.importers, 'file') + ' import it &middot; reaches ' + plural(r.reach, 'file') + ' (' + Math.round(r.reach / scope * 100) + '%)</div></div>'
+                        + '<div class="w-24 shrink-0"><div class="meter" style="margin-top:0"><div class="meter-fill ' + sev + '" style="width:' + width + '%"></div></div></div>'
+                        + '<span class="row-value w-8">' + r.reach + '</span>'
+                        + '</summary><div class="pl-2 pb-2">' + levelsHtml + '</div></details>';
+                }).join('');
+                if (!q) {
+                    var notes = [];
+                    if (matching.length > shown.length) notes.push(plural(matching.length - shown.length, 'more module'));
+                    if (standard) notes.push('the standard library (' + plural(standard, 'module') + ')');
+                    if (notes.length) html += '<p class="text-xs text-gray-500 mt-2">and ' + notes.join(', ') + '. Type a name to look one up.</p>';
+                }
+                body.innerHTML = html;
+            }
+            render('');
+            if (filter) filter.addEventListener('input', function() { render(filter.value); });
         })();
 
         // ---- Coupling lists ---------------------------------------------------
