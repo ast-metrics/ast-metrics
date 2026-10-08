@@ -1495,3 +1495,92 @@ h6 {
     width: 100%;
   }
 }
+/* --- Live demo: the report screenshot is a link to demo.ast-metrics.dev --- */
+.landing-page a.lp-shot-live {
+  display: block;
+  color: inherit;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.landing-page a.lp-shot-live:hover,
+.landing-page a.lp-shot-live:focus-visible {
+  transform: translateY(-4px);
+  box-shadow: 0 50px 90px -40px rgba(37, 99, 235, 0.45);
+}
+
+.landing-page a.lp-shot-live:focus-visible {
+  outline: 3px solid var(--am-blue);
+  outline-offset: 4px;
+}
+
+.lp-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 0.7rem;
+  padding: 0.15rem 0.55rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #166534;
+  background: #dcfce7;
+  border-radius: 4px;
+}
+
+/* Square pulse, same pixel language as the window dots */
+.lp-live-badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: #22c55e;
+  animation: lp-live-blink 1.6s steps(2, jump-none) infinite;
+}
+
+@keyframes lp-live-blink {
+  50% { opacity: 0.25; }
+}
+
+.lp-shot-body {
+  position: relative;
+}
+
+.lp-shot-cta {
+  position: absolute;
+  left: 50%;
+  bottom: 1.6rem;
+  transform: translate(-50%, 8px);
+  padding: 0.75rem 1.4rem;
+  border-radius: 10px;
+  background: var(--am-ink);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  box-shadow: 0 14px 30px -12px rgba(17, 24, 39, 0.5);
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.landing-page a.lp-shot-live:hover .lp-shot-cta,
+.landing-page a.lp-shot-live:focus-visible .lp-shot-cta {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* No hover on touch screens: keep the call to action visible */
+@media (hover: none) {
+  .lp-shot-cta {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    bottom: 0.8rem;
+    font-size: 0.85rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-page a.lp-shot-live,
+  .lp-shot-cta { transition: none; }
+  .lp-live-badge::before { animation: none; }
+}

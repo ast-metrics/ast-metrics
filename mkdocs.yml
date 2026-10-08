@@ -55,6 +55,7 @@ extra_javascript:
 
 nav:
   - Home: index.md
+  - Live demo: https://demo.ast-metrics.dev/
   - Getting started:
     - Why?: getting-started/index.md
     - Quickstart: getting-started/first-execution.md
