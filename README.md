@@ -28,7 +28,7 @@ Fast: 20,000+ lines of code analyzed per second, on a laptop.
 <a href="https://codecov.io/gh/ast-metrics/ast-metrics"><img src="https://codecov.io/gh/ast-metrics/ast-metrics/branch/main/graph/badge.svg" alt="codecov"></a>
 <a href="https://pkg.go.dev/github.com/ast-metrics/ast-metrics"><img src="https://pkg.go.dev/badge/github.com/ast-metrics/ast-metrics.svg" alt="Go Reference"></a>
 <a href="https://github.com/avelino/awesome-go"><img src="https://awesome.re/mentioned-badge-flat.svg" alt="Mentioned in Awesome Go"></a>
-<a href="https://analyze.ast-metrics.dev/ast-metrics/ast-metrics"><img src="https://img.shields.io/badge/AST--Metrics-report-181717?logo=github" alt="AST-Metrics report"></a>
+<a href="https://demo.ast-metrics.dev/"><img src="https://img.shields.io/badge/AST--Metrics-report-181717?logo=github" alt="AST-Metrics report"></a>
 </p>
 
 <p align="center" style="text-align:center">
@@ -38,7 +38,7 @@ Fast: 20,000+ lines of code analyzed per second, on a laptop.
 <p align="center" style="text-align:center">
 <a href="https://analyze.ast-metrics.dev/ast-metrics/ast-metrics"><img alt="The AST Metrics report: a plain-language verdict, with scores for complexity, maintainability, test isolation and bus factor" src="https://raw.githubusercontent.com/ast-metrics/ast-metrics/main/docs/report-overview-embed.png" /></a>
 <br />
-<i>AST Metrics analyzing itself. <a href="https://analyze.ast-metrics.dev/ast-metrics/ast-metrics">Explore this report live</a>, or <a href="https://analyze.ast-metrics.dev">try it on any public repository</a>, without installing anything.</i>
+<i>AST Metrics analyzing itself. <a href="https://demo.ast-metrics.dev/">Explore this report live</a>, or <a href="https://analyze.ast-metrics.dev">try it on any public repository</a>, without installing anything.</i>
 </p>
 
 <br />
