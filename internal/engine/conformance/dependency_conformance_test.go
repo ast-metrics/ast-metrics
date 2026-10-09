@@ -25,6 +25,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/cpp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/csharp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/golang"
 	"github.com/ast-metrics/ast-metrics/internal/engine/java"
@@ -348,6 +349,28 @@ var typescriptScenarios = []dependencyScenario{
 	},
 }
 
+var cppScenarios = []dependencyScenario{
+	{
+		name: "a relative include names an analyzed header",
+		why:  "C++ resolves a quoted relative include from the including file without needing an include search path",
+		files: map[string]string{
+			"include/relay.hpp":  "class Relay { public: void update(); };\n",
+			"src/controller.cpp": "#include \"../include/relay.hpp\"\nclass Controller { Relay relay_; };\n",
+			"src/unrelated.cpp":  "class Unrelated {};\n",
+		},
+		edges: map[string][]string{"src/controller.cpp": {"include/relay.hpp"}},
+	},
+	{
+		name: "an unresolved system include stays external",
+		why:  "syntax-level C++ resolution must not invent compiler include paths",
+		files: map[string]string{
+			"src/vector.hpp": "class vector {};\n",
+			"src/app.cpp":    "#include <vector>\nint main() { return 0; }\n",
+		},
+		edges: map[string][]string{},
+	},
+}
+
 func TestDependencyConformance(t *testing.T) {
 	suites := []struct {
 		language  string
@@ -360,6 +383,7 @@ func TestDependencyConformance(t *testing.T) {
 		{langPython, pythonScenarios},
 		{langPHP, phpScenarios},
 		{langTS, typescriptScenarios},
+		{langCpp, cppScenarios},
 	}
 
 	for _, suite := range suites {
@@ -407,6 +431,7 @@ func dependencyEdges(t *testing.T, root string) map[string][]string {
 		&golang.GolangRunner{}, &php.PhpRunner{}, &python.PythonRunner{},
 		&rust.RustRunner{}, &typescript.TypeScriptRunner{},
 		&java.JavaRunner{}, &csharp.CSharpRunner{},
+		&cpp.CppRunner{},
 	})
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
