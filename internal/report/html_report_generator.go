@@ -33,6 +33,27 @@ var (
 	htmlContent embed.FS
 )
 
+// Identity palette: cool hues only. Green, amber and red carry severity
+// everywhere else in the report, so a contributor must never wear them.
+// Chips print white initials at 11px on these backgrounds, so every color
+// must reach the WCAG AA contrast of 4.5:1 against white.
+var contributorPalette = []string{
+	"#1d4ed8", // blue
+	"#6d28d9", // purple
+	"#be185d", // pink
+	"#0e7490", // cyan
+	"#4338ca", // indigo
+	"#0f766e", // teal
+	"#7e22ce", // violet
+	"#0369a1", // sky
+	"#a21caf", // fuchsia
+	"#475569", // slate
+	"#7c3aed", // deep violet
+	"#155e75", // deep cyan
+}
+
+const contributorFallbackColor = "#6b7280" // gray
+
 // cachedLangData holds pre-computed JSON strings for a given scope (the whole
 // project, one language, or one analyzed directory).
 type cachedLangData struct {
@@ -2241,7 +2262,7 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 	pongo2.RegisterFilter("contributorColor", func(in *pongo2.Value, param *pongo2.Value) (out *pongo2.Value, err *pongo2.Error) {
 		name := in.String()
 		if name == "" {
-			return pongo2.AsValue("#9ca3af"), nil // gray fallback
+			return pongo2.AsValue(contributorFallbackColor), nil
 		}
 
 		// Generate hash from name
@@ -2249,25 +2270,8 @@ func (v *HtmlReportGenerator) RegisterFilters() {
 		h.Write([]byte(name))
 		hash := h.Sum32()
 
-		// Identity palette: cool hues only. Green, amber and red carry severity
-		// everywhere else in the report, so a contributor must never wear them.
-		colors := []string{
-			"#3b82f6", // blue
-			"#8b5cf6", // purple
-			"#ec4899", // pink
-			"#06b6d4", // cyan
-			"#6366f1", // indigo
-			"#14b8a6", // teal
-			"#a855f7", // violet
-			"#0ea5e9", // sky
-			"#d946ef", // fuchsia
-			"#64748b", // slate
-			"#7c3aed", // deep violet
-			"#0891b2", // deep cyan
-		}
-
-		colorIndex := int(hash) % len(colors)
-		return pongo2.AsValue(colors[colorIndex]), nil
+		colorIndex := int(hash) % len(contributorPalette)
+		return pongo2.AsValue(contributorPalette[colorIndex]), nil
 	})
 
 	// filter getRoleCategory: extracts category from a role label
