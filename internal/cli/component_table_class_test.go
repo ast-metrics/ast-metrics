@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	pb "github.com/ast-metrics/ast-metrics/pb"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -119,6 +120,7 @@ func TestComponentTableClass_Sort(t *testing.T) {
 	mi1 := float64(120)
 	ccn1 := int32(5)
 	loc1 := int32(100)
+	lloc1 := int32(20)
 	halsteadLength1 := int32(5)
 	halsteadVolume := float64(7)
 
@@ -126,6 +128,7 @@ func TestComponentTableClass_Sort(t *testing.T) {
 	mi2 := float64(110)
 	ccn2 := int32(10)
 	loc2 := int32(80)
+	lloc2 := int32(40)
 	halsteadLength2 := int32(7)
 
 	files := []*pb.File{
@@ -148,6 +151,7 @@ func TestComponentTableClass_Sort(t *testing.T) {
 								},
 								Volume: &pb.Volume{
 									Loc:            &loc1,
+									Lloc:           &lloc1,
 									HalsteadLength: &halsteadLength1,
 									HalsteadVolume: &halsteadVolume,
 								},
@@ -169,6 +173,7 @@ func TestComponentTableClass_Sort(t *testing.T) {
 								},
 								Volume: &pb.Volume{
 									Loc:            &loc2,
+									Lloc:           &lloc2,
 									HalsteadLength: &halsteadLength2,
 									HalsteadVolume: &halsteadVolume,
 								},
@@ -182,9 +187,18 @@ func TestComponentTableClass_Sort(t *testing.T) {
 	component := NewComponentTableClass(false, files)
 	component.Init()
 
+	// Exercise the user-facing key binding. ClassB has less physical LOC but
+	// more logical LOC, so this also proves the LLOC column contains and sorts
+	// the logical value rather than physical LOC.
+	component.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	firstRow := component.table.Rows()[0]
+	assert.Contains(t, firstRow[0], "ClassB", "ClassB has the highest LLOC")
+	assert.Equal(t, "40", firstRow[4])
+	assert.Equal(t, cols["LLOC"], component.sortColumnIndex)
+
 	// Sort by maintainability index
 	component.SortByMaintainabilityIndex()
-	firstRow := component.table.Rows()[0]
+	firstRow = component.table.Rows()[0]
 	assert.Contains(t, firstRow[0], "ClassB", "ClassB is first")
 
 	// Sort by name
