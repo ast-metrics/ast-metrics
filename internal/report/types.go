@@ -57,6 +57,10 @@ type report struct {
 	// Communities are the groups of classes that depend on each other more
 	// than on the rest of the code, with the findings read from them.
 	Communities *analyzer.CommunitiesExport `json:"communities,omitempty"`
+	// Libraries are the modules imported from outside the project, the
+	// farthest-reaching first: how many files import each, and how many
+	// depend on it at any distance.
+	Libraries []analyzer.LibraryUse `json:"libraries,omitempty"`
 }
 
 type contributor struct {

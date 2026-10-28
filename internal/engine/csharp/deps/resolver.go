@@ -4,6 +4,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	"github.com/ast-metrics/ast-metrics/internal/engine/dependency"
 	pb "github.com/ast-metrics/ast-metrics/pb"
+	"strings"
 )
 
 // Language is the value the C# engine writes in pb.File.ProgrammingLanguage.
@@ -55,6 +56,11 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 				types.Add(dependency.QualifiedOrShort(name), path)
 			}
 		}
+		for _, itf := range engine.GetInterfacesInFile(file) {
+			if name := itf.GetName(); name != nil {
+				types.Add(dependency.QualifiedOrShort(name), path)
+			}
+		}
 	}
 	return &scopedFileDependencyResolver{namespaces: namespaces, types: types}
 }
@@ -65,6 +71,13 @@ type scopedFileDependencyResolver struct {
 }
 
 var _ dependency.ScopedResolver = (*scopedFileDependencyResolver)(nil)
+var _ dependency.StandardLibraryTeller = (*scopedFileDependencyResolver)(nil)
+
+// IsStandardLibrary tells the namespaces of the base class library from the
+// ones of a package: System and everything under it.
+func (r *scopedFileDependencyResolver) IsStandardLibrary(namespace string) bool {
+	return namespace == "System" || strings.HasPrefix(namespace, "System.")
+}
 
 func (r *scopedFileDependencyResolver) Resolve(source *pb.File, dep *pb.StmtExternalDependency) ([]string, bool) {
 	if source == nil || dep == nil || source.GetProgrammingLanguage() != Language {

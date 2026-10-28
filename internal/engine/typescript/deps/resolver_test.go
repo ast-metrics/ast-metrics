@@ -1,8 +1,11 @@
 package deps
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/ast-metrics/ast-metrics/internal/engine/dependency"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
@@ -183,5 +186,54 @@ func TestFileDependencyResolverIgnoresSymbolDependencies(t *testing.T) {
 	got, handled := resolveTypeScriptDependency([]*pb.File{source, target}, source, dep)
 	if handled || got != "" {
 		t.Fatalf("expected symbol dependency to fall through, got %q (handled=%t)", got, handled)
+	}
+}
+
+func TestFileDependencyResolverResolvesAnchoredModules(t *testing.T) {
+	root := t.TempDir()
+	write := func(path, content string) string {
+		path = filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	write("package.json", "{}")
+	logger := write("src/log/logger.ts", "export class Logger {}")
+	write("src/styles.css", "")
+	service := &pb.File{
+		Path:                write("src/billing/service.ts", ""),
+		ProgrammingLanguage: "TypeScript",
+		Stmts: &pb.Stmts{StmtNamespace: []*pb.StmtNamespace{{
+			Name: &pb.Name{Qualified: "src/billing/service"},
+			Stmts: &pb.Stmts{StmtExternalDependencies: []*pb.StmtExternalDependency{
+				{Namespace: "src/log/logger", ClassName: "Logger", From: "src/billing/service"},
+			}},
+		}}},
+	}
+	files := []*pb.File{service, {Path: logger, ProgrammingLanguage: "TypeScript", Stmts: &pb.Stmts{}}}
+	scoped := NewFileDependencyResolver().ForFiles(files)
+
+	// the engine anchors "../log/logger" to the root of the package
+	targets, handled := scoped.Resolve(service, service.Stmts.StmtNamespace[0].Stmts.StmtExternalDependencies[0])
+	if !handled || len(targets) != 1 || targets[0] != logger {
+		t.Fatalf("expected the anchored import to resolve to the logger, got %v (handled %v)", targets, handled)
+	}
+
+	teller := scoped.(dependency.LibraryTeller)
+	for module, library := range map[string]bool{
+		"react":             true,
+		"@scope/name/sub":   true,
+		"node:fs":           true,
+		"src/styles.css":    false,
+		"src/left/out":      false,
+		"missing/dir/thing": true,
+	} {
+		if got := teller.IsLibrary(service, module); got != library {
+			t.Errorf("IsLibrary(%q) = %v, expected %v", module, got, library)
+		}
 	}
 }

@@ -24,6 +24,7 @@ func NewMCPServer(version string, config *configuration.Configuration, runners [
 	s.AddTool(findComplexCodeTool(), handleFindComplexCode(svc))
 	s.AddTool(getDependenciesTool(), handleGetDependencies(svc))
 	s.AddTool(getCouplingTool(), handleGetCoupling(svc))
+	s.AddTool(whoUsesTool(), handleWhoUses(svc))
 	s.AddTool(getCommunitiesTool(), handleGetCommunities(svc))
 	s.AddTool(getTestQualityTool(), handleGetTestQuality(svc))
 	s.AddTool(listComponentsTool(), handleListComponents(svc))

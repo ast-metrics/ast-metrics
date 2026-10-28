@@ -261,3 +261,58 @@ func handleGetCoupling(svc *AnalysisService) func(ctx context.Context, request m
 		return mcp.NewToolResultError(fmt.Sprintf("Component '%s' not found", name)), nil
 	}
 }
+
+func whoUsesTool() mcp.Tool {
+	return mcp.NewTool("who_uses",
+		mcp.WithDescription("Find which files depend on a library, directly (they import it) or through other files, level by level, and which communities they belong to. Answers 'what is exposed if this library has a vulnerability?' or 'how much of the code stands on this framework?'. The name is matched anywhere in the imported module: 'log4j' finds org.apache.logging.log4j."),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Library or module name to look for, as the imports spell it (e.g. 'log4j', 'react', 'github.com/sirupsen/logrus', 'Monolog')")),
+		mcp.WithNumber("max_depth", mcp.Description("How many levels past the importers to follow (default: unbounded)")),
+		mcp.WithBoolean("force_refresh", mcp.Description("Force re-analysis ignoring cache")),
+		mcp.WithToolAnnotation(mcp.ToolAnnotation{
+			Title:        "Who Uses a Library",
+			ReadOnlyHint: mcp.ToBoolPtr(true),
+		}),
+	)
+}
+
+func handleWhoUses(svc *AnalysisService) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		name, err := request.RequireString("name")
+		if err != nil || strings.TrimSpace(name) == "" {
+			return mcp.NewToolResultError("Missing required parameter: name"), nil
+		}
+
+		args := request.GetArguments()
+		maxDepth := 0
+		forceRefresh := false
+		if args != nil {
+			if v, ok := args["max_depth"].(float64); ok {
+				maxDepth = int(v)
+			}
+			if v, ok := args["force_refresh"].(bool); ok {
+				forceRefresh = v
+			}
+		}
+
+		agg, _, err := svc.Analyze(forceRefresh)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Analysis failed: %v", err)), nil
+		}
+
+		reach := agg.Combined.WhoUses(name, maxDepth)
+		if len(reach.Modules) == 0 {
+			return safeToolResultJSON(map[string]any{
+				"error": fmt.Sprintf("No imported module matches '%s'. Names are the ones the imports use.", name),
+				"hint":  "Call get_dependencies or read the 'libraries' section of the JSON report to list the imported modules.",
+			})
+		}
+		return safeToolResultJSON(map[string]any{
+			"query":       reach.Query,
+			"modules":     reach.Modules,
+			"files":       reach.Files(),
+			"scope":       reach.Scope,
+			"levels":      reach.Levels,
+			"communities": reach.Communities,
+		})
+	}
+}

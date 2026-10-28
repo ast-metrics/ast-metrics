@@ -75,6 +75,21 @@ type scopedFileDependencyResolver struct {
 }
 
 var _ dependency.ScopedResolver = (*scopedFileDependencyResolver)(nil)
+var _ dependency.StandardLibraryTeller = (*scopedFileDependencyResolver)(nil)
+
+// IsStandardLibrary tells the crates shipped with the toolchain from the
+// ones of the registry.
+func (r *scopedFileDependencyResolver) IsStandardLibrary(path string) bool {
+	segments := splitPath(path)
+	if len(segments) == 0 {
+		return false
+	}
+	switch segments[0] {
+	case "std", "core", "alloc", "proc_macro", "test":
+		return true
+	}
+	return false
+}
 
 func (r *scopedFileDependencyResolver) Resolve(source *pb.File, dep *pb.StmtExternalDependency) ([]string, bool) {
 	if source == nil || dep == nil || source.GetProgrammingLanguage() != Language {
