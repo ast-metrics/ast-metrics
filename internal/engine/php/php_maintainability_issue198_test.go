@@ -31,6 +31,13 @@ final class FooDto
 	if class.Stmts == nil || class.Stmts.Analyze == nil {
 		t.Fatal("expected class analysis to be populated")
 	}
+	volume := class.Stmts.Analyze.Volume
+	if volume == nil || volume.Lloc == nil || *volume.Lloc != 0 {
+		t.Fatalf("expected DTO to have zero logical LOC, got volume %+v", volume)
+	}
+	if volume.HalsteadVolume == nil || *volume.HalsteadVolume <= 0 {
+		t.Fatalf("expected promoted property to produce positive Halstead volume, got %+v", volume.HalsteadVolume)
+	}
 	if metrics := class.Stmts.Analyze.Maintainability; metrics != nil && metrics.MaintainabilityIndex != nil {
 		t.Fatalf("declaration-only DTO has no executable logical lines; want undefined maintainability index, got %g", *metrics.MaintainabilityIndex)
 	}
