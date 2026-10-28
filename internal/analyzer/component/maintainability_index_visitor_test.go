@@ -48,6 +48,29 @@ func TestMaintainabilityIndexVisitor_LeaveNode(t *testing.T) {
 	// Should not panic
 }
 
+func TestMaintainabilityIndexUndefinedForZeroLogicalLines(t *testing.T) {
+	loc := int32(4)
+	lloc := int32(0)
+	cloc := int32(0)
+	cyclomatic := int32(1)
+	halsteadVolume := float64(2)
+	stmts := &pb.Stmts{Analyze: &pb.Analyze{
+		Volume: &pb.Volume{
+			Loc:            &loc,
+			Lloc:           &lloc,
+			Cloc:           &cloc,
+			HalsteadVolume: &halsteadVolume,
+		},
+		Complexity: &pb.Complexity{Cyclomatic: &cyclomatic},
+	}}
+
+	(&MaintainabilityIndexVisitor{}).Calculate(stmts)
+
+	if metrics := stmts.Analyze.Maintainability; metrics != nil && metrics.MaintainabilityIndex != nil {
+		t.Fatalf("zero executable logical lines should leave maintainability undefined, got %g", *metrics.MaintainabilityIndex)
+	}
+}
+
 func TestItCalculateMaintainabilityIndex(t *testing.T) {
 
 	visitor := MaintainabilityIndexVisitor{}
