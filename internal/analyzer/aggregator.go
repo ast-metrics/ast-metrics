@@ -13,6 +13,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/analyzer/classifier"
 	requirement "github.com/ast-metrics/ast-metrics/internal/analyzer/requirement"
 	engine "github.com/ast-metrics/ast-metrics/internal/engine"
+	cppdeps "github.com/ast-metrics/ast-metrics/internal/engine/cpp/deps"
 	csharpdeps "github.com/ast-metrics/ast-metrics/internal/engine/csharp/deps"
 	golangdeps "github.com/ast-metrics/ast-metrics/internal/engine/golang/deps"
 	javadeps "github.com/ast-metrics/ast-metrics/internal/engine/java/deps"
@@ -173,6 +174,7 @@ func NewAggregator(files []*pb.File, gitSummaries []ResultOfGitAnalysis) *Aggreg
 	// packages beside their engine rather than inside it, so that an engine
 	// test may keep importing this package.
 	a.WithAggregateAnalyzer(NewFileDependencyAnalyzer(
+		cppdeps.NewFileDependencyResolver(),
 		typescriptdeps.NewFileDependencyResolver(),
 		golangdeps.NewFileDependencyResolver(),
 		javadeps.NewFileDependencyResolver(),

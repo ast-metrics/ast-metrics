@@ -1,12 +1,14 @@
 package file
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
+	"github.com/sirupsen/logrus"
 	"github.com/yargevad/filepathx"
 )
 
@@ -146,7 +148,18 @@ func (r Finder) Search(fileExtension string) FileList {
 		if strings.HasSuffix(path, fileExtension) {
 			matches = append(matches, path)
 		} else {
-			matches, _ = filepathx.Glob(path + "/**/*" + fileExtension)
+			globbed, err := filepathx.Glob(path + "/**/*" + fileExtension)
+			if err != nil {
+				// A filename with glob metacharacters (an unbalanced "[", a
+				// stray "*") makes the double-star glob give up on the whole
+				// tree. Walking instead keeps the rest of the project
+				// analyzable, and the warning keeps the skipped pattern
+				// visible.
+				logrus.Warnf("globbing %s failed (%v), walking the directory instead", path+"/**/*"+fileExtension, err)
+				matches = walkMatchingFiles(path, fileExtension)
+			} else {
+				matches = globbed
+			}
 		}
 
 		// deal with excluded files
@@ -171,6 +184,24 @@ func (r Finder) Search(fileExtension string) FileList {
 	}
 
 	return result
+}
+
+// walkMatchingFiles collects every regular file under root whose extension
+// equals extension. It is the fallback for when double-star globbing cannot
+// run, so exclusions and scope ownership stay with the caller.
+func walkMatchingFiles(root, extension string) []string {
+	var matches []string
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) == extension {
+			matches = append(matches, path)
+		}
+		return nil
+	})
+
+	return matches
 }
 
 // SearchMultiple performs a single directory walk and dispatches files by extension.

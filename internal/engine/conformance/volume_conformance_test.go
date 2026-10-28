@@ -28,7 +28,7 @@ import (
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
-var allLanguages = []string{langGo, langPHP, langPython, langTS, langJava, langCSharp, langRust}
+var allLanguages = []string{langGo, langPHP, langPython, langTS, langJava, langCSharp, langRust, langCpp}
 
 // parse runs the engine and the analyzers over src, as a real run would.
 func parse(t *testing.T, lang, src string) *pb.File {
@@ -326,6 +326,10 @@ var documentedFixture = map[string]struct {
 	},
 	langRust: {
 		src: "// doc line one\n// doc line two\nfn f(a: i32) -> i32 {\n\tlet mut b = a + 1; // trailing note\n\n\t/* block one\n\t   block two */\n\tif b > 0 {\n\t\tb = b - 1;\n\t}\n\treturn b;\n}\n",
+		loc: 12, cloc: 4, ncloc: 7, lloc: 4,
+	},
+	langCpp: {
+		src: "// doc line one\n// doc line two\nint f(int a) {\n\tint b = a + 1; // trailing note\n\n\t/* block one\n\t   block two */\n\tif (b > 0) {\n\t\tb = b - 1;\n\t}\n\treturn b;\n}\n",
 		loc: 12, cloc: 4, ncloc: 7, lloc: 4,
 	},
 }
