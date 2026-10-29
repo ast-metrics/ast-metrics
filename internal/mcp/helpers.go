@@ -34,6 +34,9 @@ func fillAnalyzeMetrics(m map[string]any, a *pb.Analyze) {
 	if a.Complexity != nil && a.Complexity.Cyclomatic != nil {
 		m["cyclomatic_complexity"] = *a.Complexity.Cyclomatic
 	}
+	if a.Complexity != nil && a.Complexity.Cognitive != nil {
+		m["cognitive_complexity"] = *a.Complexity.Cognitive
+	}
 
 	if a.Volume != nil {
 		vol := map[string]any{}
