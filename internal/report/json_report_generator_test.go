@@ -130,3 +130,39 @@ func TestBuildReportMapsPerMethodMaintainability(t *testing.T) {
 		t.Errorf("expected AverageMIcwPerMethod 20, got %v", r.AverageMIcwPerMethod)
 	}
 }
+
+func TestBuildReportListsEachFunctionWithItsLinesAndMetrics(t *testing.T) {
+	cyclomatic, loc := int32(3), int32(12)
+	method := &pb.StmtFunction{
+		Name:     &pb.Name{Short: "run", Qualified: "App::run"},
+		Location: &pb.StmtLocationInFile{StartLine: 4, EndLine: 15, StartFilePos: 40},
+		Stmts: &pb.Stmts{Analyze: &pb.Analyze{
+			Complexity: &pb.Complexity{Cyclomatic: &cyclomatic},
+			Volume:     &pb.Volume{Loc: &loc},
+		}},
+	}
+	helper := &pb.StmtFunction{
+		Name:     &pb.Name{Short: "mk"},
+		Location: &pb.StmtLocationInFile{StartLine: 20, EndLine: 21, StartFilePos: 300},
+	}
+	shadow := &pb.StmtFunction{
+		Name:     &pb.Name{Short: "mk"},
+		Location: &pb.StmtLocationInFile{StartLine: 30, EndLine: 31, StartFilePos: 500},
+	}
+	f := &pb.File{Path: "app.ts", Stmts: &pb.Stmts{
+		StmtClass:    []*pb.StmtClass{{Stmts: &pb.Stmts{StmtFunction: []*pb.StmtFunction{method}}}},
+		StmtFunction: []*pb.StmtFunction{method, helper, shadow},
+	}}
+
+	r := (&JsonReportGenerator{}).buildReport(analyzer.ProjectAggregated{
+		Combined: analyzer.Aggregated{ConcernedFiles: []*pb.File{f}},
+	})
+
+	expected := []function{
+		{Name: "run", QualifiedName: "App::run", StartLine: 4, EndLine: 15,
+			Complexity: complexity{Cyclomatic: 3}, Volume: volume{Loc: 12}},
+		{Name: "mk", StartLine: 20, EndLine: 21},
+		{Name: "mk", StartLine: 30, EndLine: 31},
+	}
+	assert.Equal(t, expected, r.ConcernedFiles[0].Functions)
+}

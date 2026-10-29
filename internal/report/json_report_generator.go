@@ -69,38 +69,14 @@ func (j *JsonReportGenerator) buildReport(projectAggregated analyzer.ProjectAggr
 	r.ConcernedFiles = make([]file, len(combined.ConcernedFiles))
 	for i, f := range combined.ConcernedFiles {
 		concernedFile := file{
-			Path: f.Path,
+			Path:      f.Path,
+			Functions: functionsOf(f),
 		}
 
 		if f.Stmts != nil && f.Stmts.Analyze != nil {
-			if f.Stmts.Analyze.Complexity != nil {
-				concernedFile.Complexity = complexity{
-					Cyclomatic: *f.Stmts.Analyze.Complexity.Cyclomatic,
-				}
-			}
-
-			if f.Stmts.Analyze.Volume != nil {
-				concernedFile.Volume = volume{
-					Loc:                     f.Stmts.Analyze.Volume.GetLoc(),
-					Lloc:                    f.Stmts.Analyze.Volume.GetLloc(),
-					Cloc:                    f.Stmts.Analyze.Volume.GetCloc(),
-					HalsteadVolume:          f.Stmts.Analyze.Volume.GetHalsteadVolume(),
-					HalsteadDifficulty:      f.Stmts.Analyze.Volume.GetHalsteadDifficulty(),
-					HalsteadEffort:          f.Stmts.Analyze.Volume.GetHalsteadEffort(),
-					HalsteadTime:            f.Stmts.Analyze.Volume.GetHalsteadTime(),
-					HalsteadVocabulary:      f.Stmts.Analyze.Volume.GetHalsteadVocabulary(),
-					HalsteadLength:          f.Stmts.Analyze.Volume.GetHalsteadLength(),
-					HalsteadEstimatedLength: f.Stmts.Analyze.Volume.GetHalsteadEstimatedLength(),
-				}
-			}
-
-			if f.Stmts.Analyze.Maintainability != nil {
-				concernedFile.Maintainability = maintainability{
-					MaintainabilityIndex:                f.Stmts.Analyze.Maintainability.GetMaintainabilityIndex(),
-					MaintainabilityIndexWithoutComments: f.Stmts.Analyze.Maintainability.GetMaintainabilityIndexWithoutComments(),
-					CommentWeight:                       f.Stmts.Analyze.Maintainability.GetCommentWeight(),
-				}
-			}
+			concernedFile.Complexity = complexityOf(f.Stmts.Analyze)
+			concernedFile.Volume = volumeOf(f.Stmts.Analyze)
+			concernedFile.Maintainability = maintainabilityOf(f.Stmts.Analyze)
 
 			if f.Stmts.Analyze.Risk != nil {
 				concernedFile.Risk = risk{
@@ -187,4 +163,52 @@ func (j *JsonReportGenerator) buildReport(projectAggregated analyzer.ProjectAggr
 	r.Libraries = combined.FileDependencies.LibraryUses()
 
 	return r
+}
+
+// functionsOf lists every function defined in the file, methods and nested
+// functions included, one row per definition.
+func functionsOf(f *pb.File) []function {
+	definitions := engine.GetFunctionsInFile(f)
+	rows := make([]function, len(definitions))
+	for i, fn := range definitions {
+		rows[i] = function{
+			Name:            fn.GetName().GetShort(),
+			QualifiedName:   fn.GetName().GetQualified(),
+			StartLine:       fn.GetLocation().GetStartLine(),
+			EndLine:         fn.GetLocation().GetEndLine(),
+			Complexity:      complexityOf(fn.GetStmts().GetAnalyze()),
+			Volume:          volumeOf(fn.GetStmts().GetAnalyze()),
+			Maintainability: maintainabilityOf(fn.GetStmts().GetAnalyze()),
+		}
+	}
+	return rows
+}
+
+func complexityOf(a *pb.Analyze) complexity {
+	return complexity{Cyclomatic: a.GetComplexity().GetCyclomatic()}
+}
+
+func volumeOf(a *pb.Analyze) volume {
+	v := a.GetVolume()
+	return volume{
+		Loc:                     v.GetLoc(),
+		Lloc:                    v.GetLloc(),
+		Cloc:                    v.GetCloc(),
+		HalsteadVolume:          v.GetHalsteadVolume(),
+		HalsteadDifficulty:      v.GetHalsteadDifficulty(),
+		HalsteadEffort:          v.GetHalsteadEffort(),
+		HalsteadTime:            v.GetHalsteadTime(),
+		HalsteadVocabulary:      v.GetHalsteadVocabulary(),
+		HalsteadLength:          v.GetHalsteadLength(),
+		HalsteadEstimatedLength: v.GetHalsteadEstimatedLength(),
+	}
+}
+
+func maintainabilityOf(a *pb.Analyze) maintainability {
+	m := a.GetMaintainability()
+	return maintainability{
+		MaintainabilityIndex:                m.GetMaintainabilityIndex(),
+		MaintainabilityIndexWithoutComments: m.GetMaintainabilityIndexWithoutComments(),
+		CommentWeight:                       m.GetCommentWeight(),
+	}
 }

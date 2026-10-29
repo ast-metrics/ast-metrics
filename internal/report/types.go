@@ -84,6 +84,19 @@ type file struct {
 	Maintainability maintainability `json:"maintainability,omitempty"`
 	Risk            risk            `json:"risk,omitempty"`
 	Coupling        coupling        `json:"coupling,omitempty"`
+	Functions       []function      `json:"functions,omitempty"`
+}
+
+// function is one definition in a file: a function, a method, or a function
+// nested in either. Lines are 1-based and inclusive.
+type function struct {
+	Name            string          `json:"name,omitempty"`
+	QualifiedName   string          `json:"qualifiedName,omitempty"`
+	StartLine       int32           `json:"startLine,omitempty"`
+	EndLine         int32           `json:"endLine,omitempty"`
+	Complexity      complexity      `json:"complexity,omitempty"`
+	Volume          volume          `json:"volume,omitempty"`
+	Maintainability maintainability `json:"maintainability,omitempty"`
 }
 
 type complexity struct {
