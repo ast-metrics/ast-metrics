@@ -269,6 +269,43 @@ func TestGetFunctionsInFile_DeduplicatesEquivalentFunctionsByQualifiedName(t *te
 	}
 }
 
+func functionAt(name string, pos int32) *pb.StmtFunction {
+	return &pb.StmtFunction{
+		Name:     &pb.Name{Short: name, Qualified: name},
+		Location: &pb.StmtLocationInFile{StartFilePos: pos},
+	}
+}
+
+func fileWithFunctions(namespaced []*pb.StmtFunction, topLevel []*pb.StmtFunction) *pb.File {
+	return &pb.File{
+		Stmts: &pb.Stmts{
+			StmtNamespace: []*pb.StmtNamespace{{Stmts: &pb.Stmts{StmtFunction: namespaced}}},
+			StmtFunction:  topLevel,
+		},
+	}
+}
+
+// Same-named helpers in different scopes are distinct definitions.
+func TestGetFunctionsInFile_KeepsSameNamedFunctionsAtDifferentOffsets(t *testing.T) {
+	file := fileWithFunctions(nil, []*pb.StmtFunction{functionAt("mk", 10), functionAt("mk", 90)})
+
+	if functions := GetFunctionsInFile(file); len(functions) != 2 {
+		t.Errorf("expected 2 functions, got %d", len(functions))
+	}
+}
+
+// An AST reloaded from the cache holds one copy per parent, anonymous
+// functions included.
+func TestGetFunctionsInFile_DeduplicatesCopiesAtTheSameOffset(t *testing.T) {
+	for _, name := range []string{"f", ""} {
+		file := fileWithFunctions([]*pb.StmtFunction{functionAt(name, 0)}, []*pb.StmtFunction{functionAt(name, 0)})
+
+		if functions := GetFunctionsInFile(file); len(functions) != 1 {
+			t.Errorf("name %q: expected 1 function, got %d", name, len(functions))
+		}
+	}
+}
+
 func TestGetFunctionsOutsideClassesInFile_ExcludesFunctionsAttachedToClasses(t *testing.T) {
 	method := &pb.StmtFunction{Name: &pb.Name{Short: "M", Qualified: "Acme\\C::M"}}
 	outside := &pb.StmtFunction{Name: &pb.Name{Short: "F", Qualified: "Acme\\F"}}
