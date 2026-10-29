@@ -134,3 +134,13 @@ func TestMatchesPath(t *testing.T) {
 	assert.True(t, matchesPath("/home/user/project/src/main.go", "main.go"))
 	assert.False(t, matchesPath("src/main.go", "other.go"))
 }
+
+func TestFillAnalyzeMetrics_CognitiveComplexity(t *testing.T) {
+	m := map[string]any{}
+	fillAnalyzeMetrics(m, &pb.Analyze{Complexity: &pb.Complexity{
+		Cyclomatic: proto.Int32(4),
+		Cognitive:  proto.Int32(7),
+	}})
+
+	assert.Equal(t, int32(7), m["cognitive_complexity"])
+}
