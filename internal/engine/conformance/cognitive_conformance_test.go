@@ -145,6 +145,66 @@ var cognitiveScenarios = []scenario{
 			langRust:   "fn f(a: i32) -> i32 { let mut a = a; while a > 0 { if a > 2 { a = 1 } else { a -= 1; if a > 1 { a = 2 } if a > 3 { a = 3 } } } a }\n",
 		},
 	},
+	{
+		name: "ternary_in_an_if_condition",
+		ccn:  2,
+		why:  "if 1, the ternary in its condition stays at nesting 0: 1",
+		impl: map[string]string{
+			langPHP:    "<?php\nfunction f($a) { if ($a > 0 ? $a > 1 : $a > 2) { return 1; } return 0; }\n",
+			langPython: "def f(a):\n    if a > 1 if a > 0 else a > 2:\n        return 1\n    return 0\n",
+			langTS:     "function f(a: number): number { if (a > 0 ? a > 1 : a > 2) { return 1 } return 0 }\n",
+			langJava:   "class C { int f(int a) { if (a > 0 ? a > 1 : a > 2) { return 1; } return 0; } }\n",
+			langCSharp: "class C { int f(int a) { if (a > 0 ? a > 1 : a > 2) { return 1; } return 0; } }\n",
+		},
+	},
+	{
+		name: "ternary_in_an_else_if_condition",
+		ccn:  4,
+		why:  "if 1, else if 1, else 1, the ternary in the condition stays at nesting 0: 1",
+		impl: map[string]string{
+			langPHP:    "<?php\nfunction f($a) { if ($a > 5) { return 1; } elseif ($a > 0 ? $a > 1 : $a > 2) { return 2; } else { return 3; } }\n",
+			langPython: "def f(a):\n    if a > 5:\n        return 1\n    elif a > 1 if a > 0 else a > 2:\n        return 2\n    else:\n        return 3\n",
+			langTS:     "function f(a: number): number { if (a > 5) { return 1 } else if (a > 0 ? a > 1 : a > 2) { return 2 } else { return 3 } }\n",
+			langJava:   "class C { int f(int a) { if (a > 5) { return 1; } else if (a > 0 ? a > 1 : a > 2) { return 2; } else { return 3; } } }\n",
+			langCSharp: "class C { int f(int a) { if (a > 5) { return 1; } else if (a > 0 ? a > 1 : a > 2) { return 2; } else { return 3; } } }\n",
+		},
+	},
+	{
+		name: "if_in_the_condition_of_an_if",
+		ccn:  3,
+		why:  "if 1, inner if at nesting 0: 1, its else 1",
+		impl: map[string]string{
+			langRust: "fn f(a: i32) -> i32 { if if a > 0 { a > 1 } else { a > 2 } { return 1 } 0 }\n",
+		},
+	},
+	{
+		name: "if_in_the_let_condition_of_an_if",
+		ccn:  3,
+		why:  "if let 1, inner if at nesting 0: 1, its else 1",
+		impl: map[string]string{
+			langRust: "fn f(a: i32) -> i32 { if let Some(x) = if a > 0 { Some(1) } else { None } { return x } 0 }\n",
+		},
+	},
+	{
+		name: "if_in_the_initializer_of_an_if",
+		ccn:  2,
+		why:  "if 1, the if of the closure in its initializer stays at nesting 0: 1",
+		impl: map[string]string{
+			langGo: "package p\nfunc f(a int) int {\n\tif x := func() bool { if a > 1 { return true }; return false }(); x { return 1 }\n\treturn 0\n}\n",
+		},
+	},
+	{
+		name: "ternary_in_a_loop_condition_is_nested",
+		ccn:  3,
+		why:  "loop 1, the ternary at nesting 1: 2, only the if keeps its condition out",
+		impl: map[string]string{
+			langPHP:    "<?php\nfunction f($a) { while ($a > 0 ? $a > 1 : $a > 2) { $a--; } return $a; }\n",
+			langPython: "def f(a):\n    while a > 1 if a > 0 else a > 2:\n        a -= 1\n    return a\n",
+			langTS:     "function f(a: number): number { while (a > 0 ? a > 1 : a > 2) { a-- } return a }\n",
+			langJava:   "class C { int f(int a) { while (a > 0 ? a > 1 : a > 2) { a--; } return a; } }\n",
+			langCSharp: "class C { int f(int a) { while (a > 0 ? a > 1 : a > 2) { a--; } return a; } }\n",
+		},
+	},
 }
 
 func TestCognitiveComplexityIsTheSameInEveryLanguage(t *testing.T) {

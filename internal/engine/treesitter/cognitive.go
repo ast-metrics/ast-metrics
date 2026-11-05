@@ -20,7 +20,9 @@ import (
 //
 // Nesting is the number of nesting constructs around a node within its
 // function. An else-if continues its chain: it sits at the nesting of the if
-// that starts it, not one level deeper.
+// that starts it, not one level deeper. Only the body of an if or else-if is
+// nested, not its condition; a loop, a switch or a ternary nests all it holds,
+// its condition included, as SonarSource's Java analyzer does.
 //
 // Shorthand follows the specification's rule that a construct collapsing
 // several statements into one readable expression adds nothing, as its
@@ -50,12 +52,16 @@ func (v *Visitor) cognitiveComplexity(fn *sitter.Node) int32 {
 		switch v.cognitiveKind(n) {
 		case DecIf:
 			score += ifIncrement(nesting, elseIf)
+			body := ifBody(n)
 			children(n, func(ch *sitter.Node) {
-				if v.continuesChain(n, ch) {
+				switch {
+				case v.continuesChain(n, ch):
 					visit(ch, nesting, v.cognitiveKind(ch) == DecIf)
-					return
+				case comesBefore(ch, body):
+					visit(ch, nesting, false)
+				default:
+					visit(ch, nesting+1, false)
 				}
-				visit(ch, nesting+1, false)
 			})
 		case DecElse:
 			if inner := v.elseIfIn(n); inner != nil {
@@ -66,7 +72,14 @@ func (v *Visitor) cognitiveComplexity(fn *sitter.Node) int32 {
 			children(n, func(ch *sitter.Node) { visit(ch, nesting+1, false) })
 		case DecElif:
 			score++
-			children(n, func(ch *sitter.Node) { visit(ch, nesting+1, false) })
+			body := ifBody(n)
+			children(n, func(ch *sitter.Node) {
+				if comesBefore(ch, body) {
+					visit(ch, nesting, false)
+					return
+				}
+				visit(ch, nesting+1, false)
+			})
 		case DecLoop, DecSwitch, DecCatch, DecTernary:
 			score += 1 + nesting
 			children(n, func(ch *sitter.Node) { visit(ch, nesting+1, false) })
@@ -101,6 +114,20 @@ func ifIncrement(nesting int32, elseIf bool) int32 {
 		return 1
 	}
 	return 1 + nesting
+}
+
+// ifBody returns the branch an if or elif runs when its condition holds.
+func ifBody(n *sitter.Node) *sitter.Node {
+	if body := n.ChildByFieldName("consequence"); body != nil {
+		return body
+	}
+	return n.ChildByFieldName("body")
+}
+
+// comesBefore reports whether ch starts before body. Among the children of an
+// if, that is its condition and, in Go, its initializer.
+func comesBefore(ch, body *sitter.Node) bool {
+	return body != nil && ch.StartByte() < body.StartByte()
 }
 
 // continuesChain reports whether ch, a child of the if statement n, is the
