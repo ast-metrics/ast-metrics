@@ -4,6 +4,9 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
+// parenthesizedExpression is the node type of `(e)` in every supported grammar.
+const parenthesizedExpression = "parenthesized_expression"
+
 // Cognitive complexity model shared by every language.
 //
 // AST Metrics implements SonarSource's measure (G. Ann Campbell, "Cognitive
@@ -15,7 +18,7 @@ import (
 //	if, loop, switch / match, catch, ternary   1 + nesting, and nests its body
 //	elseif / elif / else if, else              1, and nests its body
 //	case label, match arm, default             0  (the switch already paid)
-//	run of like boolean operators              1  (a && b && c: 1; a && b || c: 2)
+//	run of like boolean operators              1  (a && b && c: 1; a || b && c || d: 3)
 //	shorthand (Rust ?, a comprehension clause) 0
 //
 // Nesting is the number of nesting constructs around a node within its
@@ -84,8 +87,8 @@ func (v *Visitor) cognitiveComplexity(fn *sitter.Node) int32 {
 			score += 1 + nesting
 			children(n, func(ch *sitter.Node) { visit(ch, nesting+1, false) })
 		case DecLogical:
-			if !v.continuesRun(n) {
-				score++
+			if !v.insideRun(n) {
+				score += v.operatorRuns(n)
 			}
 			children(n, func(ch *sitter.Node) { visit(ch, nesting, false) })
 		default:
@@ -160,14 +163,39 @@ func (v *Visitor) elseIfIn(n *sitter.Node) *sitter.Node {
 	return nil
 }
 
-// continuesRun reports whether a boolean operator extends the run of its
-// parent expression: `a && b && c` parses as `(a && b) && c`, one run.
-func (v *Visitor) continuesRun(n *sitter.Node) bool {
+// insideRun reports whether a boolean operator is an operand of another one,
+// parentheses aside, and so was already counted with the outermost.
+func (v *Visitor) insideRun(n *sitter.Node) bool {
 	parent := n.Parent()
-	if parent == nil || v.ad.Decision(parent) != DecLogical {
-		return false
+	for parent != nil && parent.Type() == parenthesizedExpression {
+		parent = parent.Parent()
 	}
-	return v.logicalOperator(parent) == v.logicalOperator(n)
+	return parent != nil && v.ad.Decision(parent) == DecLogical
+}
+
+// operatorRuns counts the runs of like operators in a boolean expression, read
+// in source order and through parentheses: `a || b && c || d` holds three,
+// though its tree joins the two || under one parent.
+func (v *Visitor) operatorRuns(n *sitter.Node) int32 {
+	var runs int32
+	previous := ""
+	var walk func(e *sitter.Node)
+	walk = func(e *sitter.Node) {
+		for e != nil && e.Type() == parenthesizedExpression && e.NamedChildCount() == 1 {
+			e = e.NamedChild(0)
+		}
+		if e == nil || v.ad.Decision(e) != DecLogical {
+			return
+		}
+		walk(e.ChildByFieldName("left"))
+		if op := v.logicalOperator(e); op != previous {
+			runs++
+			previous = op
+		}
+		walk(e.ChildByFieldName("right"))
+	}
+	walk(n)
+	return runs
 }
 
 func (v *Visitor) logicalOperator(n *sitter.Node) string {
