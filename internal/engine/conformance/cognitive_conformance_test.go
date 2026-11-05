@@ -117,6 +117,34 @@ var cognitiveScenarios = []scenario{
 			langRust:   "fn f(a: i32, b: i32) -> i32 { if a > 0 && b > 0 && a < b { return 1 } 0 }\n",
 		},
 	},
+	{
+		name: "else_block_holding_an_if",
+		ccn:  4,
+		why:  "if 1, else 1, the if inside the else at nesting 1: 2",
+		impl: map[string]string{
+			langGo:     "package p\nfunc f(a int) int {\n\tif a > 2 { a = 1 } else {\n\t\tif a > 1 { a = 2 }\n\t}\n\treturn a\n}\n",
+			langPHP:    "<?php\nfunction f($a) { if ($a > 2) { $a = 1; } else { if ($a > 1) { $a = 2; } } return $a; }\n",
+			langPython: "def f(a):\n    if a > 2:\n        a = 1\n    else:\n        if a > 1:\n            a = 2\n    return a\n",
+			langTS:     "function f(a: number): number { if (a > 2) { a = 1 } else { if (a > 1) { a = 2 } } return a }\n",
+			langJava:   "class C { int f(int a) { if (a > 2) { a = 1; } else { if (a > 1) { a = 2; } } return a; } }\n",
+			langCSharp: "class C { int f(int a) { if (a > 2) { a = 1; } else { if (a > 1) { a = 2; } } return a; } }\n",
+			langRust:   "fn f(a: i32) -> i32 { let mut a = a; if a > 2 { a = 1 } else { if a > 1 { a = 2 } } a }\n",
+		},
+	},
+	{
+		name: "else_block_holding_statements_and_ifs",
+		ccn:  10,
+		why:  "loop 1, if at nesting 1: 2, else 1, two ifs at nesting 2: 3 each",
+		impl: map[string]string{
+			langGo:     "package p\nfunc f(a int) int {\n\tfor a > 0 {\n\t\tif a > 2 { a = 1 } else {\n\t\t\ta--\n\t\t\tif a > 1 { a = 2 }\n\t\t\tif a > 3 { a = 3 }\n\t\t}\n\t}\n\treturn a\n}\n",
+			langPHP:    "<?php\nfunction f($a) { while ($a > 0) { if ($a > 2) { $a = 1; } else { $a--; if ($a > 1) { $a = 2; } if ($a > 3) { $a = 3; } } } return $a; }\n",
+			langPython: "def f(a):\n    while a > 0:\n        if a > 2:\n            a = 1\n        else:\n            a -= 1\n            if a > 1:\n                a = 2\n            if a > 3:\n                a = 3\n    return a\n",
+			langTS:     "function f(a: number): number { while (a > 0) { if (a > 2) { a = 1 } else { a--; if (a > 1) { a = 2 } if (a > 3) { a = 3 } } } return a }\n",
+			langJava:   "class C { int f(int a) { while (a > 0) { if (a > 2) { a = 1; } else { a--; if (a > 1) { a = 2; } if (a > 3) { a = 3; } } } return a; } }\n",
+			langCSharp: "class C { int f(int a) { while (a > 0) { if (a > 2) { a = 1; } else { a--; if (a > 1) { a = 2; } if (a > 3) { a = 3; } } } return a; } }\n",
+			langRust:   "fn f(a: i32) -> i32 { let mut a = a; while a > 0 { if a > 2 { a = 1 } else { a -= 1; if a > 1 { a = 2 } if a > 3 { a = 3 } } } a }\n",
+		},
+	},
 }
 
 func TestCognitiveComplexityIsTheSameInEveryLanguage(t *testing.T) {

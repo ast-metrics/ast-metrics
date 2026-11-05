@@ -118,8 +118,13 @@ func (v *Visitor) continuesChain(n, ch *sitter.Node) bool {
 
 // elseIfIn returns the if statement an else clause holds directly, the shape
 // of `else if` in grammars with an else node (TypeScript, Rust), or nil for a
-// plain else.
+// plain else. A branch that does not start with the `else` keyword is the block
+// held in the `alternative` field by grammars without an else node (Go, Java,
+// C#): an if among its statements is nested in the else, not an else-if.
 func (v *Visitor) elseIfIn(n *sitter.Node) *sitter.Node {
+	if first := n.Child(0); first == nil || first.Type() != "else" {
+		return nil
+	}
 	for i := 0; i < int(n.NamedChildCount()); i++ {
 		if ch := n.NamedChild(i); v.cognitiveKind(ch) == DecIf {
 			return ch
