@@ -544,3 +544,9 @@ func countBySeverity(findings []Finding, s Severity) int {
 	}
 	return count
 }
+
+// CollectFunctions exposes the function index used by the review, so other
+// change-oriented tools match base and head functions the same way.
+func CollectFunctions(file *pb.File) map[string]*pb.StmtFunction {
+	return collectFunctions(file)
+}

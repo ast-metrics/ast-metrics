@@ -76,11 +76,23 @@ jobs:
               goarch: [${{ matrix.goarch }}]
               ldflags: ["-s", "-w", "-X main.version={{ .Version }}", "-X main.commit={{ .Commit }}", "-X main.date={{ .Date }}"]
               mod_timestamp: "{{ .CommitTimestamp }}"
+            - id: cribelo
+              binary: cribelo
+              main: ./cmd/cribelo
+              env: ["CGO_ENABLED=1"]
+              goos: [${{ matrix.goos }}]
+              goarch: [${{ matrix.goarch }}]
+              ldflags: ["-s", "-w", "-X github.com/ast-metrics/ast-metrics/internal/cribelo.Version={{ .Version }}"]
+              mod_timestamp: "{{ .CommitTimestamp }}"
           archives:
             - id: bin
               builds: [app]
               format: binary
               name_template: '{{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}'
+            - id: cribelo-bin
+              builds: [cribelo]
+              format: binary
+              name_template: 'cribelo_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}'
           changelog:
             sort: asc
             filters:
@@ -114,3 +126,26 @@ jobs:
         env:
           CGO_ENABLED: 1
           GITHUB_TOKEN: ${{ secrets.PUSH_TOKEN }}
+
+      # The installer and the Action of Cribelo download from the releases of
+      # cribelo/cribelo, so the binary built here is mirrored there under the
+      # same tag. Every matrix job uploads its own platform; the first one
+      # creates the release. PUSH_TOKEN must have write access to that repo.
+      - name: Publish cribelo binary to cribelo/cribelo
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PUSH_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --repo cribelo/cribelo >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo cribelo/cribelo --title "$TAG" \
+                 --notes "Cribelo $TAG, built from https://github.com/ast-metrics/ast-metrics/releases/tag/$TAG" \
+            || true
+          # goreleaser keeps the binary under dist/cribelo_<os>_<arch>/ and only
+          # names it cribelo_Linux_x86_64 at upload time, artifacts.json has both.
+          out="$RUNNER_TEMP/cribelo-release"; mkdir -p "$out"
+          jq -r '.[] | select(.extra.ID == "cribelo-bin") | [.path, .name] | @tsv' dist/artifacts.json \
+            | while IFS=$'\t' read -r path name; do cp "${path//\\//}" "$out/$name"; done
+          ls "$out"
+          gh release upload "$TAG" --repo cribelo/cribelo --clobber "$out"/*

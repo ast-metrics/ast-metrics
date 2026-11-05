@@ -446,3 +446,29 @@ func relativeTo(root, file string) (target string, ok bool) {
 	}
 	return "/" + filepath.ToSlash(rel), true
 }
+
+// NewFileDiscoveryFromFiles builds a discovery cache from an explicit list of
+// files, grouped by extension, instead of walking directories. Every
+// extension in extensions gets an entry, empty when no file matches, so that
+// a lookup never falls back to a directory walk.
+func NewFileDiscoveryFromFiles(files []string, extensions []string) *FileDiscovery {
+	results := make(map[string]FileList, len(extensions))
+	for _, ext := range extensions {
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		results[ext] = FileList{Files: []string{}, FilesByDirectory: map[string][]string{}}
+	}
+	for _, file := range files {
+		ext := strings.ToLower(filepath.Ext(file))
+		list, ok := results[ext]
+		if !ok {
+			continue
+		}
+		list.Files = append(list.Files, file)
+		dir := filepath.Dir(file)
+		list.FilesByDirectory[dir] = append(list.FilesByDirectory[dir], file)
+		results[ext] = list
+	}
+	return &FileDiscovery{results: results}
+}
