@@ -1,7 +1,7 @@
 name: release
 on:
   push:
-    tags: ["*", "!cribelo-v*"]   # Cribelo has its own release workflow
+    tags: ["*"]
 
 permissions:
   contents: write
@@ -76,23 +76,11 @@ jobs:
               goarch: [${{ matrix.goarch }}]
               ldflags: ["-s", "-w", "-X main.version={{ .Version }}", "-X main.commit={{ .Commit }}", "-X main.date={{ .Date }}"]
               mod_timestamp: "{{ .CommitTimestamp }}"
-            - id: cribelo
-              binary: cribelo
-              main: ./cmd/cribelo
-              env: ["CGO_ENABLED=1"]
-              goos: [${{ matrix.goos }}]
-              goarch: [${{ matrix.goarch }}]
-              ldflags: ["-s", "-w", "-X github.com/ast-metrics/ast-metrics/internal/cribelo.Version={{ .Version }}"]
-              mod_timestamp: "{{ .CommitTimestamp }}"
           archives:
             - id: bin
               builds: [app]
               format: binary
               name_template: '{{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}'
-            - id: cribelo-bin
-              builds: [cribelo]
-              format: binary
-              name_template: 'cribelo_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}'
           changelog:
             sort: asc
             filters:
