@@ -301,3 +301,24 @@ public:
 func engineDependencies(file *pb.File) []*pb.StmtExternalDependency {
 	return engine.GetDependenciesInFile(file)
 }
+
+// A constructor and a destructor touch every attribute: kept in the graph,
+// they would connect two responsibilities that share nothing else.
+func TestCppConstructorAndDestructorAreLeftOutOfCohesion(t *testing.T) {
+	file := parseCpp(t, `
+class Example {
+public:
+    Example() : a_(0), b_(0) { a_ = 1; b_ = 2; }
+    ~Example() { a_ = 0; b_ = 0; }
+    int useA() { return a_ + 1; }
+    int useB() { return b_ + 1; }
+private:
+    int a_;
+    int b_;
+};
+`)
+	analyzer.AnalyzeFile(file)
+	class := file.Stmts.StmtClass[0]
+	require.NotNil(t, class.Stmts.Analyze.ClassCohesion)
+	assert.Equal(t, int32(2), *class.Stmts.Analyze.ClassCohesion.Lcom4)
+}

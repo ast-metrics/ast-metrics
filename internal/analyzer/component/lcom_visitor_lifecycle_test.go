@@ -67,6 +67,8 @@ func TestLifecycleMethodsAreExcludedPerLanguage(t *testing.T) {
 		{"C#", "Finalize"},
 		{"Rust", "new"},
 		{"Rust", "drop"},
+		{"C++", "Example"},
+		{"C++", "~Example"},
 		{"", "__construct"}, // unknown language: generic policy
 	}
 
