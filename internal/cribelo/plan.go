@@ -87,6 +87,11 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	if opts.FailOn == "" {
 		opts.FailOn = "never"
 	}
+	switch opts.FailOn {
+	case "high", "medium", "any", "never":
+	default:
+		return nil, fmt.Errorf("fail-on: unknown level %q (high, medium or never)", opts.FailOn)
+	}
 	if opts.Now.IsZero() {
 		opts.Now = time.Now()
 	}
@@ -117,6 +122,9 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	weightsPath := opts.WeightsPath
 	if weightsPath == "" {
 		weightsPath = filepath.Join(repo.Root, filepath.FromSlash(WeightsFile))
+	} else if _, err := os.Stat(weightsPath); err != nil {
+		// Only the default file may be absent: an explicit one is a typo.
+		return nil, fmt.Errorf("weights: %w", err)
 	}
 	weights, err := LoadWeights(weightsPath)
 	if err != nil {
@@ -294,8 +302,8 @@ func rank(files []FileReport) {
 
 // selectReads marks the files to read: every file at the high level and at
 // least the top N, or exactly N with Exact, or as many as the budget allows.
-// Always at least one when there is something to rank. Files are ranked, so
-// the high ones come first.
+// A budget is not spent on a file with no measurable change. Always at least one when there is something to rank. Files
+// are ranked, so the high ones come first.
 func selectReads(plan *Plan, opts Options) {
 	budget := 0
 	if opts.Budget > 0 {
@@ -304,7 +312,7 @@ func selectReads(plan *Plan, opts Options) {
 	for i := range plan.Files {
 		f := &plan.Files[i]
 		if budget > 0 {
-			if plan.ReadCount > 0 && plan.ReadMinutes+f.Minutes > budget {
+			if plan.ReadCount > 0 && (plan.ReadMinutes+f.Minutes > budget || unchanged(*f)) {
 				continue
 			}
 		} else if plan.ReadCount >= opts.Top && (opts.Exact || f.Level != LevelHigh) {
@@ -316,9 +324,14 @@ func selectReads(plan *Plan, opts Options) {
 	}
 }
 
+// unchanged reports a code file whose change is too small to measure.
+func unchanged(f FileReport) bool {
+	return f.Values[FeatureComplexityAdded] == 0 && f.Added <= 10 && f.Clone == nil
+}
+
 // skipReason explains why a ranked code file is not in the reading list.
 func skipReason(f FileReport) string {
-	if f.Values[FeatureComplexityAdded] == 0 && f.Added <= 10 && f.Clone == nil {
+	if unchanged(f) {
 		return "no measurable change"
 	}
 	return "ranked lower"

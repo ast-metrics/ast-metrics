@@ -278,6 +278,35 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.Equal(t, js, againJS)
 }
 
+func TestRunRejectsUnknownFailOn(t *testing.T) {
+	dir := initRepo(t)
+	put(t, dir, "a.go", "package a\n")
+	git(t, dir, "", "add", "-A")
+	git(t, dir, "", "commit", "-q", "-m", "init")
+	repo, err := OpenRepo(dir)
+	require.NoError(t, err)
+	_, err = Run(repo, Options{Base: "main", FailOn: "bogus"})
+	assert.ErrorContains(t, err, `unknown level "bogus"`)
+
+	put(t, dir, ConfigFile, "fail_on: hgih\n")
+	_, err = Run(repo, Options{Base: "main"})
+	assert.ErrorContains(t, err, `unknown level "hgih"`)
+}
+
+func TestRunMissingExplicitWeightsIsAnError(t *testing.T) {
+	dir := initRepo(t)
+	put(t, dir, "a.go", "package a\n")
+	git(t, dir, "", "add", "-A")
+	git(t, dir, "", "commit", "-q", "-m", "init")
+	repo, err := OpenRepo(dir)
+	require.NoError(t, err)
+	_, err = Run(repo, Options{Base: "main", WeightsPath: filepath.Join(dir, "absent.json")})
+	assert.ErrorContains(t, err, "weights")
+
+	_, err = Run(repo, Options{Base: "main"})
+	assert.NoError(t, err, "the default weights file may be absent")
+}
+
 func TestRunNothingChanged(t *testing.T) {
 	dir := initRepo(t)
 	put(t, dir, "a.go", "package a\n")

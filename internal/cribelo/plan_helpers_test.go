@@ -26,7 +26,7 @@ func TestRankOrdering(t *testing.T) {
 func planWith(minutes ...int) *Plan {
 	p := &Plan{}
 	for i, m := range minutes {
-		p.Files = append(p.Files, FileReport{Path: string(rune('a' + i)), Minutes: m})
+		p.Files = append(p.Files, FileReport{Path: string(rune('a' + i)), Minutes: m, Added: 20})
 	}
 	return p
 }
@@ -94,6 +94,19 @@ func TestSelectReadsBudget(t *testing.T) {
 	selectReads(p, Options{Budget: 10 * time.Minute})
 	assert.Equal(t, []bool{true, false, true}, readFlags(p))
 	assert.Equal(t, 7, p.ReadMinutes)
+}
+
+func TestSelectReadsBudgetSkipsUnchangedFiles(t *testing.T) {
+	p := planWith(5, 1, 1)
+	p.Files[1].Added = 2
+	selectReads(p, Options{Budget: 2 * time.Hour})
+	assert.Equal(t, []bool{true, false, true}, readFlags(p), "the plan without budget skips it too")
+	assert.Equal(t, "no measurable change", skipReason(p.Files[1]))
+
+	p = planWith(1)
+	p.Files[0].Added = 2
+	selectReads(p, Options{Budget: 2 * time.Hour})
+	assert.Equal(t, 1, p.ReadCount, "still one file when it is the only one")
 }
 
 func TestSelectReadsBudgetTooSmallStillReadsOne(t *testing.T) {
