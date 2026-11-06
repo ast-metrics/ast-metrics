@@ -387,3 +387,41 @@ void print() {}
 	assert.Equal(t, "fmt::formatter", file.Stmts.StmtClass[0].Name.Qualified)
 	assert.Equal(t, "fmt::print", file.Stmts.StmtFunction[0].Name.Qualified)
 }
+
+// The methods of a class declared in a header are defined in the .cpp next
+// to it: what they use, the class uses, in the same file or another.
+func TestCppMethodsDefinedApartFeedTheCouplingOfTheirClass(t *testing.T) {
+	header := parseCpp(t, `
+namespace car {
+class Starter { public: void crank(); };
+class Battery {};
+class Engine { public: void start(); void stop(); };
+}
+`)
+	source := parseCpp(t, `
+#include "engine.hpp"
+namespace car {
+void Engine::start() { Starter starter; starter.crank(); }
+}
+`)
+	sameFile := parseCpp(t, `
+namespace car {
+class Radio { public: void play(); };
+void Radio::play() { Battery battery; }
+}
+`)
+	for _, file := range []*pb.File{header, source, sameFile} {
+		analyzer.AnalyzeFile(file)
+	}
+	analyzer.NewAggregator([]*pb.File{header, source, sameFile}, nil).Aggregates()
+	classes := map[string]*pb.StmtClass{}
+	for _, file := range []*pb.File{header, sameFile} {
+		for _, class := range engine.GetClassesInFile(file) {
+			classes[class.Name.Qualified] = class
+		}
+	}
+	assert.Equal(t, int32(1), classes["car::Engine"].Stmts.Analyze.Coupling.Efferent)
+	assert.Equal(t, int32(1), classes["car::Starter"].Stmts.Analyze.Coupling.Afferent)
+	assert.Equal(t, int32(1), classes["car::Radio"].Stmts.Analyze.Coupling.Efferent)
+	assert.Equal(t, int32(1), classes["car::Battery"].Stmts.Analyze.Coupling.Afferent)
+}

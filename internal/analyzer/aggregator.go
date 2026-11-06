@@ -1218,6 +1218,55 @@ func fileLevelDependencies(file *pb.File) []*pb.StmtExternalDependency {
 	return file.Stmts.StmtExternalDependencies
 }
 
+// writtenDependency is a dependency along with the file it is written in.
+type writtenDependency struct {
+	dependency *pb.StmtExternalDependency
+	file       *pb.File
+}
+
+// methodsDefinedApartFromTheirClass lists the languages whose methods are
+// usually defined outside of the class, in another file: C++ declares a
+// class in a header and defines its methods in the .cpp next to it, as
+// `void Engine::start() { ... }`.
+var methodsDefinedApartFromTheirClass = map[string]bool{"C++": true}
+
+// dependenciesOfMethodsDefinedApart gathers, by class of the project, what
+// the methods defined outside of it use, in the file of the class or in
+// another one. A method is bound to its class by its qualified name.
+func dependenciesOfMethodsDefinedApart(index *projectIndex) map[*pb.StmtClass][]writtenDependency {
+	result := make(map[*pb.StmtClass][]writtenDependency)
+	for _, file := range index.files {
+		if !methodsDefinedApartFromTheirClass[file.GetProgrammingLanguage()] {
+			continue
+		}
+		for _, function := range engine.GetFunctionsInFile(file) {
+			if function == nil || function.Stmts == nil || function.Name == nil {
+				continue
+			}
+			class := index.sourceClassOf(&pb.StmtExternalDependency{From: function.Name.Qualified})
+			if class == nil || index.fileOfClass[class] == nil {
+				continue
+			}
+			for _, dependency := range function.Stmts.StmtExternalDependencies {
+				if dependency != nil && dependency.ClassName != "" {
+					result[class] = append(result[class], writtenDependency{dependency, file})
+				}
+			}
+		}
+	}
+	return result
+}
+
+// declaresAClassOf tells whether a file declares one of the classes given.
+func declaresAClassOf(file *pb.File, classes map[*pb.StmtClass][]writtenDependency) bool {
+	for _, class := range engine.GetClassesInFile(file) {
+		if len(classes[class]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // Map the coupling to get the package relations and the afferent coupling
 func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 	result := *aggregated
@@ -1257,9 +1306,12 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 	reducers := engine.NewNamespaceReducers(
 		sourcesOfDependencies(aggregated.ConcernedFiles, fileLevelDependencies, scopes), packageRelationsDepth)
 
+	// what the methods of a class defined outside of it use, by class
+	methodsApart := dependenciesOfMethodsDefinedApart(index)
+
 	for _, file := range aggregated.ConcernedFiles {
 
-		if file == nil || file.Stmts == nil || file.Stmts.StmtExternalDependencies == nil {
+		if file == nil || file.Stmts == nil || (file.Stmts.StmtExternalDependencies == nil && !declaresAClassOf(file, methodsApart)) {
 			continue
 		}
 
@@ -1337,22 +1389,32 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 				continue
 			}
 
-			if class.Stmts == nil || class.Stmts.StmtExternalDependencies == nil {
+			if class.Stmts == nil || (class.Stmts.StmtExternalDependencies == nil && len(methodsApart[class]) == 0) {
 				continue
 			}
 			uniqueClassDependencies := make(map[string]*pb.StmtExternalDependency)
+			// the file each dependency is written in, the one its name is
+			// resolved from
+			writtenIn := make(map[*pb.StmtExternalDependency]*pb.File)
 
+			used := make([]writtenDependency, 0, len(class.Stmts.StmtExternalDependencies)+len(methodsApart[class]))
 			for _, dependency := range class.Stmts.StmtExternalDependencies {
+				used = append(used, writtenDependency{dependency, file})
+			}
+			used = append(used, methodsApart[class]...)
+			for _, use := range used {
+				dependency := use.dependency
 				// make it unique
 				if dependency == nil || dependency.ClassName == "" {
 					continue
 				}
-				key, counts := index.dependencyKey(dependency, file)
+				key, counts := index.dependencyKey(dependency, use.file)
 				if !counts {
 					continue
 				}
 				if _, ok := uniqueClassDependencies[key]; !ok {
 					uniqueClassDependencies[key] = dependency
+					writtenIn[dependency] = use.file
 				}
 			}
 
@@ -1366,7 +1428,7 @@ func (r *Aggregator) mapCoupling(aggregated *Aggregated) Aggregated {
 
 				result.ClassesAfferentCoupling[dependencyName]++
 
-				fromClass := targetClassOf(dependency, file)
+				fromClass := targetClassOf(dependency, writtenIn[dependency])
 				if fromClass != nil && fromClass != class {
 
 					if fromClass.Stmts == nil {
