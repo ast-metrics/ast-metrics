@@ -831,7 +831,9 @@ func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endL
 
 // definitionSpanning returns the outermost function definition running
 // exactly from startLine to endLine (1-based), the one the visitor is
-// measuring, or nil.
+// measuring, or nil. Lines are all the visitor gives: when two definitions
+// share them, there is no telling which one is measured, and the node holding
+// both is returned rather than either of them.
 func (a *TreeSitterAdapter) definitionSpanning(root *sitter.Node, startLine, endLine int) *sitter.Node {
 	start, end := uint32(startLine-1), uint32(endLine-1)
 	for node := root; node != nil; {
@@ -841,9 +843,14 @@ func (a *TreeSitterAdapter) definitionSpanning(root *sitter.Node, startLine, end
 		var next *sitter.Node
 		for i := 0; i < int(node.NamedChildCount()); i++ {
 			child := node.NamedChild(i)
+			if child.EndPoint().Row < start || child.StartPoint().Row > end || child.Type() == "comment" {
+				continue
+			}
+			if next != nil {
+				return node
+			}
 			if child.StartPoint().Row <= start && child.EndPoint().Row >= end {
 				next = child
-				break
 			}
 		}
 		node = next

@@ -340,6 +340,7 @@ func TestCppOneLineFunctionAtTheFirstColumnHasHalsteadSymbols(t *testing.T) {
 		"int g() { return value; }\n",
 		"static int g() { return value; }\n",
 		"  int g() { return value; }\n",
+		"int g() { return value; } // a getter\n",
 	} {
 		file := parseCpp(t, source)
 		analyzer.AnalyzeFile(file)
@@ -348,6 +349,12 @@ func TestCppOneLineFunctionAtTheFirstColumnHasHalsteadSymbols(t *testing.T) {
 		assert.Contains(t, operatorNames(g.Operators), "return", source)
 		assert.Contains(t, operandNames(g.Operands), "value", source)
 	}
+
+	// two definitions on one line: the lines cannot tell them apart, and the
+	// symbols of one must not be given to the other alone
+	file := parseCpp(t, "int f() { return 1; } int g() { return value; }\n")
+	analyzer.AnalyzeFile(file)
+	assert.Contains(t, operandNames(file.Stmts.StmtFunction[1].Operands), "value")
 }
 
 func TestCppOutOfClassDefinitionsAreQualifiedOnce(t *testing.T) {
