@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
+	"github.com/ast-metrics/ast-metrics/internal/engine"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -173,7 +174,7 @@ private:
 	for _, dep := range widget.Stmts.StmtExternalDependencies {
 		depNames = append(depNames, dep.Namespace)
 	}
-	assert.ElementsMatch(t, []string{"app::Store"}, depNames)
+	assert.ElementsMatch(t, []string{"Store"}, depNames)
 }
 
 func TestCppClassDependenciesUseTemplateNameWithoutArguments(t *testing.T) {
@@ -193,7 +194,7 @@ private:
 	assert.Equal(t, "Thing", dep.ClassName)
 }
 
-func TestCppInNamespaceReferenceResolvesToQualifiedClass(t *testing.T) {
+func TestCppReferencesAreKeptAsWritten(t *testing.T) {
 	file := parseCpp(t, `
 namespace fmt {
 class formatter { public: int format() { return 1; } };
@@ -202,16 +203,77 @@ public:
     formatter& get() { return fmt_; }
 private:
     formatter fmt_;
+    detail::buffer<char> buffer_;
 };
 }
 `)
 	require.Len(t, file.Stmts.StmtClass, 2)
 	context := file.Stmts.StmtClass[1]
 	assert.Equal(t, "fmt::context", context.Name.Qualified)
-	require.Len(t, context.Stmts.StmtExternalDependencies, 1)
-	// the unqualified `formatter` resolves inside its namespace, so the
-	// dependency points at the qualified class and coupling can resolve
-	assert.Equal(t, "fmt::formatter", context.Stmts.StmtExternalDependencies[0].Namespace)
+	// C++ resolves a name from the scope it is written in outward, and only
+	// the whole project knows which candidate exists: the engine keeps the
+	// name as written, the analyzer looks it up
+	var names []string
+	for _, dep := range context.Stmts.StmtExternalDependencies {
+		names = append(names, dep.Namespace)
+		assert.Equal(t, "fmt::context", dep.From)
+	}
+	assert.Equal(t, []string{"formatter", "detail::buffer"}, names)
+}
+
+// The names a class uses are looked up from its scope outward: the enclosing
+// namespace first, then its parents, the way the compiler does it.
+func TestCppReferencesAreLookedUpFromTheEnclosingScopes(t *testing.T) {
+	file := parseCpp(t, `
+namespace app {
+class Clock {};
+namespace io {
+class Clock {};
+class Port { Clock* clock_; };
+}
+namespace net {
+class Socket { Clock* clock_; io::Port* port_; };
+}
+}
+`)
+	analyzer.AnalyzeFile(file)
+	analyzer.NewAggregator([]*pb.File{file}, nil).Aggregates()
+	classes := map[string]*pb.StmtClass{}
+	for _, class := range file.Stmts.StmtClass {
+		classes[class.Name.Qualified] = class
+	}
+	require.Len(t, classes, 4)
+	// io::Port sees io::Clock, net::Socket sees app::Clock and app::io::Port
+	assert.Equal(t, int32(1), classes["app::io::Port"].Stmts.Analyze.Coupling.Efferent)
+	assert.Equal(t, int32(2), classes["app::net::Socket"].Stmts.Analyze.Coupling.Efferent)
+	assert.Equal(t, int32(1), classes["app::io::Clock"].Stmts.Analyze.Coupling.Afferent)
+	assert.Equal(t, int32(1), classes["app::Clock"].Stmts.Analyze.Coupling.Afferent)
+	assert.Equal(t, int32(1), classes["app::io::Port"].Stmts.Analyze.Coupling.Afferent)
+}
+
+// A .cpp defines the methods of a class declared in its header: what their
+// bodies use belongs to that class.
+func TestCppOutOfClassMethodBodiesCarryTheirDependencies(t *testing.T) {
+	file := parseCpp(t, `
+#include "engine.hpp"
+namespace car {
+void Engine::start() {
+    Starter starter;
+    Engine::warmUp();
+    detail::log("start");
+    starter.crank(new Battery());
+}
+}
+`)
+	var deps []string
+	for _, dep := range engineDependencies(file) {
+		if dep.ClassName != "" {
+			deps = append(deps, dep.Namespace)
+			assert.Equal(t, "car::Engine::start", dep.From)
+		}
+	}
+	// the class itself and the namespace function are not dependencies
+	assert.ElementsMatch(t, []string{"Starter", "Battery"}, deps)
 }
 
 func TestCppClassDependenciesDriveCouplingMetrics(t *testing.T) {
@@ -232,6 +294,10 @@ public:
 	require.NotNil(t, controller.Stmts.Analyze.Coupling)
 	require.NotNil(t, motor.Stmts.Analyze.Coupling)
 	assert.Equal(t, int32(1), controller.Stmts.Analyze.Coupling.Efferent)
-	assert.GreaterOrEqual(t, motor.Stmts.Analyze.Coupling.Afferent, int32(1))
+	assert.Equal(t, int32(1), motor.Stmts.Analyze.Coupling.Afferent)
 	assert.Greater(t, project.ByClass.EfferentCoupling.Sum, float64(0))
+}
+
+func engineDependencies(file *pb.File) []*pb.StmtExternalDependency {
+	return engine.GetDependenciesInFile(file)
 }

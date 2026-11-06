@@ -219,9 +219,12 @@ func (a *TreeSitterAdapter) enclosingClass(n *sitter.Node) *sitter.Node {
 	return nil
 }
 
-// qualifiedDefinitionName returns the qualified name as written in the
-// declarator of an out-of-class definition (`a::b::Foo::bar`), or "" for a
-// plain unqualified definition.
+// qualifiedDefinitionName returns the qualified name of an out-of-class
+// definition (`a::b::Foo::bar`), or "" for a plain unqualified definition.
+// The name is the one written in the declarator, below the namespace blocks
+// enclosing the definition: `namespace car { void Engine::start() {} }`
+// defines `car::Engine::start`. A name written from the global scope
+// (`void ::car::Engine::start()`) is taken as it is.
 func (a *TreeSitterAdapter) qualifiedDefinitionName(fn *sitter.Node) string {
 	d := fn.ChildByFieldName("declarator")
 	if d == nil {
@@ -234,11 +237,15 @@ func (a *TreeSitterAdapter) qualifiedDefinitionName(fn *sitter.Node) string {
 		return ""
 	}
 	name := nodeText(a.src, d)
+	global := strings.HasPrefix(name, "::")
 	name = strings.TrimPrefix(name, "::")
 	if !strings.Contains(name, "::") || isCppKeyword(strings.TrimSuffix(name, "()")) {
 		return ""
 	}
-	return name
+	if global {
+		return name
+	}
+	return a.qualify(a.namespaceChain(fn), name)
 }
 
 // macroTestName names gtest-style test macros from their arguments:
@@ -390,11 +397,40 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	}
 }
 
-// ModuleNameFromPath returns "": a C++ translation unit holds no single
-// namespace. Classes and functions carry their own namespace qualification,
-// computed per declaration in NodeQualifiedName.
+// ModuleNameFromPath ignores the path and returns the namespace the file
+// declares its code in: the namespace of its first class or function
+// definition, or failing one, of its first named namespace block. A
+// translation unit may open several namespaces, but the shared visitor keeps
+// one per file, the way C# keeps its first. Classes and functions still carry
+// their own qualification, computed per declaration in NodeQualifiedName.
 func (a *TreeSitterAdapter) ModuleNameFromPath(path string) string {
-	return ""
+	root, _ := a.ensureRoot(nil)
+	if root == nil {
+		return ""
+	}
+	var firstBlock string
+	var find func(*sitter.Node) (string, bool)
+	find = func(n *sitter.Node) (string, bool) {
+		if a.IsClass(n) || (n.Type() == "function_definition" && a.IsFunction(n)) {
+			return a.namespaceChain(n), true
+		}
+		if n.Type() == "namespace_definition" && firstBlock == "" {
+			if body := n.ChildByFieldName("body"); body != nil {
+				// the chain of a child names the block itself and its parents
+				firstBlock = a.namespaceChain(body)
+			}
+		}
+		for i := 0; i < int(n.NamedChildCount()); i++ {
+			if namespace, found := find(n.NamedChild(i)); found {
+				return namespace, true
+			}
+		}
+		return "", false
+	}
+	if namespace, found := find(root); found {
+		return namespace
+	}
+	return firstBlock
 }
 func (a *TreeSitterAdapter) AttachQualified(parent, fn string) string {
 	if parent == "" {
@@ -449,6 +485,12 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	if a.IsClass(n) {
 		return a.classDependencies(n)
 	}
+	// A method defined outside of its class, the usual shape of a .cpp, and a
+	// free function: what their body uses is theirs. A method defined inside
+	// its class is already covered by the class.
+	if n.Type() == "function_definition" && a.enclosingClass(n) == nil && a.IsFunction(n) {
+		return a.functionDependencies(n)
+	}
 	if n.Type() != "preproc_include" {
 		return nil
 	}
@@ -465,35 +507,48 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 
 // classDependencies maps syntax-level type references in a class to the
 // common external-dependency representation. It covers bases, fields, method
-// signatures, construction and qualified static use without attempting C++
-// name lookup or overload resolution.
+// signatures and bodies, construction and qualified static use, without
+// attempting C++ name lookup or overload resolution.
 //
-// References written unqualified are resolved against the namespace of the
-// class being analyzed, so `formatter` used inside `namespace fmt { ... }`
-// points at `fmt::formatter`. Known noise is skipped: the parameters of the
-// enclosing templates, anything rooted in `std`, template arguments and
-// built-in types.
+// A reference is kept the way it is written: `formatter` inside
+// `namespace fmt` stays `formatter`, and `detail::buffer` stays
+// `detail::buffer`. C++ looks such a name up from the scope it is written in
+// outward, and only the whole project knows which of the candidates exists;
+// the analyzer does that lookup from the scope the dependency is used from.
+// Known noise is skipped: the parameters of the enclosing templates, anything
+// rooted in `std`, macros, template arguments and built-in types.
 func (a *TreeSitterAdapter) classDependencies(class *sitter.Node) []Treesitter.ImportItem {
 	_, selfQualified := a.NodeQualifiedName(class)
 	self := a.declaratorName(class.ChildByFieldName("name"))
-	namespace := a.namespaceChain(class)
-	templateParameters := a.templateParameterNames(class)
+	return a.typeReferences(class, a.templateParameterNames(class), self, selfQualified)
+}
+
+// functionDependencies maps the type references of a function defined
+// outside of any class. A method defined out of line (`void Foo::bar()`)
+// does not depend on its own class.
+func (a *TreeSitterAdapter) functionDependencies(fn *sitter.Node) []Treesitter.ImportItem {
+	var self []string
+	if qualified := a.qualifiedDefinitionName(fn); qualified != "" {
+		segments := strings.Split(qualified, "::")
+		owner := segments[:len(segments)-1]
+		self = append(self, owner[len(owner)-1], strings.Join(owner, "::"))
+	}
+	return a.typeReferences(fn, a.templateParameterNames(fn), self...)
+}
+
+// typeReferences walks a class or a function and lists the types it names.
+func (a *TreeSitterAdapter) typeReferences(root *sitter.Node, templateParameters map[string]bool, self ...string) []Treesitter.ImportItem {
 	seen := map[string]bool{}
+	for _, name := range self {
+		seen[name] = true
+	}
 	var items []Treesitter.ImportItem
 	add := func(name string) {
 		name = strings.TrimSpace(name)
 		name = strings.TrimPrefix(name, "::")
-		if name == "" || name == self || name == selfQualified || isBuiltinCppType(name) ||
+		if name == "" || seen[name] || isBuiltinCppType(name) ||
 			name == "std" || strings.HasPrefix(name, "std::") || templateParameters[name] ||
-			isCppMacroName(name) || seen[name] {
-			return
-		}
-		// Resolve an unqualified reference against the namespace of the class:
-		// the common case is a type of the same namespace as the class using it.
-		if !strings.Contains(name, "::") && namespace != "" {
-			name = namespace + "::" + name
-		}
-		if name == selfQualified || seen[name] {
+			isCppMacroName(name) {
 			return
 		}
 		seen[name] = true
@@ -510,38 +565,80 @@ func (a *TreeSitterAdapter) classDependencies(class *sitter.Node) []Treesitter.I
 			return
 		}
 		// A nested class owns its own dependencies.
-		if node != class && a.IsClass(node) {
+		if node != root && a.IsClass(node) {
 			return
 		}
 		switch node.Type() {
 		case "type_identifier":
-			parent := node.Parent()
-			if parent == nil || (parent.Type() != "qualified_identifier" && parent.Type() != "template_type") {
-				add(nodeText(a.src, node))
-			}
+			add(nodeText(a.src, node))
 		case "template_type":
 			// a template instantiation: the dependency is the template name,
-			// without its arguments (`ns::Mixin<X>` is `ns::Mixin`)
-			if parent := node.Parent(); parent == nil || parent.Type() != "qualified_identifier" {
-				if name := node.ChildByFieldName("name"); name != nil {
-					add(nodeText(a.src, name))
-				}
+			// without its arguments (`Mixin<X>` is `Mixin`), and the
+			// arguments are references of their own
+			if name := node.ChildByFieldName("name"); name != nil {
+				add(nodeText(a.src, name))
 			}
+			walk(node.ChildByFieldName("arguments"))
+			return
 		case "qualified_identifier":
-			// In a type position this is the full dependency (ns::Type). In
-			// an expression such as Logger::instance(), the scope is the type.
 			if node.Parent() != nil && isCppTypePosition(node.Parent().Type()) {
+				// in a type position, the whole name is the dependency
 				add(a.qualifiedTypeName(node))
-			} else if scope := node.ChildByFieldName("scope"); scope != nil {
-				add(a.referenceSegment(scope))
+			} else if owner := a.typeOwningMember(node); owner != "" {
+				// in an expression such as app::Logger::instance(), what
+				// precedes the member is the type
+				add(owner)
 			}
+			// the segments of the name are not references of their own, the
+			// template arguments written along it are
+			a.eachTemplateArguments(node, walk)
+			return
 		}
 		for i := 0; i < int(node.NamedChildCount()); i++ {
 			walk(node.NamedChild(i))
 		}
 	}
-	walk(class)
+	walk(root)
 	return items
+}
+
+// typeOwningMember returns the type a qualified expression reaches a member
+// of: `app::Logger` for `app::Logger::instance()`, and "" for a function of a
+// namespace such as `detail::helper()`. The grammar cannot tell a namespace
+// from a type: a template instantiation is a type, and so is a name written
+// the way types are, with a capital. A lowercase scope is taken for a
+// namespace, which is what it is in the standard library style.
+func (a *TreeSitterAdapter) typeOwningMember(q *sitter.Node) string {
+	var segments []string
+	isType := false
+	for node := q; node != nil && node.Type() == "qualified_identifier"; node = node.ChildByFieldName("name") {
+		scope := node.ChildByFieldName("scope")
+		if scope == nil {
+			break
+		}
+		segment := a.referenceSegment(scope)
+		segments = append(segments, segment)
+		isType = scope.Type() == "template_type" || segment != "" && segment[0] >= 'A' && segment[0] <= 'Z'
+	}
+	if len(segments) == 0 || !isType {
+		return ""
+	}
+	return strings.Join(segments, "::")
+}
+
+// eachTemplateArguments yields the template argument lists written along a
+// qualified name: `a::Mixin<X>::type` holds `<X>`.
+func (a *TreeSitterAdapter) eachTemplateArguments(n *sitter.Node, yield func(*sitter.Node)) {
+	if n == nil {
+		return
+	}
+	if n.Type() == "template_argument_list" {
+		yield(n)
+		return
+	}
+	for i := 0; i < int(n.NamedChildCount()); i++ {
+		a.eachTemplateArguments(n.NamedChild(i), yield)
+	}
 }
 
 // qualifiedTypeName renders the name of a qualified reference without its

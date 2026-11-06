@@ -116,6 +116,9 @@ func (ix *projectIndex) targetTypeOf(dependency *pb.StmtExternalDependency, file
 	if dependency.Namespace == "" {
 		return ix.resolveSimpleName(dependency.ClassName, file)
 	}
+	if t := ix.lookupFromEnclosingScopes(dependency, file); t != nil {
+		return t
+	}
 	if t := ix.types[dependency.Namespace]; t != nil {
 		return t
 	}
@@ -123,6 +126,38 @@ func (ix *projectIndex) targetTypeOf(dependency *pb.StmtExternalDependency, file
 		return nil
 	}
 	return ix.typesByNamespaceAndShort[dependency.Namespace+"|"+dependency.ClassName]
+}
+
+// namesLookedUpFromEnclosingScopes lists the languages in which a name,
+// qualified or not, is relative to the scope it is written in. Inside
+// namespace a::b, C++ reads clearing::Clearing as a::b::clearing::Clearing,
+// then a::clearing::Clearing, then ::clearing::Clearing, and keeps the first
+// that exists: the engine cannot know which, only the project can. The other
+// languages write a qualified name absolute, or resolve it in their engine.
+var namesLookedUpFromEnclosingScopes = map[string]bool{"C++": true}
+
+// namesAFile tells a dependency naming a file rather than a module or a type:
+// a C++ #include. The engine's resolver brings it back to the file it names,
+// for the file graph and the libraries, but it names no namespace: the
+// namespace graph and the coupling read C++ from the names its code uses, and
+// a header is included to use them.
+func namesAFile(dependency *pb.StmtExternalDependency, file *pb.File) bool {
+	return dependency != nil && dependency.ClassName == "" && file.GetProgrammingLanguage() == "C++"
+}
+
+// lookupFromEnclosingScopes finds the type a name written in a scope stands
+// for, trying the innermost scope first, the way the compiler does. The scope
+// is the one the dependency is used from: a class, a method or a namespace.
+func (ix *projectIndex) lookupFromEnclosingScopes(dependency *pb.StmtExternalDependency, file *pb.File) *projectType {
+	if !namesLookedUpFromEnclosingScopes[file.GetProgrammingLanguage()] {
+		return nil
+	}
+	for scope := dependency.From; scope != ""; scope = parentNamespace(scope) {
+		if t := ix.types[scope+"::"+dependency.Namespace]; t != nil {
+			return t
+		}
+	}
+	return nil
 }
 
 // resolveSimpleName finds the type of the project a simple name stands for in
@@ -168,7 +203,7 @@ func (ix *projectIndex) resolveSimpleName(name string, file *pb.File) *projectTy
 // nor an import of the file: a type of the standard library written by its
 // bare name, or a type parameter, which the analysis has nothing to say about.
 func (ix *projectIndex) dependencyKey(dependency *pb.StmtExternalDependency, file *pb.File) (string, bool) {
-	if dependency == nil {
+	if dependency == nil || namesAFile(dependency, file) {
 		return "", false
 	}
 	if t := ix.targetTypeOf(dependency, file); t != nil {
@@ -288,6 +323,9 @@ func (ix *projectIndex) targetClassOf(dependency *pb.StmtExternalDependency, fil
 			return t.Class
 		}
 		return nil
+	}
+	if t := ix.lookupFromEnclosingScopes(dependency, file); t != nil {
+		return t.Class
 	}
 	if class := ix.classes[dependency.Namespace]; class != nil {
 		return class
