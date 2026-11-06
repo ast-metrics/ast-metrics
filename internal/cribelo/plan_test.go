@@ -240,8 +240,8 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.Equal(t, 0, plan.TestFiles)
 
 	// renders
-	assert.Contains(t, plan.Markdown(), "## Cribelo — read")
-	assert.Contains(t, plan.Text(), "Read first")
+	assert.Contains(t, plan.Markdown(), "## Cribelo: read 3 of 8 changed files")
+	assert.Contains(t, plan.Text(), "Start with svc/svc.go:")
 	js, err := plan.JSON()
 	require.NoError(t, err)
 	assert.True(t, json.Valid([]byte(js)))
