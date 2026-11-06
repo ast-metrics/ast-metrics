@@ -58,7 +58,7 @@ func TestCppMaskingKeepsEveryOffsetAndLeavesValidCodeAlone(t *testing.T) {
 func TestCppMaskingSparesTypesWrittenInCapitals(t *testing.T) {
 	cases := map[string]string{
 		"OPENSSL_EXPORT EVP_MD_CTX *EVP_MD_CTX_new(void) { return 0; }\n": "               EVP_MD_CTX *EVP_MD_CTX_new(void) { return 0; }\n",
-		"DWORD WINAPI ThreadProc(int p) { return 0; }\n":                    "DWORD        ThreadProc(int p) { return 0; }\n",
+		"DWORD WINAPI ThreadProc(int p) { return 0; }\n":                  "DWORD        ThreadProc(int p) { return 0; }\n",
 	}
 	for src, expected := range cases {
 		assert.Equal(t, expected, string(maskSpecifierMacros([]byte(src))))
