@@ -221,10 +221,16 @@ func (a *TreeSitterAdapter) enclosingClass(n *sitter.Node) *sitter.Node {
 
 // qualifiedDefinitionName returns the qualified name of an out-of-class
 // definition (`a::b::Foo::bar`), or "" for a plain unqualified definition.
-// The name is the one written in the declarator, below the namespace blocks
+// Template arguments are not part of the name: `Foo<T>::bar` defines
+// `Foo::bar`, the method of the class template Foo.
+//
+// The name written in the declarator is relative to the namespace blocks
 // enclosing the definition: `namespace car { void Engine::start() {} }`
-// defines `car::Engine::start`. A name written from the global scope
-// (`void ::car::Engine::start()`) is taken as it is.
+// defines `car::Engine::start`. A first segment naming one of those blocks
+// starts from it instead, as the compiler's lookup would:
+// `namespace car { void car::Engine::start() {} }` is the same method. A name
+// written from the global scope (`void ::car::Engine::start()`) is taken as
+// it is.
 func (a *TreeSitterAdapter) qualifiedDefinitionName(fn *sitter.Node) string {
 	d := fn.ChildByFieldName("declarator")
 	if d == nil {
@@ -236,16 +242,26 @@ func (a *TreeSitterAdapter) qualifiedDefinitionName(fn *sitter.Node) string {
 	if d == nil || d.Type() != "qualified_identifier" {
 		return ""
 	}
-	name := nodeText(a.src, d)
-	global := strings.HasPrefix(name, "::")
-	name = strings.TrimPrefix(name, "::")
-	if !strings.Contains(name, "::") || isCppKeyword(strings.TrimSuffix(name, "()")) {
+	global := strings.HasPrefix(nodeText(a.src, d), "::")
+	name := strings.TrimPrefix(a.qualifiedTypeName(d), "::")
+	segments := strings.Split(name, "::")
+	if len(segments) < 2 || isCppKeyword(strings.TrimSuffix(name, "()")) {
 		return ""
 	}
 	if global {
 		return name
 	}
-	return a.qualify(a.namespaceChain(fn), name)
+	chain := strings.Split(a.namespaceChain(fn), "::")
+	if chain[0] == "" {
+		return name
+	}
+	for i := len(chain) - 1; i >= 0; i-- {
+		if chain[i] == segments[0] {
+			chain = chain[:i]
+			break
+		}
+	}
+	return a.qualify(strings.Join(chain, "::"), name)
 }
 
 // macroTestName names gtest-style test macros from their arguments:

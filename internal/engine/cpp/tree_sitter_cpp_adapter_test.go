@@ -349,3 +349,29 @@ func TestCppOneLineFunctionAtTheFirstColumnHasHalsteadSymbols(t *testing.T) {
 		assert.Contains(t, operandNames(g.Operands), "value", source)
 	}
 }
+
+func TestCppOutOfClassDefinitionsAreQualifiedOnce(t *testing.T) {
+	file := parseCpp(t, `
+namespace car {
+void Engine::start() { Starter s; }
+void car::Engine::stop() { Starter s; }
+template <typename T> void Box<T>::put(T value) { Box<T> copy; Label label; }
+namespace parts { void car::Wheel::turn() {} }
+}
+void ::car::Engine::reset() {}
+`)
+	var names []string
+	for _, fn := range file.Stmts.StmtFunction {
+		names = append(names, fn.Name.Qualified)
+	}
+	assert.Equal(t, []string{"car::Engine::start", "car::Engine::stop", "car::Box::put", "car::Wheel::turn", "car::Engine::reset"}, names)
+
+	put := file.Stmts.StmtFunction[2]
+	var deps []string
+	for _, dep := range put.Stmts.StmtExternalDependencies {
+		deps = append(deps, writtenName(dep))
+		assert.Equal(t, "car::Box::put", dep.From)
+	}
+	// the class template itself is not a dependency of its own method
+	assert.Equal(t, []string{"Label"}, deps)
+}
