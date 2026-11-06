@@ -14,7 +14,7 @@ Deterministic: same code, same verdict. Works offline: no data leaves your machi
 Fast: 20,000+ lines of code analyzed per second, on a laptop.
 <br />
 <br />
-<code>Go</code> · <code>PHP</code> · <code>Python</code> · <code>Rust</code> · <code>Java</code> · <code>C#</code> · <code>TypeScript</code> · <code>C++ (initial/basic)</code>
+<code>Go</code> · <code>PHP</code> · <code>Python</code> · <code>Rust</code> · <code>Java</code> · <code>C#</code> · <code>TypeScript</code> · <code>C++</code>
 </p>
 <br />
 
@@ -132,25 +132,15 @@ ast-metrics mcp .
 
 ## Supported languages
 
-Go, PHP, Python, Rust, Java, C#, TypeScript, and initial/basic syntax-level C++ support.
+Go, PHP, Python, Rust, Java, C#, TypeScript and C++.
 
-C++ discovery includes `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, and `.hxx`. A generic
-`.h` file is claimed when its content looks like C++ (`class`, `namespace`,
-`template`, `::`), so plain C headers are left alone.
-
-The C++ engine maps Tree-sitter syntax into the common metrics representation.
-Its syntax-level limits, in short:
-
-- no preprocessing: both branches of an `#ifdef` are counted, and code wrapped
-  in unexpanded macros is only partially analyzed;
-- lambdas are not scopes: their complexity is attributed to the enclosing
-  function;
-- out-of-class definitions keep their written qualification
-  (`ns::Class::method`), but without semantic analysis an unqualified type
-  reference is conservatively qualified with the namespace of the class that
-  uses it. The shared project index can then match that qualified class in
-  another analyzed file; C++ lookup rules and compiler include paths are not
-  inferred.
+C++ is read from its syntax alone, without a preprocessor or the build. A `.h`
+file is analyzed when its content looks like C++, so plain C headers are left
+alone. Both branches of an `#ifdef` are counted, code wrapped in a macro the
+parser cannot expand is only partly understood, and a lambda's complexity goes
+to the function that holds it. An `#include` is found from the including file,
+then from the project's own directories, never from the compiler's include
+paths.
 
 ## Contributing
 
