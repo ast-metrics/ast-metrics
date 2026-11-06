@@ -122,14 +122,36 @@ func (r *scopedFileDependencyResolver) Resolve(source *pb.File, dep *pb.StmtExte
 	// A use path ends on an item, not on a module: `crate::model::User` names
 	// the struct User inside the module `model`. Which trailing segments are
 	// items is only known to the compiler, so the longest prefix that is a
-	// module wins.
-	for end := len(segments); end >= 0; end-- {
+	// module wins. The empty prefix is the crate root, which only a path
+	// anchored to the crate can mean: `serde::Deserialize`, read from the root
+	// for want of a module named serde, is an external crate, not lib.rs.
+	shortest := 1
+	if r.anchored(path) {
+		shortest = 0
+	}
+	for end := len(segments); end >= shortest; end-- {
 		module := strings.Join(segments[:end], "::")
 		if targets := r.modules.Get(moduleKey(crate, module)); len(targets) > 0 {
 			return targets, true
 		}
 	}
 	return nil, true
+}
+
+// anchored tells a path written from a crate, `crate::`, `self::`, `super::`
+// or a crate of the workspace by name, from one read from the root only
+// because nothing else claims it.
+func (r *scopedFileDependencyResolver) anchored(path string) bool {
+	segments := splitPath(path)
+	if len(segments) == 0 {
+		return false
+	}
+	switch segments[0] {
+	case "crate", "self", "super":
+		return true
+	}
+	_, named := r.crateNames[segments[0]]
+	return named
 }
 
 // rebase turns a use path into a crate and the module segments to walk from

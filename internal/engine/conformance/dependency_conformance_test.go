@@ -243,6 +243,18 @@ var rustScenarios = []dependencyScenario{
 		},
 		edges: map[string][]string{},
 	},
+	{
+		name: "an external crate used below the crate root is not the crate root",
+		why:  "use serde::Serialize names no module of the crate; read from the root for want of one, it must not stop at lib.rs",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod model;\n",
+			"src/model.rs": "use serde::Serialize;\nuse std::fmt::Display;\n\npub struct User;\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs": {"src/model.rs"},
+		},
+	},
 }
 
 // ---------------------------------------------------------------------------
