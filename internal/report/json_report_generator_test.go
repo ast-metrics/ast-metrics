@@ -10,6 +10,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestGenerateJson(t *testing.T) {
@@ -175,4 +176,40 @@ func TestBuildReportLeavesFunctionRowsOutUnlessAsked(t *testing.T) {
 
 	assert.Empty(t, (&JsonReportGenerator{}).buildReport(aggregated).ConcernedFiles[0].Functions)
 	assert.Len(t, (&JsonReportGenerator{Functions: true}).buildReport(aggregated).ConcernedFiles[0].Functions, 1)
+}
+
+func TestBuildReportRoundsTheFiguresOfARowToTwoDecimals(t *testing.T) {
+	analyze := &pb.Analyze{
+		Volume: &pb.Volume{
+			HalsteadVolume: proto.Float64(123.456789), HalsteadDifficulty: proto.Float64(4.006),
+			HalsteadEffort: proto.Float64(10.0), HalsteadTime: proto.Float64(0.3333),
+			HalsteadEstimatedLength: proto.Float64(7.999),
+		},
+		Maintainability: &pb.Maintainability{
+			MaintainabilityIndex: proto.Float64(87.12345), MaintainabilityIndexWithoutComments: proto.Float64(70.666),
+			CommentWeight: proto.Float64(16.4567),
+		},
+		Risk:     &pb.Risk{Score: 0.123456},
+		Coupling: &pb.Coupling{Instability: 0.666666},
+	}
+	f := &pb.File{Path: "app.ts", Stmts: &pb.Stmts{Analyze: analyze, StmtFunction: []*pb.StmtFunction{
+		{Name: &pb.Name{Short: "run"}, Stmts: &pb.Stmts{Analyze: analyze}},
+	}}}
+	r := (&JsonReportGenerator{Functions: true}).buildReport(analyzer.ProjectAggregated{
+		Combined: analyzer.Aggregated{ConcernedFiles: []*pb.File{f}},
+	})
+
+	row := r.ConcernedFiles[0]
+	for _, v := range []volume{row.Volume, row.Functions[0].Volume} {
+		assert.Equal(t, 123.46, v.HalsteadVolume)
+		assert.Equal(t, 4.01, v.HalsteadDifficulty)
+		assert.Equal(t, 10.0, v.HalsteadEffort)
+		assert.Equal(t, 0.33, v.HalsteadTime)
+		assert.Equal(t, 8.0, v.HalsteadEstimatedLength)
+	}
+	for _, m := range []maintainability{row.Maintainability, row.Functions[0].Maintainability} {
+		assert.Equal(t, maintainability{MaintainabilityIndex: 87.12, MaintainabilityIndexWithoutComments: 70.67, CommentWeight: 16.46}, m)
+	}
+	assert.Equal(t, 0.12, row.Risk.Score)
+	assert.Equal(t, 0.67, row.Coupling.Instability)
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
@@ -83,7 +84,7 @@ func (j *JsonReportGenerator) buildReport(projectAggregated analyzer.ProjectAggr
 
 			if f.Stmts.Analyze.Risk != nil {
 				concernedFile.Risk = risk{
-					Score: f.Stmts.Analyze.Risk.GetScore(),
+					Score: rounded(f.Stmts.Analyze.Risk.GetScore()),
 				}
 			}
 
@@ -91,7 +92,7 @@ func (j *JsonReportGenerator) buildReport(projectAggregated analyzer.ProjectAggr
 				concernedFile.Coupling = coupling{
 					Afferent:    f.Stmts.Analyze.Coupling.GetAfferent(),
 					Efferent:    f.Stmts.Analyze.Coupling.GetEfferent(),
-					Instability: f.Stmts.Analyze.Coupling.GetInstability(),
+					Instability: rounded(f.Stmts.Analyze.Coupling.GetInstability()),
 				}
 			}
 		}
@@ -197,21 +198,27 @@ func volumeOf(a *pb.Analyze) volume {
 		Loc:                     v.GetLoc(),
 		Lloc:                    v.GetLloc(),
 		Cloc:                    v.GetCloc(),
-		HalsteadVolume:          v.GetHalsteadVolume(),
-		HalsteadDifficulty:      v.GetHalsteadDifficulty(),
-		HalsteadEffort:          v.GetHalsteadEffort(),
-		HalsteadTime:            v.GetHalsteadTime(),
+		HalsteadVolume:          rounded(v.GetHalsteadVolume()),
+		HalsteadDifficulty:      rounded(v.GetHalsteadDifficulty()),
+		HalsteadEffort:          rounded(v.GetHalsteadEffort()),
+		HalsteadTime:            rounded(v.GetHalsteadTime()),
 		HalsteadVocabulary:      v.GetHalsteadVocabulary(),
 		HalsteadLength:          v.GetHalsteadLength(),
-		HalsteadEstimatedLength: v.GetHalsteadEstimatedLength(),
+		HalsteadEstimatedLength: rounded(v.GetHalsteadEstimatedLength()),
 	}
 }
 
 func maintainabilityOf(a *pb.Analyze) maintainability {
 	m := a.GetMaintainability()
 	return maintainability{
-		MaintainabilityIndex:                m.GetMaintainabilityIndex(),
-		MaintainabilityIndexWithoutComments: m.GetMaintainabilityIndexWithoutComments(),
-		CommentWeight:                       m.GetCommentWeight(),
+		MaintainabilityIndex:                rounded(m.GetMaintainabilityIndex()),
+		MaintainabilityIndexWithoutComments: rounded(m.GetMaintainabilityIndexWithoutComments()),
+		CommentWeight:                       rounded(m.GetCommentWeight()),
 	}
+}
+
+// rounded keeps two decimals of a figure in a file or function row: more
+// would only make the report larger, and the rows are most of it.
+func rounded(x float64) float64 {
+	return math.Round(x*100) / 100
 }
