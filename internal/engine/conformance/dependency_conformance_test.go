@@ -243,6 +243,110 @@ var rustScenarios = []dependencyScenario{
 		},
 		edges: map[string][]string{},
 	},
+	{
+		name: "an external crate used below the crate root is not the crate root",
+		why:  "use serde::Serialize names no module of the crate; read from the root for want of one, it must not stop at lib.rs",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod model;\n",
+			"src/model.rs": "use serde::Serialize;\nuse std::fmt::Display;\n\npub struct User;\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs": {"src/model.rs"},
+		},
+	},
+	{
+		name: "an item re-exported by another module is read where it is defined",
+		why:  "crate::Error names the Error that lib.rs re-exports from error.rs; event.rs reads error.rs",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod error;\nmod event;\npub use error::Error;\n",
+			"src/error.rs": "pub struct Error;\n",
+			"src/event.rs": "use crate::Error;\n\npub fn fail() -> Error { Error }\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/error.rs", "src/event.rs"},
+			"src/event.rs": {"src/error.rs"},
+		},
+	},
+	{
+		name: "an item re-exported twice is read where it is defined",
+		why:  "lib.rs re-exports Parsed from node.rs, which re-exports it from node/parse.rs",
+		files: map[string]string{
+			"Cargo.toml":        "[package]\nname = \"demo\"\n",
+			"src/lib.rs":        "mod event;\nmod node;\npub use node::Parsed;\n",
+			"src/node.rs":       "mod parse;\npub use self::parse::Parsed;\n",
+			"src/node/parse.rs": "pub struct Parsed;\n",
+			"src/event.rs":      "use crate::Parsed;\n\npub fn read() -> Parsed { Parsed }\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/event.rs", "src/node.rs", "src/node/parse.rs"},
+			"src/node.rs":  {"src/node/parse.rs"},
+			"src/event.rs": {"src/node/parse.rs"},
+		},
+	},
+	{
+		name: "super inside a module written inline is the file's own module",
+		why:  "in mod tests of time.rs, use super::Timestamp reads time.rs, so crate::time::Timestamp stays time.rs too",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod event;\nmod time;\n",
+			"src/time.rs":  "pub struct Timestamp;\n\n#[cfg(test)]\nmod tests {\n    use super::Timestamp;\n\n    #[test]\n    fn builds() { let _t = Timestamp; }\n}\n",
+			"src/event.rs": "use crate::time::Timestamp;\n\npub fn at() -> Timestamp { Timestamp }\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/event.rs", "src/time.rs"},
+			"src/event.rs": {"src/time.rs"},
+		},
+	},
+	{
+		name: "two modules re-exporting each other's item still resolve",
+		why:  "the compiler refuses the loop, but following it must end",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod a;\nmod b;\nmod event;\n",
+			"src/a.rs":     "pub use crate::b::Thing;\n",
+			"src/b.rs":     "pub use crate::a::Thing;\n",
+			"src/event.rs": "use crate::a::Thing;\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/a.rs", "src/b.rs", "src/event.rs"},
+			"src/a.rs":     {"src/b.rs"},
+			"src/b.rs":     {"src/a.rs"},
+			"src/event.rs": {"src/a.rs"},
+		},
+	},
+	{
+		name: "every path of a grouped use is read under the group's path",
+		why:  "use crate::{model::User, util::helper} names model and util, not the crate root",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod app;\nmod model;\nmod util;\n",
+			"src/model.rs": "pub struct User;\n",
+			"src/util.rs":  "pub fn helper() {}\n",
+			"src/app.rs":   "use crate::{model::User, util::helper};\n\npub fn run(_u: User) { helper() }\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs": {"src/app.rs", "src/model.rs", "src/util.rs"},
+			"src/app.rs": {"src/model.rs", "src/util.rs"},
+		},
+	},
+	{
+		name: "a nested group, self and an alias are read under the group's path",
+		why:  "use crate::model::{self, inner::{Deep}, User as U} names model and model::inner",
+		files: map[string]string{
+			"Cargo.toml":         "[package]\nname = \"demo\"\n",
+			"src/lib.rs":         "mod app;\nmod model;\n",
+			"src/model/mod.rs":   "mod inner;\npub struct User;\n",
+			"src/model/inner.rs": "pub struct Deep;\n",
+			"src/app.rs":         "use crate::model::{self, inner::{Deep}, User as U};\n\npub fn run(_d: Deep, _u: U) {}\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":       {"src/app.rs", "src/model/mod.rs"},
+			"src/model/mod.rs": {"src/model/inner.rs"},
+			"src/app.rs":       {"src/model/inner.rs", "src/model/mod.rs"},
+		},
+	},
 }
 
 // ---------------------------------------------------------------------------

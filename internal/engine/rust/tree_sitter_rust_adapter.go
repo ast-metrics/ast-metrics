@@ -288,6 +288,7 @@ func (a *TreeSitterAdapter) parseMod(n *sitter.Node) []Treesitter.ImportItem {
 
 func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 	items := []Treesitter.ImportItem{}
+	inline := a.inlineModules(n)
 	add := func(full string) {
 		full = strings.TrimSpace(full)
 		if full == "" {
@@ -295,8 +296,17 @@ func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 		}
 		// cut alias if present: "foo::bar as Baz"
 		full = strings.Split(full, " as ")[0]
+		full = fromFileModule(inline, full)
 		mod, name := splitModuleLeaf(full, "::")
 		items = append(items, Treesitter.ImportItem{Module: mod, Name: name})
+	}
+	// join puts a path written inside a group after the group's own path:
+	// `crate::proto` and `Body` in `use crate::proto::{Body}`.
+	join := func(prefix, path string) string {
+		if prefix == "" {
+			return path
+		}
+		return strings.TrimSuffix(prefix, "::") + "::" + strings.TrimPrefix(path, "::")
 	}
 	var walk func(*sitter.Node, string)
 	walk = func(x *sitter.Node, prefix string) {
@@ -304,38 +314,41 @@ func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 			return
 		}
 		switch x.Type() {
-		case "use_tree":
-			// may contain scoped_identifier, use_list, use_as_clause
-		case "scoped_identifier", "identifier", "crate", "super", "self":
-			path := a.text(x)
-			if prefix != "" {
-				path = strings.TrimSuffix(prefix, "::") + "::" + strings.TrimPrefix(path, "::")
+		case "scoped_use_list":
+			// `a::b::{C, d::E}`: every item of the list is read under a::b.
+			// The path is absent from a bare `{C, D}`.
+			if path := x.ChildByFieldName("path"); path != nil {
+				prefix = join(prefix, a.text(path))
 			}
-			add(path)
+			walk(x.ChildByFieldName("list"), prefix)
 			return
 		case "use_list":
-			// grouped: foo::{bar, baz as Qux}
-			// prefix is set by preceding scoped_identifier
+			for i := 0; i < int(x.NamedChildCount()); i++ {
+				walk(x.NamedChild(i), prefix)
+			}
+			return
 		case "use_as_clause":
-			// "path as Alias" → child 0 is path, we ignore alias for identity
-			if x.ChildCount() > 0 {
-				path := a.text(x.Child(0))
-				if prefix != "" {
-					path = strings.TrimSuffix(prefix, "::") + "::" + strings.TrimPrefix(path, "::")
-				}
-				add(path)
-				return
+			// "path as Alias": the alias is only a local name.
+			walk(x.ChildByFieldName("path"), prefix)
+			return
+		case "use_wildcard":
+			// `a::*` depends on the module a; inside a group, `*` on the group's.
+			if x.NamedChildCount() > 0 {
+				add(join(prefix, a.text(x.NamedChild(0))))
+			} else if prefix != "" {
+				add(prefix)
 			}
-		}
-		// derive group prefix if parent has a scoped_identifier
-		if x.Type() == "use_list" || x.Type() == "use_tree" {
-			p := prefix
-			if q := firstChildOfType(x, "scoped_identifier"); q != nil {
-				p = a.text(q)
+			return
+		case "self":
+			// `self` inside a group names the group's module itself.
+			if prefix != "" {
+				add(prefix)
+			} else {
+				add("self")
 			}
-			for i := 0; i < int(x.ChildCount()); i++ {
-				walk(x.Child(i), p)
-			}
+			return
+		case "scoped_identifier", "identifier", "crate", "super":
+			add(join(prefix, a.text(x)))
 			return
 		}
 		for i := 0; i < int(x.ChildCount()); i++ {
@@ -344,6 +357,47 @@ func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 	}
 	walk(n, "")
 	return dedup(items)
+}
+
+// inlineModules lists the modules written inline (`mod tests { ... }`) that
+// enclose a node, outermost first. They live in the same file as the module
+// the file implements, so a path written inside them is relative to them.
+func (a *TreeSitterAdapter) inlineModules(n *sitter.Node) []string {
+	names := []string{}
+	for p := n.Parent(); p != nil; p = p.Parent() {
+		if p.Type() == "mod_item" && p.ChildByFieldName("body") != nil {
+			names = append([]string{a.text(p.ChildByFieldName("name"))}, names...)
+		}
+	}
+	return names
+}
+
+// fromFileModule rewrites a path written inside inline modules so that it
+// reads from the module the file implements: in `mod tests` of time.rs,
+// `super::Timestamp` is time.rs's own `self::Timestamp`, and `self::helper`
+// is `self::tests::helper`. Each `super` leaves one inline module before it
+// can leave the file.
+func fromFileModule(inline []string, path string) string {
+	if len(inline) == 0 {
+		return path
+	}
+	segments := strings.Split(path, "::")
+	switch segments[0] {
+	case "self":
+		return strings.Join(append(append([]string{"self"}, inline...), segments[1:]...), "::")
+	case "super":
+		depth := len(inline)
+		rest := segments
+		for len(rest) > 0 && rest[0] == "super" && depth > 0 {
+			depth--
+			rest = rest[1:]
+		}
+		if len(rest) > 0 && rest[0] == "super" {
+			return strings.Join(rest, "::")
+		}
+		return strings.Join(append(append([]string{"self"}, inline[:depth]...), rest...), "::")
+	}
+	return path
 }
 
 // helpers
