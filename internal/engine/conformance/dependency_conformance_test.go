@@ -286,6 +286,20 @@ var rustScenarios = []dependencyScenario{
 		},
 	},
 	{
+		name: "super inside a module written inline is the file's own module",
+		why:  "in mod tests of time.rs, use super::Timestamp reads time.rs, so crate::time::Timestamp stays time.rs too",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod event;\nmod time;\n",
+			"src/time.rs":  "pub struct Timestamp;\n\n#[cfg(test)]\nmod tests {\n    use super::Timestamp;\n\n    #[test]\n    fn builds() { let _t = Timestamp; }\n}\n",
+			"src/event.rs": "use crate::time::Timestamp;\n\npub fn at() -> Timestamp { Timestamp }\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/event.rs", "src/time.rs"},
+			"src/event.rs": {"src/time.rs"},
+		},
+	},
+	{
 		name: "two modules re-exporting each other's item still resolve",
 		why:  "the compiler refuses the loop, but following it must end",
 		files: map[string]string{

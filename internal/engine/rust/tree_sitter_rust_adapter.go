@@ -288,6 +288,7 @@ func (a *TreeSitterAdapter) parseMod(n *sitter.Node) []Treesitter.ImportItem {
 
 func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 	items := []Treesitter.ImportItem{}
+	inline := a.inlineModules(n)
 	add := func(full string) {
 		full = strings.TrimSpace(full)
 		if full == "" {
@@ -295,6 +296,7 @@ func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 		}
 		// cut alias if present: "foo::bar as Baz"
 		full = strings.Split(full, " as ")[0]
+		full = fromFileModule(inline, full)
 		mod, name := splitModuleLeaf(full, "::")
 		items = append(items, Treesitter.ImportItem{Module: mod, Name: name})
 	}
@@ -355,6 +357,47 @@ func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 	}
 	walk(n, "")
 	return dedup(items)
+}
+
+// inlineModules lists the modules written inline (`mod tests { ... }`) that
+// enclose a node, outermost first. They live in the same file as the module
+// the file implements, so a path written inside them is relative to them.
+func (a *TreeSitterAdapter) inlineModules(n *sitter.Node) []string {
+	names := []string{}
+	for p := n.Parent(); p != nil; p = p.Parent() {
+		if p.Type() == "mod_item" && p.ChildByFieldName("body") != nil {
+			names = append([]string{a.text(p.ChildByFieldName("name"))}, names...)
+		}
+	}
+	return names
+}
+
+// fromFileModule rewrites a path written inside inline modules so that it
+// reads from the module the file implements: in `mod tests` of time.rs,
+// `super::Timestamp` is time.rs's own `self::Timestamp`, and `self::helper`
+// is `self::tests::helper`. Each `super` leaves one inline module before it
+// can leave the file.
+func fromFileModule(inline []string, path string) string {
+	if len(inline) == 0 {
+		return path
+	}
+	segments := strings.Split(path, "::")
+	switch segments[0] {
+	case "self":
+		return strings.Join(append(append([]string{"self"}, inline...), segments[1:]...), "::")
+	case "super":
+		depth := len(inline)
+		rest := segments
+		for len(rest) > 0 && rest[0] == "super" && depth > 0 {
+			depth--
+			rest = rest[1:]
+		}
+		if len(rest) > 0 && rest[0] == "super" {
+			return strings.Join(rest, "::")
+		}
+		return strings.Join(append(append([]string{"self"}, inline[:depth]...), rest...), "::")
+	}
+	return path
 }
 
 // helpers
