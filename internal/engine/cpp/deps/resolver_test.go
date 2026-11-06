@@ -1,6 +1,7 @@
 package deps
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ast-metrics/ast-metrics/internal/engine"
@@ -63,7 +64,11 @@ func TestTypeIsLookedUpFromTheScopeItIsUsedFrom(t *testing.T) {
 	})
 	source := cppFile("/project/socket.cpp")
 	use := func(from, name string) []string {
-		targets, handled := resolver.Resolve(source, &pb.StmtExternalDependency{Namespace: name, ClassName: name, From: from})
+		dep := &pb.StmtExternalDependency{ClassName: name, From: from}
+		if i := strings.LastIndex(name, "::"); i >= 0 {
+			dep.Namespace, dep.ClassName = name, name[i+2:]
+		}
+		targets, handled := resolver.Resolve(source, dep)
 		assert.True(t, handled)
 		return targets
 	}

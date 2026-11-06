@@ -172,7 +172,7 @@ private:
 	// The positive control: real dependencies from the same class still appear.
 	depNames := make([]string, 0, len(widget.Stmts.StmtExternalDependencies))
 	for _, dep := range widget.Stmts.StmtExternalDependencies {
-		depNames = append(depNames, dep.Namespace)
+		depNames = append(depNames, writtenName(dep))
 	}
 	assert.ElementsMatch(t, []string{"Store"}, depNames)
 }
@@ -215,7 +215,7 @@ private:
 	// name as written, the analyzer looks it up
 	var names []string
 	for _, dep := range context.Stmts.StmtExternalDependencies {
-		names = append(names, dep.Namespace)
+		names = append(names, writtenName(dep))
 		assert.Equal(t, "fmt::context", dep.From)
 	}
 	assert.Equal(t, []string{"formatter", "detail::buffer"}, names)
@@ -268,7 +268,7 @@ void Engine::start() {
 	var deps []string
 	for _, dep := range engineDependencies(file) {
 		if dep.ClassName != "" {
-			deps = append(deps, dep.Namespace)
+			deps = append(deps, writtenName(dep))
 			assert.Equal(t, "car::Engine::start", dep.From)
 		}
 	}
@@ -296,6 +296,15 @@ public:
 	assert.Equal(t, int32(1), controller.Stmts.Analyze.Coupling.Efferent)
 	assert.Equal(t, int32(1), motor.Stmts.Analyze.Coupling.Afferent)
 	assert.Greater(t, project.ByClass.EfferentCoupling.Sum, float64(0))
+}
+
+// writtenName returns a type reference the way the source writes it: a
+// qualified name in Namespace, a simple name in ClassName alone.
+func writtenName(dep *pb.StmtExternalDependency) string {
+	if dep.Namespace != "" {
+		return dep.Namespace
+	}
+	return dep.ClassName
 }
 
 func engineDependencies(file *pb.File) []*pb.StmtExternalDependency {

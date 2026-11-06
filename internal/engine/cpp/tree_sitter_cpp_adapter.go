@@ -511,8 +511,8 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 // attempting C++ name lookup or overload resolution.
 //
 // A reference is kept the way it is written: `formatter` inside
-// `namespace fmt` stays `formatter`, and `detail::buffer` stays
-// `detail::buffer`. C++ looks such a name up from the scope it is written in
+// `namespace fmt` stays the simple name `formatter`, and `detail::buffer`
+// stays `detail::buffer`. C++ looks such a name up from the scope it is written in
 // outward, and only the whole project knows which of the candidates exists;
 // the analyzer does that lookup from the scope the dependency is used from.
 // Known noise is skipped: the parameters of the enclosing templates, anything
@@ -552,11 +552,13 @@ func (a *TreeSitterAdapter) typeReferences(root *sitter.Node, templateParameters
 			return
 		}
 		seen[name] = true
-		short := name
-		if idx := strings.LastIndex(short, "::"); idx >= 0 {
-			short = short[idx+2:]
+		// a simple name is written without its module, the way Java and C#
+		// write most types: it only counts once it is found in the project
+		if idx := strings.LastIndex(name, "::"); idx >= 0 {
+			items = append(items, Treesitter.ImportItem{Module: name, Name: name[idx+2:]})
+		} else {
+			items = append(items, Treesitter.ImportItem{Name: name})
 		}
-		items = append(items, Treesitter.ImportItem{Module: name, Name: short})
 	}
 
 	var walk func(*sitter.Node)

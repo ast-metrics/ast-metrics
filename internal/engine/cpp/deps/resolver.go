@@ -115,6 +115,10 @@ func (r *scopedFileDependencyResolver) resolveInclude(source *pb.File, include s
 
 func (r *scopedFileDependencyResolver) resolveType(dep *pb.StmtExternalDependency) []string {
 	name := dep.GetNamespace()
+	if name == "" {
+		// a simple name
+		name = dep.GetClassName()
+	}
 	for scope := dep.GetFrom(); scope != ""; scope = parentScope(scope) {
 		if targets := r.types.Get(scope + "::" + name); len(targets) > 0 {
 			return targets

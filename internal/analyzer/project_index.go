@@ -113,11 +113,11 @@ func (ix *projectIndex) targetTypeOf(dependency *pb.StmtExternalDependency, file
 	if dependency == nil {
 		return nil
 	}
-	if dependency.Namespace == "" {
-		return ix.resolveSimpleName(dependency.ClassName, file)
-	}
 	if t := ix.lookupFromEnclosingScopes(dependency, file); t != nil {
 		return t
+	}
+	if dependency.Namespace == "" {
+		return ix.resolveSimpleName(dependency.ClassName, file)
 	}
 	if t := ix.types[dependency.Namespace]; t != nil {
 		return t
@@ -152,12 +152,19 @@ func (ix *projectIndex) lookupFromEnclosingScopes(dependency *pb.StmtExternalDep
 	if !namesLookedUpFromEnclosingScopes[file.GetProgrammingLanguage()] {
 		return nil
 	}
+	written := dependency.Namespace
+	if written == "" {
+		written = dependency.ClassName
+	}
+	if written == "" {
+		return nil
+	}
 	for scope := dependency.From; scope != ""; scope = parentNamespace(scope) {
-		if t := ix.types[scope+"::"+dependency.Namespace]; t != nil {
+		if t := ix.types[scope+"::"+written]; t != nil {
 			return t
 		}
 	}
-	return nil
+	return ix.types[written]
 }
 
 // resolveSimpleName finds the type of the project a simple name stands for in
@@ -318,14 +325,14 @@ func (ix *projectIndex) targetClassOf(dependency *pb.StmtExternalDependency, fil
 	if dependency == nil {
 		return nil
 	}
+	if t := ix.lookupFromEnclosingScopes(dependency, file); t != nil {
+		return t.Class
+	}
 	if dependency.Namespace == "" {
 		if t := ix.resolveSimpleName(dependency.ClassName, file); t != nil {
 			return t.Class
 		}
 		return nil
-	}
-	if t := ix.lookupFromEnclosingScopes(dependency, file); t != nil {
-		return t.Class
 	}
 	if class := ix.classes[dependency.Namespace]; class != nil {
 		return class
