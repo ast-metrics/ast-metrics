@@ -187,8 +187,8 @@ func (a *TreeSitterAdapter) qualify(namespace, name string) string {
 }
 
 // namespaceChain returns the "::"-joined names of the namespace_definition
-// blocks enclosing n, outermost first. Nested blocks and the C++17
-// `namespace a::b` form both flatten to their full chain. The walk stops at
+// blocks enclosing n, outermost first, inline namespaces left out. Nested
+// blocks and the C++17 `namespace a::b` form both flatten to their full chain. The walk stops at
 // real function boundaries — but continues through the pseudo definitions
 // produced by an unexpanded macro, whose namespace is still meaningful.
 func (a *TreeSitterAdapter) namespaceChain(n *sitter.Node) string {
@@ -197,7 +197,10 @@ func (a *TreeSitterAdapter) namespaceChain(n *sitter.Node) string {
 		if p.Type() == "function_definition" && a.IsFunction(p) {
 			break
 		}
-		if p.Type() == "namespace_definition" {
+		// an inline namespace (`inline namespace v11`) is how a library
+		// versions its ABI: its members are written and used as members of the
+		// enclosing namespace, `fmt::format_to` rather than `fmt::v11::format_to`
+		if p.Type() == "namespace_definition" && !Treesitter.HasChildOfType(p, "inline") {
 			if name := p.ChildByFieldName("name"); name != nil {
 				segments = append([]string{nodeText(a.src, name)}, segments...)
 			}

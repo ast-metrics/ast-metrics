@@ -375,3 +375,15 @@ void ::car::Engine::reset() {}
 	// the class template itself is not a dependency of its own method
 	assert.Equal(t, []string{"Label"}, deps)
 }
+
+func TestCppInlineNamespacesAreLeftOutOfNames(t *testing.T) {
+	file := parseCpp(t, `
+namespace fmt { inline namespace v11 {
+class formatter {};
+void print() {}
+} }
+`)
+	require.Len(t, file.Stmts.StmtClass, 1)
+	assert.Equal(t, "fmt::formatter", file.Stmts.StmtClass[0].Name.Qualified)
+	assert.Equal(t, "fmt::print", file.Stmts.StmtFunction[0].Name.Qualified)
+}
