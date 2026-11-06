@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	enginePkg "github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/cpp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/csharp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/golang"
 	"github.com/ast-metrics/ast-metrics/internal/engine/java"
@@ -109,6 +110,16 @@ func architectureSamples() []architectureSample {
 			},
 			modules:  [3]string{"demo::artifact", "demo::clearing", "demo::shared"},
 			packages: [3]string{"demo::artifact", "demo::clearing", "demo::shared"},
+		},
+		{
+			language: "C++", engine: &cpp.CppRunner{},
+			files: [3][2]string{
+				{"src/artifact/entrypoint.cpp", "#include \"../clearing/clearing.hpp\"\nnamespace acme::product::artifact {\nclass Entrypoint { clearing::Clearing c; };\n}\n"},
+				{"src/clearing/clearing.hpp", "#include \"../shared/util.hpp\"\nnamespace acme::product::clearing {\nclass Clearing { public: void run() { shared::Util::go(); } };\n}\n"},
+				{"src/shared/util.hpp", "namespace acme::product::shared {\nclass Util { public: static void go() {} };\n}\n"},
+			},
+			modules:  [3]string{"acme::product::artifact", "acme::product::clearing", "acme::product::shared"},
+			packages: [3]string{"acme::product::artifact", "acme::product::clearing", "acme::product::shared"},
 		},
 	}
 }

@@ -26,6 +26,7 @@ var lifecycleMethodsByLanguage = map[string][]string{
 	"C#":         {"Finalize"},
 	"Rust":       {"new", "drop"},
 	"Golang":     {},
+	"C++":        {},
 }
 
 // genericLifecycleMethods is used when the language is unknown. It only contains the
@@ -44,6 +45,7 @@ var languagesWithConstructorNamedAfterClass = map[string]bool{
 	"Java": true,
 	"C#":   true,
 	"PHP":  true, // PHP 4 style constructors
+	"C++":  true,
 }
 
 // qualifiedNameSeparators lists the separators used by the parsers to build a
@@ -219,8 +221,9 @@ func (v *LackOfCohesionOfMethodsVisitor) isLifecycleMethod(class *pb.StmtClass, 
 		}
 	}
 
-	// A method named after its class is a constructor (or a destructor, parsers
-	// dropping the leading "~") in Java, C# and legacy PHP.
+	// A method named after its class is a constructor (or a destructor, whether
+	// the parser keeps the leading "~" or drops it) in Java, C#, C++ and legacy
+	// PHP.
 	if isKnownLanguage && !languagesWithConstructorNamedAfterClass[v.Language] {
 		return false
 	}
@@ -229,7 +232,7 @@ func (v *LackOfCohesionOfMethodsVisitor) isLifecycleMethod(class *pb.StmtClass, 
 	}
 	className := shortName(class.Name)
 
-	return className != "" && name == className
+	return className != "" && (name == className || name == "~"+className)
 }
 
 // isEmptyMethod tells whether the method body holds no statement.
