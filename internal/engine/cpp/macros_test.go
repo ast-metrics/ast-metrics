@@ -53,3 +53,18 @@ func TestCppMaskingKeepsEveryOffsetAndLeavesValidCodeAlone(t *testing.T) {
 	clean := []byte("namespace a { class B {}; }\n")
 	assert.Equal(t, clean, maskSpecifierMacros(clean))
 }
+
+// A real type may be written in capitals too: only the macro goes.
+func TestCppMaskingSparesTypesWrittenInCapitals(t *testing.T) {
+	cases := map[string]string{
+		"OPENSSL_EXPORT EVP_MD_CTX *EVP_MD_CTX_new(void) { return 0; }\n": "               EVP_MD_CTX *EVP_MD_CTX_new(void) { return 0; }\n",
+		"DWORD WINAPI ThreadProc(int p) { return 0; }\n":                    "DWORD        ThreadProc(int p) { return 0; }\n",
+	}
+	for src, expected := range cases {
+		assert.Equal(t, expected, string(maskSpecifierMacros([]byte(src))))
+	}
+
+	file := parseCpp(t, "LIB_API Matrix<ROWS, COLS> identity() { return make(); }\n")
+	require.Len(t, file.Stmts.StmtFunction, 1)
+	assert.Equal(t, "identity", file.Stmts.StmtFunction[0].Name.Short)
+}

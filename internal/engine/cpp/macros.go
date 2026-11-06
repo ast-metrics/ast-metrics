@@ -19,7 +19,7 @@ import (
 // fallout. Libraries put such a macro on most of what they export, so leaving
 // them in loses most of their code.
 //
-// Only what the parser could not place is touched: a SCREAMING_CASE name in
+// Only what the parser could not place is touched: one SCREAMING_CASE name in
 // the specifiers of a declaration holding a syntax error, and the name of a
 // class directly followed by another name and a body. `DWORD x;` and
 // `HANDLE open();` parse cleanly and are left alone. The macro is replaced by
@@ -29,9 +29,10 @@ func maskSpecifierMacros(src []byte) []byte {
 	parser := sitter.NewParser()
 	parser.SetLanguage(tsCpp.GetLanguage())
 	masked := src
-	// masking one macro may reveal the next one: a declaration rarely carries
-	// more than two, and each pass parses the whole file again
-	for pass := 0; pass < 3; pass++ {
+	// a pass blanks one macro per declaration, and masking one may reveal the
+	// next: a declaration rarely carries more than two, and each pass parses
+	// the whole file again
+	for pass := 0; pass < 4; pass++ {
 		tree := parser.Parse(nil, masked)
 		if tree == nil || !tree.RootNode().HasError() {
 			return masked
@@ -71,12 +72,19 @@ func collectSpecifierMacros(n *sitter.Node, src []byte, ranges *[][2]uint32) {
 			}
 		}
 		if specifiersHoldAnError(n) {
+			// one macro per declaration and per pass: the specifiers may
+			// also hold a real type written in capitals, EVP_MD_CTX or
+			// DWORD, which the next parse places once the macro is gone
+			var candidates []*sitter.Node
 			for i := 0; i < int(n.ChildCount()); i++ {
 				switch n.FieldNameForChild(i) {
 				case "declarator", "body", "default_value", "value":
 					continue
 				}
-				collectMacroTokens(n.Child(i), src, ranges)
+				collectMacroTokens(n.Child(i), src, &candidates)
+			}
+			if macro := pickMacro(candidates, src); macro != nil {
+				*ranges = append(*ranges, [2]uint32{macro.StartByte(), macro.EndByte()})
 			}
 			return
 		}
@@ -86,12 +94,19 @@ func collectSpecifierMacros(n *sitter.Node, src []byte, ranges *[][2]uint32) {
 	}
 }
 
-// specifiersHoldAnError tells whether a syntax error sits among the direct
-// children of a declaration, outside of its body: the place a decorating
-// macro ends up in.
+// specifiersHoldAnError tells whether a declaration failed to parse in the
+// place a decorating macro ends up in: a syntax error among its specifiers,
+// or a declarator the parser had to complete with a missing token, which is
+// how `LIB_API Matrix<R, C> identity()` comes out, as `Matrix<R, C>::identity`.
 func specifiersHoldAnError(n *sitter.Node) bool {
 	for i := 0; i < int(n.ChildCount()); i++ {
-		if n.FieldNameForChild(i) == "body" {
+		switch n.FieldNameForChild(i) {
+		case "body":
+			continue
+		case "declarator":
+			if holdsAMissingToken(n.Child(i)) {
+				return true
+			}
 			continue
 		}
 		if child := n.Child(i); child.IsError() {
@@ -101,20 +116,60 @@ func specifiersHoldAnError(n *sitter.Node) bool {
 	return false
 }
 
-func collectMacroTokens(n *sitter.Node, src []byte, ranges *[][2]uint32) {
+func holdsAMissingToken(n *sitter.Node) bool {
 	if n == nil {
+		return false
+	}
+	if n.IsMissing() {
+		return true
+	}
+	for i := 0; i < int(n.ChildCount()); i++ {
+		if holdsAMissingToken(n.Child(i)) {
+			return true
+		}
+	}
+	return false
+}
+
+// callingConventions are the macros written between the return type and the
+// name, `DWORD WINAPI ThreadProc(...)`: where one appears, it is the macro
+// and the name before it is the type.
+var callingConventions = map[string]bool{
+	"WINAPI": true, "WINAPIV": true, "APIENTRY": true, "CALLBACK": true, "PASCAL": true,
+	"CDECL": true, "STDCALL": true, "STDMETHODCALLTYPE": true, "STDAPICALLTYPE": true,
+	"NTAPI": true, "JNICALL": true, "EGLAPIENTRY": true, "GLAPIENTRY": true, "SDLCALL": true,
+}
+
+// pickMacro chooses the capitalized name to blank among those of the
+// specifiers: a calling convention if there is one, else the first one, the
+// place an export macro is written.
+func pickMacro(candidates []*sitter.Node, src []byte) *sitter.Node {
+	for _, candidate := range candidates {
+		if callingConventions[nodeText(src, candidate)] {
+			return candidate
+		}
+	}
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+	return nil
+}
+
+func collectMacroTokens(n *sitter.Node, src []byte, candidates *[]*sitter.Node) {
+	if n == nil || n.Type() == "template_argument_list" {
+		// a template argument is a type or a value, never a decoration
 		return
 	}
 	if n.ChildCount() == 0 {
 		switch n.Type() {
 		case "identifier", "type_identifier":
 			if isCppMacroName(nodeText(src, n)) {
-				*ranges = append(*ranges, [2]uint32{n.StartByte(), n.EndByte()})
+				*candidates = append(*candidates, n)
 			}
 		}
 		return
 	}
 	for i := 0; i < int(n.ChildCount()); i++ {
-		collectMacroTokens(n.Child(i), src, ranges)
+		collectMacroTokens(n.Child(i), src, candidates)
 	}
 }
