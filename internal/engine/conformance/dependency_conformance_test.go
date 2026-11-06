@@ -348,6 +348,24 @@ var rustScenarios = []dependencyScenario{
 			"src/app.rs":       {"src/model/inner.rs", "src/model/mod.rs"},
 		},
 	},
+	{
+		name: "the visibility of a use is not a dependency",
+		why:  "pub(crate) and pub(super) restrict who sees the import; they name neither the crate root nor the parent module",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod m;\n",
+			"src/m/mod.rs": "mod a;\nmod b;\nmod c;\n",
+			"src/m/b.rs":   "pub struct Thing;\n",
+			"src/m/a.rs":   "pub(crate) use crate::m::b::Thing;\n",
+			"src/m/c.rs":   "pub(super) use super::b::Thing;\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/m/mod.rs"},
+			"src/m/mod.rs": {"src/m/a.rs", "src/m/b.rs", "src/m/c.rs"},
+			"src/m/a.rs":   {"src/m/b.rs"},
+			"src/m/c.rs":   {"src/m/b.rs"},
+		},
+	},
 }
 
 // ---------------------------------------------------------------------------
