@@ -154,7 +154,7 @@ func TestBuildReportListsEachFunctionWithItsLinesAndMetrics(t *testing.T) {
 		StmtFunction: []*pb.StmtFunction{method, helper, shadow},
 	}}
 
-	r := (&JsonReportGenerator{}).buildReport(analyzer.ProjectAggregated{
+	r := (&JsonReportGenerator{Functions: true}).buildReport(analyzer.ProjectAggregated{
 		Combined: analyzer.Aggregated{ConcernedFiles: []*pb.File{f}},
 	})
 
@@ -165,4 +165,14 @@ func TestBuildReportListsEachFunctionWithItsLinesAndMetrics(t *testing.T) {
 		{Name: "mk", StartLine: 30, EndLine: 31},
 	}
 	assert.Equal(t, expected, r.ConcernedFiles[0].Functions)
+}
+
+func TestBuildReportLeavesFunctionRowsOutUnlessAsked(t *testing.T) {
+	f := &pb.File{Path: "app.ts", Stmts: &pb.Stmts{StmtFunction: []*pb.StmtFunction{
+		{Name: &pb.Name{Short: "run"}, Location: &pb.StmtLocationInFile{StartLine: 1, EndLine: 2}},
+	}}}
+	aggregated := analyzer.ProjectAggregated{Combined: analyzer.Aggregated{ConcernedFiles: []*pb.File{f}}}
+
+	assert.Empty(t, (&JsonReportGenerator{}).buildReport(aggregated).ConcernedFiles[0].Functions)
+	assert.Len(t, (&JsonReportGenerator{Functions: true}).buildReport(aggregated).ConcernedFiles[0].Functions, 1)
 }

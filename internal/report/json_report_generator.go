@@ -13,12 +13,15 @@ import (
 
 type JsonReportGenerator struct {
 	ReportPath string
+	// Functions adds a row per function to each file.
+	Functions bool
 }
 
 // This factory creates a new JsonReportGenerator
-func NewJsonReportGenerator(ReportPath string) Reporter {
+func NewJsonReportGenerator(ReportPath string, functions bool) Reporter {
 	return &JsonReportGenerator{
 		ReportPath: ReportPath,
+		Functions:  functions,
 	}
 }
 
@@ -68,9 +71,9 @@ func (j *JsonReportGenerator) buildReport(projectAggregated analyzer.ProjectAggr
 
 	r.ConcernedFiles = make([]file, len(combined.ConcernedFiles))
 	for i, f := range combined.ConcernedFiles {
-		concernedFile := file{
-			Path:      f.Path,
-			Functions: functionsOf(f),
+		concernedFile := file{Path: f.Path}
+		if j.Functions {
+			concernedFile.Functions = functionsOf(f)
 		}
 
 		if f.Stmts != nil && f.Stmts.Analyze != nil {
