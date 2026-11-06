@@ -255,6 +255,53 @@ var rustScenarios = []dependencyScenario{
 			"src/lib.rs": {"src/model.rs"},
 		},
 	},
+	{
+		name: "an item re-exported by another module is read where it is defined",
+		why:  "crate::Error names the Error that lib.rs re-exports from error.rs; event.rs reads error.rs",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod error;\nmod event;\npub use error::Error;\n",
+			"src/error.rs": "pub struct Error;\n",
+			"src/event.rs": "use crate::Error;\n\npub fn fail() -> Error { Error }\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/error.rs", "src/event.rs"},
+			"src/event.rs": {"src/error.rs"},
+		},
+	},
+	{
+		name: "an item re-exported twice is read where it is defined",
+		why:  "lib.rs re-exports Parsed from node.rs, which re-exports it from node/parse.rs",
+		files: map[string]string{
+			"Cargo.toml":        "[package]\nname = \"demo\"\n",
+			"src/lib.rs":        "mod event;\nmod node;\npub use node::Parsed;\n",
+			"src/node.rs":       "mod parse;\npub use self::parse::Parsed;\n",
+			"src/node/parse.rs": "pub struct Parsed;\n",
+			"src/event.rs":      "use crate::Parsed;\n\npub fn read() -> Parsed { Parsed }\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/event.rs", "src/node.rs", "src/node/parse.rs"},
+			"src/node.rs":  {"src/node/parse.rs"},
+			"src/event.rs": {"src/node/parse.rs"},
+		},
+	},
+	{
+		name: "two modules re-exporting each other's item still resolve",
+		why:  "the compiler refuses the loop, but following it must end",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod a;\nmod b;\nmod event;\n",
+			"src/a.rs":     "pub use crate::b::Thing;\n",
+			"src/b.rs":     "pub use crate::a::Thing;\n",
+			"src/event.rs": "use crate::a::Thing;\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/a.rs", "src/b.rs", "src/event.rs"},
+			"src/a.rs":     {"src/b.rs"},
+			"src/b.rs":     {"src/a.rs"},
+			"src/event.rs": {"src/a.rs"},
+		},
+	},
 }
 
 // ---------------------------------------------------------------------------
