@@ -51,23 +51,9 @@ func (p *Plan) Text() string {
 	if p.ReadCount == 0 {
 		b.WriteString(styleTitle.Render("Nothing to read") + styleDim.Render("  no code file changed") + "\n")
 	} else {
-		fmt.Fprintf(&b, "%s %s\n", styleTitle.Render(fmt.Sprintf("Read first (%d of %d)", p.ReadCount, len(p.Files))), styleDim.Render(fmt.Sprintf("~%d min", p.ReadMinutes)))
-		width := 0
-		for _, f := range p.Files {
-			if f.Read && len(f.Path) > width {
-				width = len(f.Path)
-			}
-		}
-		n := 0
-		indexWidth := len(fmt.Sprintf("%d", p.ReadCount))
-		for _, f := range p.Files {
-			if !f.Read {
-				continue
-			}
-			n++
-			pad := strings.Repeat(" ", width-len(f.Path))
-			fmt.Fprintf(&b, "  %s  %s%s  %s\n", levelStyle(f.Level).Render(fmt.Sprintf("%*d", indexWidth, n)), stylePath.Render(f.Path), pad, strings.Join(f.Reasons, ", "))
-		}
+		b.WriteString(styleTitle.Render(p.summary()) + "\n")
+		b.WriteString(p.startSentence("") + "\n\n")
+		p.textTable(&b)
 	}
 
 	if len(p.Skipped) > 0 {
@@ -182,26 +168,20 @@ func (p *Plan) Explain(path string) (string, error) {
 func (p *Plan) Markdown() string {
 	var b strings.Builder
 	if p.Changed == 0 {
-		b.WriteString("## Cribelo — nothing changed\n")
+		b.WriteString("## Cribelo: nothing changed\n")
 	} else if p.ReadCount == 0 {
-		fmt.Fprintf(&b, "## Cribelo — nothing to read (%d %s changed, no code)\n\n", p.Changed, plural(p.Changed, "file"))
+		fmt.Fprintf(&b, "## Cribelo: nothing to read (%d %s changed, no code)\n\n", p.Changed, plural(p.Changed, "file"))
 	} else {
-		fmt.Fprintf(&b, "## Cribelo — read %d of %d %s (~%d min)\n\n", p.ReadCount, p.Changed, plural(p.Changed, "file"), p.ReadMinutes)
-		b.WriteString("**Read first**\n")
-		n := 0
-		for _, f := range p.Files {
-			if !f.Read {
-				continue
-			}
-			n++
-			fmt.Fprintf(&b, "%d. `%s` · %s\n", n, f.Path, strings.Join(f.Reasons, ", "))
-		}
+		lead := p.summary()
+		fmt.Fprintf(&b, "## Cribelo: %s\n\n", strings.TrimSuffix(strings.ToLower(lead[:1])+lead[1:], "."))
+		fmt.Fprintf(&b, "%s\n\n", p.startSentence("`"))
+		p.markdownTable(&b)
 		b.WriteString("\n")
 	}
 	if len(p.Skipped) > 0 {
-		fmt.Fprintf(&b, "<details><summary><b>Skip</b> (%d files): %s</summary>\n\n", len(p.Skipped), skipSummary(p.Skipped, " · "))
+		fmt.Fprintf(&b, "<details><summary><b>Skip</b> (%d %s): %s</summary>\n\n", len(p.Skipped), plural(len(p.Skipped), "file"), skipSummary(p.Skipped, " · "))
 		for _, s := range p.Skipped {
-			fmt.Fprintf(&b, "- `%s` — %s\n", s.Path, s.Reason)
+			fmt.Fprintf(&b, "- `%s`: %s\n", s.Path, s.Reason)
 		}
 		b.WriteString("\n</details>\n\n")
 	}
