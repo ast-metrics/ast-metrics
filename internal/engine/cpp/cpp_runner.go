@@ -25,12 +25,12 @@ type CppRunner struct {
 }
 
 func (r CppRunner) Name() string                                     { return "C++" }
-func (r CppRunner) IsRequired() bool                                 { return len(r.getFileList().Files) > 0 }
+func (r *CppRunner) IsRequired() bool                                { return len(r.getFileList().Files) > 0 }
 func (r *CppRunner) Ensure() error                                   { return nil }
 func (r *CppRunner) SetProgressbar(p *pterm.SpinnerPrinter)          { r.progressbar = p }
 func (r *CppRunner) SetConfiguration(c *configuration.Configuration) { r.Configuration = c }
 
-func (r CppRunner) DumpAST() []*pb.File {
+func (r *CppRunner) DumpAST() []*pb.File {
 	return engine.DumpFiles(r.getFileList().Files, r.progressbar, r.Parse, engine.DumpOptions{Label: r.Name()})
 }
 
@@ -59,7 +59,9 @@ func (r CppRunner) Parse(path string) (*pb.File, error) {
 	return result, nil
 }
 
-func (r CppRunner) getFileList() file.FileList {
+// getFileList discovers the files once: claiming a .h means reading and
+// parsing it, which is not worth doing again for every caller.
+func (r *CppRunner) getFileList() file.FileList {
 	if r.foundFiles.Files != nil {
 		return r.foundFiles
 	}
