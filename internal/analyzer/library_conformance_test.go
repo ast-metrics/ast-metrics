@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	enginePkg "github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/cpp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/csharp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/golang"
 	"github.com/ast-metrics/ast-metrics/internal/engine/java"
@@ -91,6 +92,14 @@ func librarySamples() []librarySample {
 				{"src/billing/mod.rs", "use crate::log::Logger;\npub struct Service { logger: Logger }\n"},
 			},
 			module: "tracing", query: "tracing",
+		},
+		{
+			language: "C++", engine: &cpp.CppRunner{},
+			files: [2][2]string{
+				{"src/log/logger.hpp", "#include <spdlog/spdlog.h>\nnamespace acme::log {\nclass Logger { std::shared_ptr<spdlog::logger> inner; };\n}\n"},
+				{"src/billing/service.hpp", "#include \"../log/logger.hpp\"\nnamespace acme::billing {\nclass Service { acme::log::Logger logger; };\n}\n"},
+			},
+			module: "spdlog/spdlog.h", query: "spdlog",
 		},
 	}
 }
