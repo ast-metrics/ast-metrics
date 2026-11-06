@@ -65,15 +65,26 @@ func (s OperandSpec) Extract(root *sitter.Node, src []byte, startLine, endLine i
 	if root == nil || src == nil || startLine <= 0 || endLine < startLine {
 		return nil, nil
 	}
-	ops := []string{}
-	operands := []string{}
-
 	// start from the smallest node holding the range rather than from the root:
 	// walking the whole file for each of its methods costs a pass over every
 	// sibling, and an enclosing call would lend its "()" to a nested function
 	if narrowed := smallestNodeCovering(root, startLine, endLine); narrowed != nil {
 		root = narrowed
 	}
+	return s.ExtractFrom(root, src, startLine, endLine)
+}
+
+// ExtractFrom is Extract walking from a node the adapter knows to hold the
+// range, the declaration being measured, rather than from the node found by
+// position. The position of a function written on one line from the first
+// column, `int g() { return 1; }`, falls on its first token, the return type,
+// which holds nothing to count.
+func (s OperandSpec) ExtractFrom(root *sitter.Node, src []byte, startLine, endLine int) ([]string, []string) {
+	if root == nil || src == nil || startLine <= 0 || endLine < startLine {
+		return nil, nil
+	}
+	ops := []string{}
+	operands := []string{}
 
 	addOperand := func(name string) {
 		if s.Normalize != nil {

@@ -322,3 +322,21 @@ private:
 	require.NotNil(t, class.Stmts.Analyze.ClassCohesion)
 	assert.Equal(t, int32(2), *class.Stmts.Analyze.ClassCohesion.Lcom4)
 }
+
+// A function written on one line from the first column used to be measured
+// from its first token, the return type, and came out with no Halstead
+// symbol at all, so a maintainability index of a perfect one-liner.
+func TestCppOneLineFunctionAtTheFirstColumnHasHalsteadSymbols(t *testing.T) {
+	for _, source := range []string{
+		"int g() { return value; }\n",
+		"static int g() { return value; }\n",
+		"  int g() { return value; }\n",
+	} {
+		file := parseCpp(t, source)
+		analyzer.AnalyzeFile(file)
+		g := file.Stmts.StmtFunction[len(file.Stmts.StmtFunction)-1]
+		assert.Equal(t, "g", g.Name.Short, source)
+		assert.Contains(t, operatorNames(g.Operators), "return", source)
+		assert.Contains(t, operandNames(g.Operands), "value", source)
+	}
+}

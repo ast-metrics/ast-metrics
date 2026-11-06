@@ -802,7 +802,32 @@ func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endL
 	if root == nil {
 		return nil, nil
 	}
+	if definition := a.definitionSpanning(root, startLine, endLine); definition != nil {
+		return cppOperands.ExtractFrom(definition, source, startLine, endLine)
+	}
 	return cppOperands.Extract(root, source, startLine, endLine)
+}
+
+// definitionSpanning returns the outermost function definition running
+// exactly from startLine to endLine (1-based), the one the visitor is
+// measuring, or nil.
+func (a *TreeSitterAdapter) definitionSpanning(root *sitter.Node, startLine, endLine int) *sitter.Node {
+	start, end := uint32(startLine-1), uint32(endLine-1)
+	for node := root; node != nil; {
+		if node.StartPoint().Row == start && node.EndPoint().Row == end && a.IsFunction(node) {
+			return node
+		}
+		var next *sitter.Node
+		for i := 0; i < int(node.NamedChildCount()); i++ {
+			child := node.NamedChild(i)
+			if child.StartPoint().Row <= start && child.EndPoint().Row >= end {
+				next = child
+				break
+			}
+		}
+		node = next
+	}
+	return nil
 }
 func (a *TreeSitterAdapter) ExtractMethodCalls(src []byte, startLine, endLine int) []string {
 	root, source := a.ensureRoot(src)
