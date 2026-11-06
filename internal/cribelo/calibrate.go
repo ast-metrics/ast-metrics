@@ -54,7 +54,7 @@ func Calibrate(b *Backtest, now time.Time) (*Calibration, error) {
 				row[i] = f.transform(s.Values[f])
 			}
 			rows = append(rows, row)
-			if s.Fixed {
+			if b.positive(s) {
 				labels = append(labels, 1)
 				cal.Positives++
 			} else {

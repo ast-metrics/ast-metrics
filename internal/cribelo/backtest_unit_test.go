@@ -11,7 +11,8 @@ import (
 func handBuiltBacktest() *Backtest {
 	lines := func(n float64) map[Feature]float64 { return map[Feature]float64{FeatureLinesAdded: n} }
 	return &Backtest{
-		Top: 1,
+		Top:   1,
+		Label: LabelFixed,
 		Changes: []ChangeEval{
 			{Files: []Sample{
 				{Path: "a", Added: 10, Values: map[Feature]float64{FeatureLinesAdded: 10, FeatureFixes90d: 3}, Fixed: true},

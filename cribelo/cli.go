@@ -116,6 +116,7 @@ func Run(args []string, version string) int {
 					&cli.StringFlag{Name: "ref", Usage: "main line to replay (default: the default branch)"},
 					&cli.IntFlag{Name: "max", Value: 300, Usage: "landings to replay"},
 					&cli.IntFlag{Name: "top", Value: 3, Usage: "size of the reading list measured"},
+					&cli.StringFlag{Name: "label", Value: "induced", Usage: "what counts as a file that needed a reader: induced (a later fix repaired lines this change wrote, SZZ) or fixed (a later fix touched the file)"},
 					&cli.StringFlag{Name: "format", Value: "text", Usage: "text or json"},
 				},
 				Action: func(c *cli.Context) error {
@@ -142,6 +143,7 @@ func Run(args []string, version string) int {
 					&cli.StringFlag{Name: "ref", Usage: "main line to replay (default: the default branch)"},
 					&cli.IntFlag{Name: "max", Value: 300, Usage: "landings to replay"},
 					&cli.IntFlag{Name: "top", Value: 3, Usage: "size of the reading list optimized"},
+					&cli.StringFlag{Name: "label", Value: "induced", Usage: "what counts as a file that needed a reader: induced (a later fix repaired lines this change wrote, SZZ) or fixed (a later fix touched the file)"},
 					&cli.BoolFlag{Name: "dry-run", Usage: "show the outcome without writing the weights"},
 				},
 				Action: func(c *cli.Context) error {
@@ -231,7 +233,7 @@ func runBacktest(c *cli.Context) (*core.Backtest, error) {
 		}
 	}
 	return core.RunBacktest(repo, core.BacktestOptions{
-		Ref: c.String("ref"), Max: c.Int("max"), Top: c.Int("top"), Progress: progress,
+		Ref: c.String("ref"), Max: c.Int("max"), Top: c.Int("top"), Label: c.String("label"), Progress: progress,
 	})
 }
 

@@ -10,11 +10,26 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+// defaultWorkers leaves room for the parsers, which already use several
+// threads each.
+func defaultWorkers() int {
+	n := runtime.NumCPU() / 2
+	if n < 1 {
+		n = 1
+	}
+	if n > 8 {
+		n = 8
+	}
+	return n
+}
 
 // BacktestOptions drive a replay of the repository's own history.
 type BacktestOptions struct {
@@ -31,6 +46,11 @@ type BacktestOptions struct {
 	Now time.Time
 	// Progress is called after each landing.
 	Progress func(done, total int)
+	// Workers is the number of landings replayed at once; zero picks one
+	// from the number of CPUs.
+	Workers int
+	// Label is LabelInduced (the default) or LabelFixed.
+	Label string
 }
 
 // Sample is one code file of one landing, with its features and its label.
@@ -39,7 +59,25 @@ type Sample struct {
 	Added   int                 `json:"added"`
 	Deleted int                 `json:"deleted"`
 	Values  map[Feature]float64 `json:"features"`
-	Fixed   bool                `json:"fixed"`
+	// Fixed: a fix commit touched the file within the window.
+	Fixed bool `json:"fixed"`
+	// Induced: a fix within the window repaired lines this change wrote in
+	// the file (SZZ).
+	Induced bool `json:"induced"`
+}
+
+// Labels of the backtest: what counts as a file that needed a reader.
+const (
+	LabelInduced = "induced"
+	LabelFixed   = "fixed"
+)
+
+// positive is the label the backtest measures and calibrates on.
+func (b *Backtest) positive(s Sample) bool {
+	if b.Label == LabelFixed {
+		return s.Fixed
+	}
+	return s.Induced
 }
 
 // ChangeEval is one replayed landing.
@@ -73,6 +111,7 @@ type Metrics struct {
 // the other landings were left out.
 type Backtest struct {
 	Methodology string         `json:"methodology"`
+	Label       string         `json:"label"`
 	Ref         string         `json:"ref"`
 	Top         int            `json:"top"`
 	Landings    int            `json:"landings"`
@@ -119,6 +158,13 @@ func RunBacktest(repo *Repo, opts BacktestOptions) (*Backtest, error) {
 	if opts.Now.IsZero() {
 		opts.Now = time.Now()
 	}
+	switch opts.Label {
+	case "":
+		opts.Label = LabelInduced
+	case LabelInduced, LabelFixed:
+	default:
+		return nil, fmt.Errorf("unknown label %q: %s or %s", opts.Label, LabelInduced, LabelFixed)
+	}
 
 	landings, err := repo.Landings(opts.Ref, opts.Max, opts.Now.Unix()-Window)
 	if err != nil {
@@ -149,24 +195,71 @@ func RunBacktest(repo *Repo, opts BacktestOptions) (*Backtest, error) {
 	}
 	afferent := afferentCounts(today)
 
-	result := &Backtest{Methodology: MethodologyVersion, Ref: opts.Ref, Top: opts.Top, Landings: len(landings), LeftOut: map[string]int{}}
-	for i, landing := range landings {
-		if opts.Progress != nil {
-			opts.Progress(i+1, len(landings))
+	result := &Backtest{Methodology: MethodologyVersion, Label: opts.Label, Ref: opts.Ref, Top: opts.Top, Landings: len(landings), LeftOut: map[string]int{}}
+
+	// Landings are independent: replay them on a few workers, then gather
+	// the outcomes in their original order so the result does not depend on
+	// scheduling.
+	type outcome struct {
+		eval   *ChangeEval
+		reason string
+		err    error
+	}
+	outcomes := make([]outcome, len(landings))
+	workers := opts.Workers
+	if workers <= 0 {
+		workers = defaultWorkers()
+	}
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	done := 0
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				landing := landings[i]
+				if landing.Time+Window > opts.Now.Unix() {
+					outcomes[i] = outcome{reason: "too recent to know if a fix followed"}
+				} else {
+					eval, reason, err := replay(repo, landing, config, history, afferent, opts)
+					outcomes[i] = outcome{eval, reason, err}
+				}
+				if opts.Progress != nil {
+					mu.Lock()
+					done++
+					opts.Progress(done, len(landings))
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	for i := range landings {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+
+	for i, o := range outcomes {
+		if o.err != nil {
+			return nil, fmt.Errorf("replaying %s: %w", shortSha(landings[i].Sha), o.err)
 		}
-		if landing.Time+Window > opts.Now.Unix() {
-			result.LeftOut["too recent to know if a fix followed"]++
+		if o.reason != "" {
+			result.LeftOut[o.reason]++
 			continue
 		}
-		eval, reason, err := replay(repo, landing, config, history, afferent, opts)
-		if err != nil {
-			return nil, fmt.Errorf("replaying %s: %w", shortSha(landing.Sha), err)
+		result.Changes = append(result.Changes, *o.eval)
+	}
+	induced, err := repo.InducedLabels(opts.Ref, result.Changes, workers)
+	if err != nil {
+		return nil, err
+	}
+	for i := range result.Changes {
+		change := &result.Changes[i]
+		for j := range change.Files {
+			change.Files[j].Induced = induced[change.Sha][change.Files[j].Path]
 		}
-		if reason != "" {
-			result.LeftOut[reason]++
-			continue
-		}
-		result.Changes = append(result.Changes, *eval)
 	}
 	if len(result.Changes) > 0 {
 		result.From = result.Changes[0].Time
@@ -193,6 +286,18 @@ func replay(repo *Repo, landing Landing, config Config, history *History, affere
 		}
 	}
 	if len(analyzed) < opts.MinFiles {
+		return nil, fmt.Sprintf("fewer than %d code files", opts.MinFiles), nil
+	}
+	// Tests, generated paths and pure renames are never code, whatever the
+	// parser says: when what is left cannot reach MinFiles, the landing is
+	// rejected below anyway, so do not pay for reading and parsing it.
+	candidates := 0
+	for _, c := range analyzed {
+		if !IsTestPath(c.Path) && !IsGeneratedPath(c.Path) && !(c.Status == 'R' && c.Added == 0 && c.Deleted == 0) {
+			candidates++
+		}
+	}
+	if candidates < opts.MinFiles {
 		return nil, fmt.Sprintf("fewer than %d code files", opts.MinFiles), nil
 	}
 
@@ -292,13 +397,13 @@ func (b *Backtest) Evaluate(weights Weights, from int) Metrics {
 			scored = append(scored, r)
 			m.LinesTotal += s.Added + s.Deleted
 			m.Files++
-			if s.Fixed {
+			if b.positive(s) {
 				m.FixedFiles++
 			}
 		}
 		fixed := map[string]bool{}
 		for _, s := range change.Files {
-			fixed[s.Path] = s.Fixed
+			fixed[s.Path] = b.positive(s)
 		}
 		rank(scored)
 		for i, r := range scored {
@@ -343,6 +448,13 @@ func (b *Backtest) Evaluate(weights Weights, from int) Metrics {
 	return m
 }
 
+func (b *Backtest) positiveWording() string {
+	if b.Label == LabelFixed {
+		return "later touched by a fix"
+	}
+	return "wrote lines a later fix repaired"
+}
+
 // Text renders the backtest for a terminal.
 func (b *Backtest) Text() string {
 	var s strings.Builder
@@ -351,7 +463,7 @@ func (b *Backtest) Text() string {
 		s.WriteString("No landing qualified.\n")
 	} else {
 		share := float64(b.Generic.FixedFiles) / float64(maxInt(b.Generic.Files, 1))
-		fmt.Fprintf(&s, "%d changes qualified, %s → %s: %d code files, %d of them (%s) later touched by a fix.\n\n", len(b.Changes), day(b.From), day(b.To), b.Generic.Files, b.Generic.FixedFiles, pct(share))
+		fmt.Fprintf(&s, "%d changes qualified, %s → %s: %d code files, %d of them (%s) %s.\n\n", len(b.Changes), day(b.From), day(b.To), b.Generic.Files, b.Generic.FixedFiles, pct(share), b.positiveWording())
 		s.WriteString(metricsLines(b.Generic, b.Top, "generic weights, all qualified changes"))
 		if b.Calibrated != nil && b.GenericHeldOut != nil {
 			fmt.Fprintf(&s, "\n%s\n", styleTitle.Render(fmt.Sprintf("held-out check, the %d most recent changes", b.Calibrated.Changes)))
@@ -363,7 +475,12 @@ func (b *Backtest) Text() string {
 	if len(b.LeftOut) > 0 {
 		s.WriteString("\n" + styleDim.Render("Left out: "+countsLine(b.LeftOut)) + "\n")
 	}
-	s.WriteString(styleDim.Render("A file counts as fixed when a commit whose message says fix, bug, revert, regression, correction, corrigé... (English, French, Spanish, Portuguese, German; add yours with fix_pattern in .cribelo.yaml) touches it within 90 days. Hub signal from today's graph; clones not replayed.") + "\n")
+	fixWords := "a commit whose message says fix, bug, revert, regression, correction, corrigé... (English, French, Spanish, Portuguese, German; add yours with fix_pattern in .cribelo.yaml)"
+	if b.Label == LabelFixed {
+		s.WriteString(styleDim.Render("A file counts when "+fixWords+" touches it within 90 days. Hub signal from today's graph; clones not replayed.") + "\n")
+	} else {
+		s.WriteString(styleDim.Render("A file counts when "+fixWords+", within 90 days, changes or deletes lines that git blame attributes to this change in that file (SZZ). Hub signal from today's graph; clones not replayed.") + "\n")
+	}
 	return s.String()
 }
 
