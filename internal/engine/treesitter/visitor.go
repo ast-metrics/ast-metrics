@@ -493,6 +493,8 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		nodeStart := int(node.StartPoint().Row) + 1
 		nodeEnd := int(node.EndPoint().Row) + 1
 		fn.LinesOfCode = v.linesOfCodeIn(nodeStart, nodeEnd)
+		cognitive := v.cognitiveComplexity(node)
+		fn.CognitiveComplexity = &cognitive
 
 		v.attachFunction(fn)
 		if ra, ok := v.ad.(ReceiverAware); ok && v.curClass() == nil {

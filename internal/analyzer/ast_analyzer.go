@@ -73,6 +73,9 @@ func AnalyzeFile(file *pb.File) {
 	cyclomaticVisitor := &Complexity.CyclomaticComplexityVisitor{}
 	root.Accept(cyclomaticVisitor)
 
+	cognitiveVisitor := &Complexity.CognitiveComplexityVisitor{}
+	root.Accept(cognitiveVisitor)
+
 	locVisitor := &Volume.LocVisitor{}
 	root.Accept(locVisitor)
 
