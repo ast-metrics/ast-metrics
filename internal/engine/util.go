@@ -263,19 +263,36 @@ func classDedupKey(class *pb.StmtClass) string {
 	return fmt.Sprintf("ptr:%p", class)
 }
 
+// functionDedupKey identifies one function definition. Engines attach a
+// function to several parents (namespace, class, file), and an AST reloaded
+// from the cache holds each attachment as a separate copy. Copies share their
+// name and start offset; two definitions may share a name (nested helpers,
+// shadowing, anonymous callbacks) but never a start offset.
 func functionDedupKey(function *pb.StmtFunction) string {
 	if function == nil {
 		return ""
 	}
-	if function.Name != nil {
-		if q := strings.TrimSpace(function.Name.Qualified); q != "" {
-			return "q:" + q
-		}
-		if s := strings.TrimSpace(function.Name.Short); s != "" {
-			return "s:" + s
-		}
+	name := functionNameKey(function)
+	if function.Location != nil {
+		return fmt.Sprintf("%s@%d", name, function.Location.StartFilePos)
+	}
+	if name != "" {
+		return name
 	}
 	return fmt.Sprintf("ptr:%p", function)
+}
+
+func functionNameKey(function *pb.StmtFunction) string {
+	if function.Name == nil {
+		return ""
+	}
+	if q := strings.TrimSpace(function.Name.Qualified); q != "" {
+		return "q:" + q
+	}
+	if s := strings.TrimSpace(function.Name.Short); s != "" {
+		return "s:" + s
+	}
+	return ""
 }
 
 // render as HTML
