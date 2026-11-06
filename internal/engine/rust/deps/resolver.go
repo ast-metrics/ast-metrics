@@ -161,7 +161,9 @@ func (r *scopedFileDependencyResolver) resolvePath(from crateModule, path string
 // a module naming `crate::Error` reads error.rs, not lib.rs. It returns
 // nothing when the file imports no item of that name, so the item is its own.
 // A glob (`pub use a::*`) is not followed, since what it brings in is only
-// known to the compiler.
+// known to the compiler. Nor is an alias (`pub use error::Error as AppError`):
+// the engine keeps the imported name, not the local one, so `crate::AppError`
+// stays on the re-exporting file.
 func (r *scopedFileDependencyResolver) reexported(path, item string, followed map[string]bool) []string {
 	key := path + "\x00" + item
 	if followed[key] {
