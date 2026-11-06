@@ -302,6 +302,37 @@ var rustScenarios = []dependencyScenario{
 			"src/event.rs": {"src/a.rs"},
 		},
 	},
+	{
+		name: "every path of a grouped use is read under the group's path",
+		why:  "use crate::{model::User, util::helper} names model and util, not the crate root",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod app;\nmod model;\nmod util;\n",
+			"src/model.rs": "pub struct User;\n",
+			"src/util.rs":  "pub fn helper() {}\n",
+			"src/app.rs":   "use crate::{model::User, util::helper};\n\npub fn run(_u: User) { helper() }\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs": {"src/app.rs", "src/model.rs", "src/util.rs"},
+			"src/app.rs": {"src/model.rs", "src/util.rs"},
+		},
+	},
+	{
+		name: "a nested group, self and an alias are read under the group's path",
+		why:  "use crate::model::{self, inner::{Deep}, User as U} names model and model::inner",
+		files: map[string]string{
+			"Cargo.toml":         "[package]\nname = \"demo\"\n",
+			"src/lib.rs":         "mod app;\nmod model;\n",
+			"src/model/mod.rs":   "mod inner;\npub struct User;\n",
+			"src/model/inner.rs": "pub struct Deep;\n",
+			"src/app.rs":         "use crate::model::{self, inner::{Deep}, User as U};\n\npub fn run(_d: Deep, _u: U) {}\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":       {"src/app.rs", "src/model/mod.rs"},
+			"src/model/mod.rs": {"src/model/inner.rs"},
+			"src/app.rs":       {"src/model/inner.rs", "src/model/mod.rs"},
+		},
+	},
 }
 
 // ---------------------------------------------------------------------------
