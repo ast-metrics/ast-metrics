@@ -46,6 +46,7 @@ func (r CppRunner) Parse(path string) (*pb.File, error) {
 	if err != nil {
 		return &pb.File{Path: path, ProgrammingLanguage: "C++"}, err
 	}
+	src = maskSpecifierMacros(src)
 	parser := sitter.NewParser()
 	adapter := NewTreeSitterAdapter(src)
 	parser.SetLanguage(adapter.Language())
