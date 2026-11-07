@@ -67,7 +67,8 @@ func parseFiles(root string, relPaths []string) (*Parsed, error) {
 	if err != nil {
 		return nil, err
 	}
-	files = analyzer.AnalyzeFiles(files, nil)
+	// Only the complexity is read from the analysis; the plan does not need the volume metrics.
+	files = analyzer.AnalyzeFilesComplexity(files)
 	parsed := &Parsed{Root: root, Files: make(map[string]*pb.File, len(files)), All: files}
 	for _, f := range files {
 		if f == nil {
