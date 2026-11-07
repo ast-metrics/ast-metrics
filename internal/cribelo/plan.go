@@ -31,6 +31,10 @@ type Options struct {
 	WeightsPath string
 	// Clones enables clone detection against the whole project.
 	Clones bool
+	// Coverage is a coverage report to read the untested changed lines
+	// from, relative to the root; empty looks for one in the usual places,
+	// "none" reads none.
+	Coverage string
 	// Now is the reference time for history windows; zero means time.Now.
 	Now time.Time
 }
@@ -74,7 +78,9 @@ type Plan struct {
 	// Facts are what the diff does not show about the change: a cycle, a
 	// dependency between modules that did not exist, a clone left behind, a
 	// signature that callers rely on.
-	Facts        []Fact `json:"facts,omitempty"`
+	Facts []Fact `json:"facts,omitempty"`
+	// Coverage is the report the coverage facts come from, when one was read.
+	Coverage     string `json:"coverage,omitempty"`
 	TestFiles    int    `json:"test_files"`
 	Gate         string `json:"gate"`
 	FailOn       string `json:"fail_on"`
@@ -107,6 +113,9 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	}
 	if opts.FailOn == "" {
 		opts.FailOn = "never"
+	}
+	if opts.Coverage == "" {
+		opts.Coverage = config.Coverage
 	}
 	switch opts.FailOn {
 	case "high", "medium", "any", "never":
@@ -260,7 +269,19 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	}
 	rank(plan.Files)
 	selectReads(plan, opts)
-	plan.Facts = collectFacts(graphs, head, base, codeChanges, plan.Files, repo, mergeBase, opts.Now.Unix())
+	var coverage *Coverage
+	if report := opts.Coverage; report != "none" {
+		if report == "" {
+			report = findCoverage(repo.Root)
+		}
+		if report != "" {
+			if coverage, err = loadCoverage(repo.Root, report); err != nil {
+				return nil, err
+			}
+			plan.Coverage = report
+		}
+	}
+	plan.Facts = collectFacts(graphs, head, base, codeChanges, plan.Files, repo, mergeBase, opts.Now.Unix(), coverage)
 	tests := make([]FileReport, 0, len(testChanges))
 	for _, c := range testChanges {
 		tests = append(tests, measure.features(c))

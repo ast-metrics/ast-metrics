@@ -22,8 +22,8 @@ import (
 // predictions; each one is true by construction of the graphs it comes from,
 // and says so plainly.
 type Fact struct {
-	// Kind is one of cycle, signature, history, dependency, library,
-	// clone, api.
+	// Kind is one of cycle, signature, history, coverage, dependency,
+	// library, clone, api.
 	Kind string `json:"kind"`
 	// Path is the changed file the fact is about.
 	Path string `json:"path"`
@@ -41,11 +41,12 @@ const (
 	FactSignature  = "signature"
 	FactAPI        = "api"
 	FactHistory    = "history"
+	FactCoverage   = "coverage"
 )
 
 // factOrder is the order facts are shown in: what breaks the structure
 // first, what callers feel next, what was left behind last.
-var factOrder = map[string]int{FactCycle: 0, FactSignature: 1, FactHistory: 2, FactDependency: 3, FactLibrary: 4, FactClone: 5, FactAPI: 6}
+var factOrder = map[string]int{FactCycle: 0, FactSignature: 1, FactHistory: 2, FactCoverage: 3, FactDependency: 4, FactLibrary: 5, FactClone: 6, FactAPI: 7}
 
 // graphs holds the dependency graph of the project after the change and
 // the graph as it was before it, both keyed by repository-relative path.
@@ -589,7 +590,7 @@ func sortFacts(facts []Fact) {
 
 // collectFacts gathers every fact about a change and orders them. repo may
 // be nil, in which case the history of functions is not asked.
-func collectFacts(gs graphs, head, base *Parsed, codeChanges []Change, files []FileReport, repo *Repo, baseSha string, now int64) []Fact {
+func collectFacts(gs graphs, head, base *Parsed, codeChanges []Change, files []FileReport, repo *Repo, baseSha string, now int64, cov *Coverage) []Fact {
 	changed := map[string]bool{}
 	byPath := map[string]Change{}
 	for _, c := range codeChanges {
@@ -607,6 +608,7 @@ func collectFacts(gs graphs, head, base *Parsed, codeChanges []Change, files []F
 	facts = append(facts, cloneFacts(files, changed)...)
 	facts = append(facts, signatureFacts(gs, head, base, codeChanges, lazyNames)...)
 	facts = append(facts, historyFacts(repo, baseSha, base, files, byPath, now)...)
+	facts = append(facts, coverageFacts(cov, files, byPath)...)
 	sortFacts(facts)
 	return facts
 }

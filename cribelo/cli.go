@@ -51,6 +51,7 @@ func Run(args []string, version string) int {
 			&cli.StringFlag{Name: "fail-on", Usage: "fail when a file reaches this level: high, medium or never (default never)"},
 			&cli.StringFlag{Name: "weights", Usage: "weights file (default .cribelo/weights.json)"},
 			&cli.BoolFlag{Name: "no-clones", Usage: "skip duplicate detection"},
+			&cli.StringFlag{Name: "coverage", Usage: "coverage report to read the untested changed lines from (lcov, Cobertura, Clover or Go profile; default: the usual places; none to skip)"},
 			&cli.BoolFlag{Name: "no-color", Usage: "plain output"},
 		},
 		Before: func(c *cli.Context) error {
@@ -228,6 +229,7 @@ func runPlan(c *cli.Context) (*core.Plan, error) {
 		FailOn:      c.String("fail-on"),
 		WeightsPath: c.String("weights"),
 		Clones:      !c.Bool("no-clones"),
+		Coverage:    c.String("coverage"),
 	})
 }
 

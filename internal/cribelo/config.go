@@ -29,6 +29,10 @@ type Config struct {
 	// repair, besides the built-in words (fix, bug, revert, correction...).
 	// Typically a tracker key: "BUG-\\d+" or "JIRA-[0-9]+ .*fix".
 	FixPattern string `yaml:"fix_pattern,omitempty"`
+	// Coverage is the coverage report to read, relative to the root
+	// (lcov, Cobertura, Clover or a Go profile); "none" reads none. Empty
+	// looks in the usual places.
+	Coverage string `yaml:"coverage,omitempty"`
 }
 
 // LoadConfig reads .cribelo.yaml under root; a missing file is an empty config.
