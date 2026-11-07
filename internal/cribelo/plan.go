@@ -287,7 +287,7 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 		}
 	}
 	plan.Facts = collectFacts(graphs, head, base, codeChanges, plan.Files, repo, mergeBase, opts.Now.Unix(), coverage)
-	orderReads(plan, graphs.head.efferent, head, tests)
+	orderReads(plan, graphs.head.efferent, head, tests, budgetMinutes(opts))
 
 	readTests := map[string]bool{}
 	for _, f := range plan.Files {
@@ -393,10 +393,7 @@ func rank(files []FileReport) {
 // every hunk is mechanical is never read, only listed with its reason.
 // Files are ranked, so the high ones come first.
 func selectReads(plan *Plan, opts Options) {
-	budget := 0
-	if opts.Budget > 0 {
-		budget = int(math.Ceil(opts.Budget.Minutes()))
-	}
+	budget := budgetMinutes(opts)
 	for i := range plan.Files {
 		f := &plan.Files[i]
 		if allMechanical(*f) {
@@ -413,6 +410,14 @@ func selectReads(plan *Plan, opts Options) {
 		plan.ReadCount++
 		plan.ReadMinutes += f.Minutes
 	}
+}
+
+// budgetMinutes is the reading time allowed, in whole minutes, 0 for none.
+func budgetMinutes(opts Options) int {
+	if opts.Budget <= 0 {
+		return 0
+	}
+	return int(math.Ceil(opts.Budget.Minutes()))
 }
 
 // unchanged reports a code file whose change is too small to measure, or

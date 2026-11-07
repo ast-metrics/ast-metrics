@@ -36,7 +36,7 @@ func TestOrderReadsCalleeFirstThenTests(t *testing.T) {
 		{Path: "app/service_test.go", Minutes: 2, ToRead: 12},
 		{Path: "elsewhere/unrelated_test.go", Minutes: 1},
 	}
-	orderReads(plan, efferent, nil, tests)
+	orderReads(plan, efferent, nil, tests, 0)
 
 	require.Len(t, plan.Groups, 2)
 	assert.Equal(t, ReadingGroup{Files: []string{"app/store.go", "app/service.go", "app/service_test.go", "app/handler.go"}, Linked: true}, plan.Groups[0])
@@ -55,7 +55,7 @@ func TestOrderReadsBreaksCyclesAndPullsFactsForward(t *testing.T) {
 		readReport("cyc/q.go", 0.5, 20),
 	}, ReadCount: 3, ReadMinutes: 3, Facts: []Fact{{Kind: FactCycle, Path: "cyc/p.go"}, {Kind: FactAPI, Path: "big/a.go"}}}
 	efferent := map[string][]string{"cyc/p.go": {"cyc/q.go"}, "cyc/q.go": {"cyc/p.go"}}
-	orderReads(plan, efferent, nil, nil)
+	orderReads(plan, efferent, nil, nil, 0)
 	require.Len(t, plan.Groups, 2)
 	// The cycle group carries a structural fact: first. Inside, the cycle is
 	// broken on the best score.
@@ -67,7 +67,7 @@ func TestOrderReadsBreaksCyclesAndPullsFactsForward(t *testing.T) {
 
 func TestOrderReadsNothingRead(t *testing.T) {
 	plan := &Plan{Files: []FileReport{{Path: "a.go"}}}
-	orderReads(plan, nil, nil, []FileReport{{Path: "a_test.go"}})
+	orderReads(plan, nil, nil, []FileReport{{Path: "a_test.go"}}, 0)
 	assert.Nil(t, plan.Groups)
 	assert.Equal(t, []string{"a.go"}, paths(plan.Files))
 }
@@ -82,6 +82,19 @@ func TestSiblingUsesLinkFilesOfOnePackage(t *testing.T) {
 	})
 	uses := siblingUses(head, []string{"p/store.go", "p/serve.go", "p/other.go", "q/far.go"})
 	assert.Equal(t, map[string][]string{"p/serve.go": {"p/store.go"}}, uses)
+}
+
+func TestOrderReadsKeepsPairedTestsWithinTheBudget(t *testing.T) {
+	plan := &Plan{Changed: 2, ReadCount: 1, ReadMinutes: 4, Files: []FileReport{{Path: "pkg/a.go", Read: true, Minutes: 4, Score: .9}}}
+	tests := []FileReport{{Path: "pkg/a_test.go", Minutes: 3}}
+	orderReads(plan, nil, nil, tests, 5)
+	assert.Equal(t, 1, plan.ReadCount, "the test does not fit in the 5 minutes left")
+	assert.Equal(t, []string{"pkg/a.go"}, plan.Groups[0].Files)
+
+	plan = &Plan{Changed: 2, ReadCount: 1, ReadMinutes: 4, Files: []FileReport{{Path: "pkg/a.go", Read: true, Minutes: 4, Score: .9}}}
+	orderReads(plan, nil, nil, tests, 8)
+	assert.Equal(t, 2, plan.ReadCount)
+	assert.Equal(t, 7, plan.ReadMinutes)
 }
 
 func TestPairTestsLeavesDirectoryMatchToUnreadFile(t *testing.T) {
@@ -131,7 +144,7 @@ func TestTextShowsGroupsAndTests(t *testing.T) {
 		readReport("app/handler.go", 0.9, 80),
 		readReport("other/x.go", 0.7, 10),
 	}, ReadCount: 3, ReadMinutes: 3, LinesChanged: 120, LinesToRead: 120}
-	orderReads(plan, map[string][]string{"app/handler.go": {"app/store.go"}}, nil, []FileReport{{Path: "app/store_test.go", Minutes: 1, ToRead: 5, Added: 5}})
+	orderReads(plan, map[string][]string{"app/handler.go": {"app/store.go"}}, nil, []FileReport{{Path: "app/store_test.go", Minutes: 1, ToRead: 5, Added: 5}}, 0)
 	text := plan.Text()
 	assert.Contains(t, text, "↳ store.go, then what uses it")
 	assert.Contains(t, text, "app/store_test.go")
@@ -156,7 +169,7 @@ func TestDescribe(t *testing.T) {
 		Facts:   []Fact{{Kind: FactSignature, Path: "app/store.go", Text: "Load() changed its parameters (id → id, ctx), called by name from 3 files"}, {Kind: FactCycle, Path: "app/handler.go", Text: "introduces a cycle: handler.go → store.go → handler.go"}},
 		Renames: []Rename{{Pair: "old → new", Hunks: 4}},
 		Skipped: []Skipped{{Path: "README.md", Kind: "not analyzed", Reason: "not analyzed (docs, config, other languages)"}}}
-	orderReads(plan, map[string][]string{"app/handler.go": {"app/store.go"}}, nil, nil)
+	orderReads(plan, map[string][]string{"app/handler.go": {"app/store.go"}}, nil, nil, 0)
 	out := plan.Describe()
 	assert.Contains(t, out, "5 files changed, 200 lines, 150 to read once the mechanical hunks are set aside.")
 	assert.Contains(t, out, "**Signatures and API**")

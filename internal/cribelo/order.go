@@ -36,7 +36,8 @@ type ReadingGroup struct {
 // groups one after the other, then the files left out in rank order.
 // efferent is the dependency graph of the project, by repository path;
 // head gives the sources, for the dependencies that imports do not show.
-func orderReads(plan *Plan, efferent map[string][]string, head *Parsed, tests []FileReport) {
+// budgetMinutes is the reading time the plan may not exceed, 0 for none.
+func orderReads(plan *Plan, efferent map[string][]string, head *Parsed, tests []FileReport, budgetMinutes int) {
 	read := map[string]*FileReport{}
 	var readPaths, allPaths []string
 	for i := range plan.Files {
@@ -189,21 +190,31 @@ func orderReads(plan *Plan, efferent map[string][]string, head *Parsed, tests []
 	var files []FileReport
 	plan.Groups = make([]ReadingGroup, 0, len(groups))
 	for _, i := range order {
-		plan.Groups = append(plan.Groups, groups[i])
-		for _, p := range groups[i].Files {
+		group := groups[i]
+		kept := group.Files[:0:0]
+		for _, p := range group.Files {
 			if f := read[p]; f != nil {
 				files = append(files, *f)
+				kept = append(kept, p)
 				continue
 			}
 			for _, t := range tests {
-				if t.Path == p {
-					t.Read, t.Test = true, true
-					files = append(files, t)
-					plan.ReadCount++
-					plan.ReadMinutes += t.Minutes
+				if t.Path != p {
+					continue
 				}
+				// A paired test is read with its file, but not past the budget.
+				if budgetMinutes > 0 && plan.ReadMinutes+t.Minutes > budgetMinutes {
+					break
+				}
+				t.Read, t.Test = true, true
+				files = append(files, t)
+				kept = append(kept, p)
+				plan.ReadCount++
+				plan.ReadMinutes += t.Minutes
 			}
 		}
+		group.Files = kept
+		plan.Groups = append(plan.Groups, group)
 	}
 	for _, f := range plan.Files {
 		if !f.Read {
