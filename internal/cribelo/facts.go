@@ -83,7 +83,7 @@ func toGraph(root string, g analyzer.FileDependencyGraph, files []*pb.File) grap
 		}
 		for _, to := range tos {
 			toRel := relPath(root, to)
-			if IsTestPath(toRel) {
+			if IsTestPath(toRel) || declarationEdge(rel, toRel) {
 				continue
 			}
 			out.efferent[rel] = append(out.efferent[rel], toRel)
@@ -100,6 +100,25 @@ func toGraph(root string, g analyzer.FileDependencyGraph, files []*pb.File) grap
 		out.libraryUsers[lib] = len(users)
 	}
 	return out
+}
+
+// declarationEdge tells, in Rust, the edge from a module file to a file it
+// declares with `mod name;`: lib.rs, main.rs and mod.rs own their directory,
+// name.rs owns the directory name/. Such an edge says which files make up
+// the crate, not that the parent reads the child, and with the child's
+// `use crate::` or `use super::` it would close a cycle in every crate, by
+// construction. The graph of the facts leaves it out.
+func declarationEdge(from, to string) bool {
+	if path.Ext(from) != ".rs" || path.Ext(to) != ".rs" {
+		return false
+	}
+	owned := path.Dir(from)
+	switch path.Base(from) {
+	case "lib.rs", "main.rs", "mod.rs":
+	default:
+		owned = strings.TrimSuffix(from, ".rs")
+	}
+	return path.Dir(to) == owned || (path.Base(to) == "mod.rs" && path.Dir(path.Dir(to)) == owned)
 }
 
 // buildGraphs takes the dependencies of the project after the change and
@@ -199,7 +218,7 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 	// and a change states at most three, the shortest: in the languages
 	// where a cycle compiles, a wide refactoring closes dozens.
 	seenCycle := map[string]bool{}
-	var cycles []Fact
+	var cycles, dependencies []Fact
 	for _, c := range codeChanges {
 		before := map[string]bool{}
 		for _, to := range gs.base.efferent[c.Path] {
@@ -237,8 +256,7 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 			}
 		}
 		if len(newModules) > 0 {
-			facts = append(facts, Fact{Kind: FactDependency, Path: c.Path, Files: newModules,
-				Text: fmt.Sprintf("%s depends on %s for the first time", module(c.Path), joinWords(newModules, 3))})
+			dependencies = append(dependencies, Fact{Kind: FactDependency, Path: c.Path, Files: newModules})
 		}
 		beforeLibs := map[string]bool{}
 		for _, lib := range gs.base.libraries[c.Path] {
@@ -267,23 +285,85 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 	if len(cycles) > maxCycleFacts {
 		cycles = cycles[:maxCycleFacts]
 	}
-	return append(cycles, facts...)
+	return append(append(cycles, dependencyFacts(dependencies)...), facts...)
+}
+
+// dependencyFacts words the first dependencies of a change, one fact per
+// module that gained some, whatever the number of its files that did: a
+// module that several modules start to depend on at once is told the other
+// way round, once, since it is the same event seen from every user.
+func dependencyFacts(perFile []Fact) []Fact {
+	type gained struct {
+		path    string
+		targets []string
+		seen    map[string]bool
+	}
+	byModule := map[string]*gained{}
+	var order []string
+	for _, f := range perFile {
+		m := module(f.Path)
+		g := byModule[m]
+		if g == nil {
+			g = &gained{path: f.Path, seen: map[string]bool{}}
+			byModule[m] = g
+			order = append(order, m)
+		}
+		for _, to := range f.Files {
+			if !g.seen[to] {
+				g.seen[to] = true
+				g.targets = append(g.targets, to)
+			}
+		}
+	}
+	users := map[string][]string{}
+	for _, m := range order {
+		for _, to := range byModule[m].targets {
+			users[to] = append(users[to], m)
+		}
+	}
+	var facts []Fact
+	told := map[string]bool{}
+	for _, m := range order {
+		g := byModule[m]
+		var targets []string
+		for _, to := range g.targets {
+			if len(users[to]) >= 3 {
+				if !told[to] {
+					told[to] = true
+					facts = append(facts, Fact{Kind: FactDependency, Path: g.path, Files: users[to],
+						Text: fmt.Sprintf("%s is depended on by %s for the first time", to, joinWords(users[to], 3))})
+				}
+				continue
+			}
+			targets = append(targets, to)
+		}
+		if len(targets) > 0 {
+			facts = append(facts, Fact{Kind: FactDependency, Path: g.path, Files: targets,
+				Text: fmt.Sprintf("%s depends on %s for the first time", m, joinWords(targets, 3))})
+		}
+	}
+	return facts
 }
 
 // maxCycleFacts bounds the cycles stated for one change.
 const maxCycleFacts = 3
 
-// throughBarrel tells, in JavaScript and TypeScript, a cycle that goes
-// through an index file: a barrel re-exporting its directory imports back
-// what imports it by design, and the cycle says nothing.
+// throughBarrel tells a cycle that goes through an index file in JavaScript
+// and TypeScript, or a package __init__.py in Python: a barrel re-exporting
+// its directory imports back what imports it by design, and the cycle says
+// nothing.
 func throughBarrel(from string, back []string) bool {
+	var barrel func(string) bool
 	switch path.Ext(from) {
 	case ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs":
+		barrel = func(p string) bool { return strings.HasPrefix(path.Base(p), "index.") }
+	case ".py":
+		barrel = func(p string) bool { return path.Base(p) == "__init__.py" }
 	default:
 		return false
 	}
 	for _, p := range append([]string{from}, back...) {
-		if strings.HasPrefix(path.Base(p), "index.") {
+		if barrel(p) {
 			return true
 		}
 	}
@@ -394,14 +474,21 @@ func shortChain(chain []string) []string {
 	}
 	out := make([]string, 0, len(chain))
 	for _, p := range chain {
-		if counts[path.Base(p)] > 1 {
+		switch base := path.Base(p); {
+		case counts[base] > 1:
 			out = append(out, p)
-		} else {
-			out = append(out, path.Base(p))
+		case genericName[base] && path.Dir(p) != ".":
+			// mod.rs or index.ts says nothing on its own.
+			out = append(out, path.Join(path.Base(path.Dir(p)), base))
+		default:
+			out = append(out, base)
 		}
 	}
 	return out
 }
+
+// genericName lists the file names that only their directory tells apart.
+var genericName = map[string]bool{"mod.rs": true, "lib.rs": true, "main.rs": true, "__init__.py": true, "index.ts": true, "index.tsx": true, "index.js": true, "index.jsx": true, "index.mjs": true, "main.go": true, "doc.go": true, "Program.cs": true}
 
 // cloneFacts points at the twin of a touched function when the change does
 // not touch it: half of the inconsistent changes to clones are faults

@@ -241,3 +241,38 @@ func TestHistoryFactsCountFixesOfAFunction(t *testing.T) {
 	later := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
 	assert.Empty(t, historyFacts(repo, baseSha, base, files, map[string]Change{}, later))
 }
+
+func TestDeclarationEdgeIsRustOnly(t *testing.T) {
+	assert.True(t, declarationEdge("src/lib.rs", "src/sbom.rs"))
+	assert.True(t, declarationEdge("src/ops/mod.rs", "src/ops/registry/mod.rs"))
+	assert.True(t, declarationEdge("src/ops/registry.rs", "src/ops/registry/search.rs"))
+	assert.False(t, declarationEdge("src/ops/registry/search.rs", "src/ops/registry/mod.rs"), "the child reading its parent is a dependency")
+	assert.False(t, declarationEdge("src/ops/mod.rs", "src/core/workspace.rs"))
+	assert.False(t, declarationEdge("a/index.ts", "a/b.ts"))
+}
+
+func TestDependencyFactsAreToldOncePerModuleAndPerSharedTarget(t *testing.T) {
+	facts := dependencyFacts([]Fact{
+		{Kind: FactDependency, Path: "rules/a.go", Files: []string{"model/metadata"}},
+		{Kind: FactDependency, Path: "rules/b.go", Files: []string{"model/metadata", "util/x"}},
+		{Kind: FactDependency, Path: "storage/remote/c.go", Files: []string{"model/metadata"}},
+		{Kind: FactDependency, Path: "cmd/d.go", Files: []string{"model/metadata"}},
+	})
+	assert.Equal(t, []string{
+		"model/metadata is depended on by rules, storage/remote and cmd for the first time",
+		"rules depends on util/x for the first time",
+	}, factTexts(facts, FactDependency))
+	assert.Equal(t, []string{"rules", "storage/remote", "cmd"}, facts[0].Files)
+}
+
+func TestShortChainNamesGenericFilesByDirectory(t *testing.T) {
+	assert.Equal(t, []string{"validators/mod.rs", "named_tuple.rs", "validators/mod.rs"},
+		shortChain([]string{"src/validators/mod.rs", "src/validators/named_tuple.rs", "src/validators/mod.rs"}))
+	assert.Equal(t, []string{"b.go", "a.go", "b.go"}, shortChain([]string{"b/b.go", "a/a.go", "b/b.go"}))
+}
+
+func TestThroughBarrelKnowsPythonPackages(t *testing.T) {
+	assert.True(t, throughBarrel("pkg/a.py", []string{"pkg/__init__.py", "pkg/a.py"}))
+	assert.False(t, throughBarrel("pkg/a.py", []string{"pkg/b.py", "pkg/a.py"}))
+	assert.False(t, throughBarrel("pkg/a.go", []string{"pkg/__init__.py", "pkg/a.go"}))
+}
