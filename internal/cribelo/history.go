@@ -84,23 +84,51 @@ func historyFacts(repo *Repo, baseSha string, base *Parsed, files []FileReport, 
 	}
 	wg.Wait()
 
-	var facts []Fact
+	// One fact per file: its functions with a fix record, the most fixed first.
+	byPath := map[string][]fixedFunction{}
+	var order []string
 	for i, a := range asks {
 		h := results[i]
 		if h.fixes < historyMinFixes {
 			continue
 		}
-		text := fmt.Sprintf("%s() was fixed %d times in the past year", shortName(a.name), h.fixes)
-		switch h.reverts {
-		case 0:
-		case 1:
-			text += ", once by a revert"
-		default:
-			text += fmt.Sprintf(", %d times by a revert", h.reverts)
+		if _, seen := byPath[a.path]; !seen {
+			order = append(order, a.path)
 		}
-		facts = append(facts, Fact{Kind: FactHistory, Path: a.path, Text: text})
+		byPath[a.path] = append(byPath[a.path], fixedFunction{name: shortName(a.name), fixes: h.fixes, reverts: h.reverts})
+	}
+	var facts []Fact
+	for _, p := range order {
+		facts = append(facts, Fact{Kind: FactHistory, Path: p, Text: historyText(byPath[p])})
 	}
 	return facts
+}
+
+type fixedFunction struct {
+	name           string
+	fixes, reverts int
+}
+
+// historyText words the fix record of the functions of one file: the most
+// fixed first with its reverts, the next one in short, the rest counted.
+func historyText(fns []fixedFunction) string {
+	sort.SliceStable(fns, func(i, j int) bool { return fns[i].fixes > fns[j].fixes })
+	first := fns[0]
+	text := fmt.Sprintf("%s() was fixed %d times in the past year", first.name, first.fixes)
+	switch first.reverts {
+	case 0:
+	case 1:
+		text += ", once by a revert"
+	default:
+		text += fmt.Sprintf(", %d times by a revert", first.reverts)
+	}
+	if len(fns) > 1 {
+		text += fmt.Sprintf(", %s() %d times", fns[1].name, fns[1].fixes)
+	}
+	if len(fns) > 2 {
+		text += fmt.Sprintf(", +%d more %s", len(fns)-2, plural(len(fns)-2, "function"))
+	}
+	return text
 }
 
 // linesHistory counts the commits that touched a line range of a file since
