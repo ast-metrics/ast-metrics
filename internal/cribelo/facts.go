@@ -53,6 +53,9 @@ var factOrder = map[string]int{FactCycle: 0, FactSignature: 1, FactHistory: 2, F
 type graphs struct {
 	root       string
 	head, base graph
+	// workspace lists the packages the repository defines itself: importing
+	// one is not using a library.
+	workspace map[string]bool
 }
 
 // graph is a dependency graph of the production code, test files left out:
@@ -155,7 +158,7 @@ func buildGraphs(root string, headGraph analyzer.FileDependencyGraph, head, base
 	for _, c := range deletedCode {
 		stand(c)
 	}
-	return graphs{root: root, head: toGraph(root, headGraph, head.All), base: toGraph(root, analyzer.FileDependencies(baseFiles), baseFiles)}
+	return graphs{root: root, head: toGraph(root, headGraph, head.All), base: toGraph(root, analyzer.FileDependencies(baseFiles), baseFiles), workspace: workspacePackages(root)}
 }
 
 // module is the unit dependencies are judged between: the directory of a
@@ -271,7 +274,11 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 			if _, standard := gs.head.standard[lib]; standard || looksLikePath(gs.root, c.Path, lib) {
 				continue
 			}
-			if pkg := packageOf(c.Path, lib); !seenLib[pkg] {
+			pkg := packageOf(c.Path, lib)
+			if gs.inWorkspace(lib) || gs.inWorkspace(pkg) {
+				continue
+			}
+			if !seenLib[pkg] {
 				seenLib[pkg] = true
 				newLibs = append(newLibs, pkg)
 			}
@@ -368,6 +375,90 @@ func throughBarrel(from string, back []string) bool {
 		}
 	}
 	return false
+}
+
+// workspacePackages lists the names of the packages the repository defines
+// itself: the package.json names, the Cargo.toml package names, the module
+// paths of nested go.mod files. Dependency directories and build outputs are
+// not walked. Keys are made with packageKey.
+func workspacePackages(root string) map[string]bool {
+	names := map[string]bool{}
+	skip := map[string]bool{"node_modules": true, "vendor": true, "target": true, "dist": true, "build": true, "out": true, "bower_components": true}
+	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			name := d.Name()
+			if p != root && (skip[name] || strings.HasPrefix(name, ".")) || strings.Count(relPath(root, p), "/") > 6 {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		switch d.Name() {
+		case "package.json":
+			if m := packageJSONName.FindSubmatch(readHead(p)); m != nil {
+				names[packageKey(string(m[1]))] = true
+			}
+		case "Cargo.toml":
+			if m := cargoPackageName.FindSubmatch(readHead(p)); m != nil {
+				names[packageKey(string(m[1]))] = true
+			}
+		case "go.mod":
+			if m := goModuleLine.FindSubmatch(readHead(p)); m != nil {
+				names[packageKey(string(m[1]))] = true
+			}
+		}
+		return nil
+	})
+	return names
+}
+
+var (
+	packageJSONName  = regexp.MustCompile(`"name"\s*:\s*"([^"]+)"`)
+	cargoPackageName = regexp.MustCompile(`(?s)\[package\][^\[]*?\bname\s*=\s*"([^"]+)"`)
+	goModuleLine     = regexp.MustCompile(`(?m)^module\s+(\S+)`)
+)
+
+// inWorkspace tells an import of a package the repository defines: the
+// package itself, a Rust crate's module, or a path under a Go module.
+func (gs graphs) inWorkspace(lib string) bool {
+	key := packageKey(lib)
+	if gs.workspace[key] || gs.workspace[strings.SplitN(key, "::", 2)[0]] {
+		return true
+	}
+	for name := range gs.workspace {
+		if strings.Contains(name, "/") && strings.HasPrefix(key, name+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// readHead returns the first kilobytes of a file, enough for its manifest head.
+func readHead(p string) []byte {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	buf := make([]byte, 8192)
+	n, _ := f.Read(buf)
+	return buf[:n]
+}
+
+// packageKey compares package names the way import paths do: a Rust crate
+// named with hyphens is imported with underscores, a Go module path is a
+// prefix of its packages' paths.
+func packageKey(name string) string {
+	return strings.ToLower(strings.ReplaceAll(name, "-", "_"))
+}
+
+// isConfigFile tells the configuration files of the JavaScript tooling,
+// whose exports are read by the tool, not called from the code.
+func isConfigFile(rel string) bool {
+	base := strings.ToLower(path.Base(rel))
+	return strings.Contains(base, ".config.") || strings.HasSuffix(base, "rc.js") || strings.HasSuffix(base, "rc.cjs") || strings.HasSuffix(base, "rc.mjs") || strings.HasSuffix(base, "rc.ts")
 }
 
 // packageOf reduces a module to the package it belongs to, so that a
@@ -657,7 +748,7 @@ func signatureFacts(gs graphs, head, base *Parsed, codeChanges []Change, names f
 				facts = append(facts, Fact{Kind: FactSignature, Path: c.Path, Files: files, Text: text})
 			}
 		}
-		if len(unused) > 0 {
+		if len(unused) > 0 && !isConfigFile(c.Path) {
 			shown := unused
 			if len(shown) > 3 {
 				shown = append(append([]string{}, shown[:3]...), fmt.Sprintf("+%d more", len(unused)-3))

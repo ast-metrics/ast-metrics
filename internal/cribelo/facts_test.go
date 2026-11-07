@@ -276,3 +276,29 @@ func TestThroughBarrelKnowsPythonPackages(t *testing.T) {
 	assert.False(t, throughBarrel("pkg/a.py", []string{"pkg/b.py", "pkg/a.py"}))
 	assert.False(t, throughBarrel("pkg/a.go", []string{"pkg/__init__.py", "pkg/a.go"}))
 }
+
+func TestWorkspacePackagesAreNotLibraries(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(root, rel)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(root, rel), []byte(content), 0o644))
+	}
+	write("package.json", `{"name": "vite-monorepo", "private": true}`)
+	write("playground/dep/package.json", "{\n  \"name\": \"@vitejs/test-dep\",\n  \"version\": \"1.0.0\"\n}\n")
+	write("crates/cargo-util-schemas/Cargo.toml", "[package]\nname = \"cargo-util-schemas\"\nversion = \"0.1.0\"\n\n[dependencies]\nserde = \"1\"\n")
+	write("tools/go.mod", "module github.com/acme/app/tools\n\ngo 1.25\n")
+	write("node_modules/react/package.json", `{"name": "react"}`)
+	gs := graphs{workspace: workspacePackages(root)}
+	assert.True(t, gs.inWorkspace("@vitejs/test-dep"))
+	assert.True(t, gs.inWorkspace("cargo_util_schemas::core"))
+	assert.True(t, gs.inWorkspace("github.com/acme/app/tools/cmd/gen"))
+	assert.False(t, gs.inWorkspace("react"), "dependency directories are not walked")
+	assert.False(t, gs.inWorkspace("serde"))
+}
+
+func TestIsConfigFile(t *testing.T) {
+	assert.True(t, isConfigFile("playground/ssr/vite.config.ts"))
+	assert.True(t, isConfigFile(".eslintrc.js"))
+	assert.False(t, isConfigFile("src/config.ts"))
+	assert.False(t, isConfigFile("src/node/config/index.ts"))
+}
