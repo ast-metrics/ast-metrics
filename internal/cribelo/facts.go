@@ -195,8 +195,11 @@ func (g graph) moduleEdges() map[[2]string]bool {
 func graphFacts(gs graphs, codeChanges []Change) []Fact {
 	var facts []Fact
 	baseModules := gs.base.moduleEdges()
-	// A cycle is one fact, however many of its files the change touches.
+	// A cycle is one fact, however many of its files the change touches,
+	// and a change states at most three, the shortest: in the languages
+	// where a cycle compiles, a wide refactoring closes dozens.
 	seenCycle := map[string]bool{}
+	var cycles []Fact
 	for _, c := range codeChanges {
 		before := map[string]bool{}
 		for _, to := range gs.base.efferent[c.Path] {
@@ -229,7 +232,7 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 			sort.Strings(members)
 			if key := strings.Join(members, "\x00"); !seenCycle[key] {
 				seenCycle[key] = true
-				facts = append(facts, Fact{Kind: FactCycle, Path: c.Path, Files: cycle,
+				cycles = append(cycles, Fact{Kind: FactCycle, Path: c.Path, Files: cycle,
 					Text: fmt.Sprintf("introduces a cycle: %s", strings.Join(shortChain(chain), " → "))})
 			}
 		}
@@ -260,8 +263,15 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 				Text: fmt.Sprintf("first use of %s in the repository", joinWords(newLibs, 3))})
 		}
 	}
-	return facts
+	sort.SliceStable(cycles, func(i, j int) bool { return len(cycles[i].Files) < len(cycles[j].Files) })
+	if len(cycles) > maxCycleFacts {
+		cycles = cycles[:maxCycleFacts]
+	}
+	return append(cycles, facts...)
 }
+
+// maxCycleFacts bounds the cycles stated for one change.
+const maxCycleFacts = 3
 
 // throughBarrel tells, in JavaScript and TypeScript, a cycle that goes
 // through an index file: a barrel re-exporting its directory imports back
@@ -309,7 +319,13 @@ var sourceExtensions = []string{".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".
 // C# namespaces are dotted too, but their first segment ("com", "System")
 // is not a directory of the repository root, so they are left alone.
 func looksLikePath(root, from, module string) bool {
-	if strings.HasPrefix(module, ".") || strings.HasPrefix(module, "/") || strings.HasPrefix(module, "~") || strings.HasPrefix(module, "@/") {
+	if strings.HasPrefix(module, ".") || strings.HasPrefix(module, "/") || strings.HasPrefix(module, "~") || strings.HasPrefix(module, "@/") || strings.HasPrefix(module, "#") {
+		return true
+	}
+	// A file imported for its content (package.json, a stylesheet, an
+	// image) is an asset of the repository, not a library.
+	switch strings.ToLower(path.Ext(module)) {
+	case ".json", ".css", ".scss", ".sass", ".less", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf", ".txt", ".md", ".yaml", ".yml", ".toml", ".html", ".wasm", ".graphql", ".gql":
 		return true
 	}
 	separator := "/"
