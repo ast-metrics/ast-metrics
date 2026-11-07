@@ -66,8 +66,9 @@ type Plan struct {
 	Changed     int `json:"changed"`
 	ReadCount   int `json:"read"`
 	ReadMinutes int `json:"read_minutes"`
-	// LinesChanged counts the changed lines of the ranked code files;
-	// LinesToRead what is left once the mechanical hunks are set aside.
+	// LinesChanged counts the changed lines of the code and test files that
+	// were analyzed; LinesToRead what is left once the mechanical hunks are
+	// set aside. Tests count: a test placed after its file is read too.
 	LinesChanged int                    `json:"lines_changed"`
 	LinesToRead  int                    `json:"lines_to_read"`
 	Natures      map[Nature]natureCount `json:"natures,omitempty"`
@@ -256,8 +257,12 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	resolveRenames(plan.Files)
 	plan.Renames = renamesOf(plan.Files)
 	graphs := buildGraphs(repo.Root, headGraph, head, base, codeChanges, deletedCode)
+	tests := make([]FileReport, 0, len(testChanges))
+	for _, c := range testChanges {
+		tests = append(tests, measure.features(c))
+	}
 	plan.Natures = map[Nature]natureCount{}
-	for _, report := range plan.Files {
+	for _, report := range append(append([]FileReport{}, plan.Files...), tests...) {
 		plan.LinesChanged += report.Added + report.Deleted
 		plan.LinesToRead += report.ToRead
 		for n, count := range report.Natures {
@@ -282,10 +287,6 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 		}
 	}
 	plan.Facts = collectFacts(graphs, head, base, codeChanges, plan.Files, repo, mergeBase, opts.Now.Unix(), coverage)
-	tests := make([]FileReport, 0, len(testChanges))
-	for _, c := range testChanges {
-		tests = append(tests, measure.features(c))
-	}
 	orderReads(plan, graphs.head.efferent, head, tests)
 
 	readTests := map[string]bool{}
