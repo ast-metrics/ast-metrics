@@ -207,6 +207,28 @@ func renaming(old, new []string, idents identifierSets) ([]string, bool) {
 	return pairs, len(pairs) > 0
 }
 
+// differsInComments tells lines that keep their tokens but change a
+// comment from lines merely laid out differently: as many lines on both
+// sides, each pair identical once whitespace is collapsed, or differing
+// only where no token differs, which leaves a comment.
+func differsInComments(added, removed []string) bool {
+	if len(added) != len(removed) {
+		return false
+	}
+	comment := false
+	for i := range added {
+		a, r := strings.Join(strings.Fields(added[i]), " "), strings.Join(strings.Fields(removed[i]), " ")
+		if a == r {
+			continue
+		}
+		if !sameTokens(rawTokens(added[i]), rawTokens(removed[i])) {
+			return false
+		}
+		comment = true
+	}
+	return comment
+}
+
 // classifyHunks tells the nature of every hunk of a changed file. moves may
 // be nil when move detection is off; idents may be empty when the sources
 // are unavailable, in which case no hunk is a rename.
@@ -229,7 +251,11 @@ func classifyHunks(c Change, language string, moves *MoveIndex, idents identifie
 			// Lines without a token: comments, blank lines.
 			r.Nature = NatureComment
 		case len(rawAdded) > 0 && len(rawRemoved) > 0 && sameTokens(rawAdded, rawRemoved):
-			r.Nature, r.Detail = NatureFormat, "same tokens, laid out differently"
+			if differsInComments(h.Added, h.Removed) {
+				r.Nature = NatureComment
+			} else {
+				r.Nature, r.Detail = NatureFormat, "same tokens, laid out differently"
+			}
 		default:
 			if len(rawAdded) > 0 && len(rawRemoved) > 0 && (idents.head != nil || idents.base != nil) && sameTokens(shapeTokens(added), shapeTokens(removed)) {
 				if pairs, ok := renaming(rawRemoved, rawAdded, idents); ok {

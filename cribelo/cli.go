@@ -39,8 +39,8 @@ func Run(args []string, version string) int {
 	}
 	app := &cli.App{
 		Name:      "cribelo",
-		Usage:     "which files of this change are worth a human reader",
-		UsageText: "cribelo [options]            plan for the working tree against the base branch\n   cribelo skip|explain|backtest|calibrate",
+		Usage:     "the reading map of a change: what to read, in which order, and what the diff does not show",
+		UsageText: "cribelo [options]            plan for the working tree against the base branch\n   cribelo skip|explain|describe|backtest|calibrate",
 		Version:   core.Version,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "dir", Aliases: []string{"C"}, Value: ".", Usage: "repository or directory inside it"},

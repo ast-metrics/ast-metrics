@@ -56,10 +56,19 @@ func TestClassifyHunksFormatAndComments(t *testing.T) {
 	assert.Equal(t, NatureComment, r.Nature, "comment lines added")
 
 	r = natureOf(t, "PHP", hunk([]string{`$x = 1; // one`}, []string{`$x = 1; /* uno */`}))
-	assert.Equal(t, NatureFormat, r.Nature, "comment changed next to unchanged code")
+	assert.Equal(t, NatureComment, r.Nature, "comment changed next to unchanged code")
 
 	r = natureOf(t, "Golang", hunk([]string{`x := 2`}, []string{`x := 1`}))
 	assert.Equal(t, NatureBehavior, r.Nature, "a literal changed")
+}
+
+func TestClassifyHunksCommentOnACodeLine(t *testing.T) {
+	// A comment added at the end of a line of code is a comment hunk, not
+	// a formatting one, in every comment syntax.
+	assert.Equal(t, NatureComment, natureOf(t, "Python", hunk([]string{"x = f(1)  # noqa: E501"}, []string{"x = f(1)"})).Nature)
+	assert.Equal(t, NatureComment, natureOf(t, "Golang", hunk([]string{"\tx := f(1) // the answer"}, []string{"\tx := f(1) // an answer"})).Nature)
+	assert.Equal(t, NatureFormat, natureOf(t, "Golang", hunk([]string{"\tx := f(1)"}, []string{"x :=   f(1)"})).Nature)
+	assert.Equal(t, NatureFormat, natureOf(t, "Golang", hunk([]string{"\tx := f(1,", "\t\t2)"}, []string{"\tx := f(1, 2)"})).Nature)
 }
 
 func TestClassifyHunksRename(t *testing.T) {
