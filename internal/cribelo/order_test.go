@@ -137,3 +137,22 @@ func TestTextAllMechanical(t *testing.T) {
 	assert.Contains(t, plan.Text(), "0 of 40 changed lines to read")
 	assert.Contains(t, plan.Markdown(), "nothing to read (1 file changed, every change is mechanical)")
 }
+
+func TestDescribe(t *testing.T) {
+	plan := &Plan{Changed: 5, LinesChanged: 200, LinesToRead: 150, Natures: map[Nature]natureCount{NatureRename: {Hunks: 4, Lines: 50}},
+		Files:     []FileReport{readReport("app/store.go", 0.5, 30), readReport("app/handler.go", 0.9, 80)},
+		ReadCount: 2, ReadMinutes: 8,
+		Facts:   []Fact{{Kind: FactSignature, Path: "app/store.go", Text: "Load() changed its parameters (id → id, ctx), called by name from 3 files"}, {Kind: FactCycle, Path: "app/handler.go", Text: "introduces a cycle: handler.go → store.go → handler.go"}},
+		Renames: []Rename{{Pair: "old → new", Hunks: 4}},
+		Skipped: []Skipped{{Path: "README.md", Kind: "not analyzed", Reason: "not analyzed (docs, config, other languages)"}}}
+	orderReads(plan, map[string][]string{"app/handler.go": {"app/store.go"}}, nil, nil)
+	out := plan.Describe()
+	assert.Contains(t, out, "5 files changed, 200 lines, 150 to read once the mechanical hunks are set aside.")
+	assert.Contains(t, out, "**Signatures and API**")
+	assert.Contains(t, out, "- `app/store.go`: Load() changed its parameters")
+	assert.Contains(t, out, "**Structure**")
+	assert.Contains(t, out, "- `old → new` in 4 hunks")
+	assert.Contains(t, out, "1. `app/store.go` — the others use it\n2. `app/handler.go`\n")
+	assert.Contains(t, out, "Left out: not analyzed")
+	assert.Equal(t, "Nothing changed.\n", (&Plan{}).Describe())
+}

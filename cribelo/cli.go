@@ -86,6 +86,18 @@ func Run(args []string, version string) int {
 				},
 			},
 			{
+				Name:  "describe",
+				Usage: "write the structural summary of the change, in Markdown, for the pull request description",
+				Action: func(c *cli.Context) error {
+					plan, err := runPlan(c)
+					if err != nil {
+						return err
+					}
+					fmt.Print(plan.Describe())
+					return nil
+				},
+			},
+			{
 				Name:      "explain",
 				Usage:     "show every signal behind one file's position",
 				ArgsUsage: "<file>",
