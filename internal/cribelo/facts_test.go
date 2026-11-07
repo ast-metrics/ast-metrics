@@ -125,6 +125,9 @@ func TestGraphFactsSkipNewDirectoriesTestsAndPathAliases(t *testing.T) {
 	assert.True(t, looksLikePath(head.Root, "fresh/f.go", "./local"))
 	assert.False(t, looksLikePath(head.Root, "fresh/f.go", "github.com/acme/tool"))
 	assert.False(t, looksLikePath(head.Root, "fresh/f.go", "react"))
+	assert.True(t, looksLikePath(head.Root, "a/pkg/mod.py", "a.other.thing"), "a dotted Python module rooted in a directory of the repository")
+	assert.False(t, looksLikePath(head.Root, "a/pkg/mod.py", "numpy.linalg"))
+	assert.False(t, looksLikePath(head.Root, "a/Main.java", "a.b.c"), "Java namespaces are not checked against directories")
 }
 
 func TestParameterChange(t *testing.T) {

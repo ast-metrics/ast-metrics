@@ -253,18 +253,27 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 }
 
 // looksLikePath tells an import that names a directory of the repository
-// (a path alias, "src/parser/type", or a relative module) from a package of
-// a registry: its first segment is a directory next to the importing file
-// or above it.
+// (a path alias, "src/parser/type" in TypeScript, "python.pkg.mod" in
+// Python, or a relative module) from a package of a registry: its first
+// segment is a directory next to the importing file or above it. Java and
+// C# namespaces are dotted too, but their first segment ("com", "System")
+// is not a directory of the repository root, so they are left alone.
 func looksLikePath(root, from, module string) bool {
 	if strings.HasPrefix(module, ".") || strings.HasPrefix(module, "/") || strings.HasPrefix(module, "~") || strings.HasPrefix(module, "@/") {
 		return true
 	}
+	separator := "/"
+	switch path.Ext(from) {
+	case ".py":
+		separator = "."
+	case ".java", ".cs":
+		return false
+	}
 	first := module
-	if i := strings.IndexByte(first, '/'); i >= 0 {
+	if i := strings.Index(first, separator); i >= 0 {
 		first = first[:i]
 	}
-	if first == "" || strings.Contains(first, ".") {
+	if first == "" || (separator == "/" && strings.Contains(first, ".")) {
 		return false
 	}
 	for dir := path.Dir(from); ; dir = path.Dir(dir) {
