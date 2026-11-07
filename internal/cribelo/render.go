@@ -52,6 +52,9 @@ func (p *Plan) Text() string {
 		b.WriteString(styleTitle.Render("Nothing to read") + styleDim.Render("  no code file changed") + "\n")
 	} else {
 		b.WriteString(styleTitle.Render(p.summary()) + "\n")
+		if mechanical := p.mechanicalSentence(); mechanical != "" {
+			b.WriteString(mechanical + "\n")
+		}
 		b.WriteString(p.startSentence("") + "\n\n")
 		p.textTable(&b)
 	}
@@ -140,6 +143,22 @@ func (p *Plan) Explain(path string) (string, error) {
 			}
 			fmt.Fprintf(&b, "  %-56s %8s  %+.2f\n", c.Feature.Describe(), value, c.Logit)
 		}
+		if len(f.Hunks) > 0 {
+			fmt.Fprintf(&b, "\n%s%s\n", styleTitle.Render("Hunks"), styleDim.Render(fmt.Sprintf("  %d changed lines, %d to read", f.Added+f.Deleted, f.ToRead)))
+			for _, h := range f.Hunks {
+				where := fmt.Sprintf("lines %d-%d", h.Start, h.End)
+				if h.Added == 0 {
+					where = fmt.Sprintf("before line %d", h.Start)
+				} else if h.Start == h.End {
+					where = fmt.Sprintf("line %d", h.Start)
+				}
+				detail := ""
+				if h.Detail != "" {
+					detail = "  " + styleDim.Render(h.Detail)
+				}
+				fmt.Fprintf(&b, "  %-22s %-10s +%d/\u2212%d%s\n", where, h.Nature, h.Added, h.Deleted, detail)
+			}
+		}
 		if len(f.Functions) > 0 {
 			b.WriteString("\n" + styleTitle.Render("Functions touched") + "\n")
 			for _, fn := range f.Functions {
@@ -174,9 +193,22 @@ func (p *Plan) Markdown() string {
 	} else {
 		lead := p.summary()
 		fmt.Fprintf(&b, "## Cribelo: %s\n\n", strings.TrimSuffix(strings.ToLower(lead[:1])+lead[1:], "."))
+		if mechanical := p.mechanicalSentence(); mechanical != "" {
+			fmt.Fprintf(&b, "%s\n\n", mechanical)
+		}
 		fmt.Fprintf(&b, "%s\n\n", p.startSentence("`"))
 		p.markdownTable(&b)
 		b.WriteString("\n")
+		if len(p.Moves) > 0 || len(p.Renames) > 0 {
+			b.WriteString("<details><summary><b>Moves and renames</b></summary>\n\n")
+			for _, m := range p.Moves {
+				fmt.Fprintf(&b, "- %s\n", moveLine(m, "`"))
+			}
+			for _, r := range p.Renames {
+				fmt.Fprintf(&b, "- `%s` in %d %s\n", r.Pair, r.Hunks, plural(r.Hunks, "hunk"))
+			}
+			b.WriteString("\n</details>\n\n")
+		}
 	}
 	if len(p.Skipped) > 0 {
 		fmt.Fprintf(&b, "<details><summary><b>Skip</b> (%d %s): %s</summary>\n\n", len(p.Skipped), plural(len(p.Skipped), "file"), skipSummary(p.Skipped, " · "))
@@ -190,6 +222,23 @@ func (p *Plan) Markdown() string {
 	}
 	fmt.Fprintf(&b, "<sub>cribelo %s · methodology %s · %s · powered by AST Metrics</sub>\n", Version, p.Methodology, p.weightsLine())
 	return b.String()
+}
+
+// moveLine words one move for a report.
+func moveLine(m Move, quote string) string {
+	from := fmt.Sprintf("%s%s%s:%s()", quote, m.From, quote, shortName(m.FromName))
+	if m.From == m.To {
+		from = shortName(m.FromName) + "()"
+	}
+	verb := "moved to"
+	if m.Nature == NatureExtracted {
+		verb = "extracted into"
+	}
+	line := fmt.Sprintf("%s %s %s%s%s:%s(), %d lines", from, verb, quote, m.To, quote, shortName(m.ToName), m.Lines)
+	if m.Same < 1 {
+		line += fmt.Sprintf(", %d%% identical", int(m.Same*100+0.5))
+	}
+	return line
 }
 
 // JSON renders the whole plan.

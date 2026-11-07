@@ -117,6 +117,20 @@ func TestSelectReadsBudgetTooSmallStillReadsOne(t *testing.T) {
 	assert.Equal(t, 9, p.ReadMinutes)
 }
 
+func TestSkipReasonMechanical(t *testing.T) {
+	renames := FileReport{Hunks: []HunkReport{{Nature: NatureRename}, {Nature: NatureRename}}, ToRead: 2, Added: 40}
+	renames.Natures = countNatures(renames.Hunks)
+	assert.Equal(t, "renames only", skipReason(renames))
+	assert.True(t, unchanged(renames))
+	mixed := FileReport{Hunks: []HunkReport{{Nature: NatureMoved}, {Nature: NatureImports}}, Added: 40}
+	mixed.Natures = countNatures(mixed.Hunks)
+	assert.Equal(t, "mechanical changes only", skipReason(mixed))
+	read := FileReport{Hunks: []HunkReport{{Nature: NatureBehavior, Added: 40}}, ToRead: 40, Added: 40}
+	read.Natures = countNatures(read.Hunks)
+	read.Values = map[Feature]float64{FeatureComplexityAdded: 3}
+	assert.Equal(t, "ranked lower", skipReason(read))
+}
+
 func TestSkipReason(t *testing.T) {
 	assert.Equal(t, "no measurable change", skipReason(FileReport{Added: 10, Values: map[Feature]float64{}}))
 	assert.Equal(t, "ranked lower", skipReason(FileReport{Added: 11, Values: map[Feature]float64{}}))

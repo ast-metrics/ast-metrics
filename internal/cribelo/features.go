@@ -1,6 +1,7 @@
 package cribelo
 
 import (
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -37,6 +38,12 @@ type FileReport struct {
 	Contributions []Contribution      `json:"contributions"`
 	Functions     []TouchedFunction   `json:"functions,omitempty"`
 	Clone         *CloneMatch         `json:"clone,omitempty"`
+	// Hunks are the blocks of the diff with their nature; ToRead is the
+	// lines a reader spends on them once moves, renames, formatting and
+	// imports are set aside.
+	Hunks   []HunkReport           `json:"hunks,omitempty"`
+	ToRead  int                    `json:"to_read"`
+	Natures map[Nature]natureCount `json:"natures,omitempty"`
 }
 
 // Measure holds what the features are computed from.
@@ -52,6 +59,9 @@ type Measure struct {
 	Clones    *CloneIndex
 	// HeadSource reads the head content of a file for clone detection.
 	HeadSource func(rel string) []byte
+	// Moves knows the functions that moved within the change; nil when
+	// move detection is off.
+	Moves *MoveIndex
 }
 
 // features computes the raw feature values of one code change.
@@ -141,8 +151,50 @@ func (m *Measure) features(c Change) FileReport {
 		}
 	}
 
-	report.Minutes = readingMinutes(c.Added, c.Deleted)
+	language := languageOf(head, c.Path)
+	var idents identifierSets
+	if head != nil {
+		if source, err := os.ReadFile(head.Path); err == nil {
+			idents.head = identifiers(source)
+		}
+	}
+	if base != nil {
+		if source, err := os.ReadFile(base.Path); err == nil {
+			idents.base = identifiers(source)
+		}
+	}
+	report.Hunks = classifyHunks(c, language, m.Moves, idents)
+	report.Natures = countNatures(report.Hunks)
+	for _, h := range report.Hunks {
+		report.ToRead += h.ReadCost()
+	}
+	report.Minutes = readingMinutes(report.ToRead, 0)
 	return report
+}
+
+// languageOf names the language of a file, from the parser when it saw the
+// file, from the extension otherwise.
+func languageOf(file *pb.File, rel string) string {
+	if file != nil && file.ProgrammingLanguage != "" {
+		return file.ProgrammingLanguage
+	}
+	switch strings.ToLower(path.Ext(rel)) {
+	case ".go":
+		return "Golang"
+	case ".php":
+		return "PHP"
+	case ".py":
+		return "Python"
+	case ".rs":
+		return "Rust"
+	case ".ts", ".tsx":
+		return "TypeScript"
+	case ".java":
+		return "Java"
+	case ".cs":
+		return "C#"
+	}
+	return ""
 }
 
 func (f TouchedFunction) growth() int {
@@ -159,8 +211,8 @@ func cyclomatic(fn *pb.StmtFunction) int {
 	return int(*fn.Stmts.Analyze.Complexity.Cyclomatic)
 }
 
-// readingMinutes estimates careful reading at about twenty changed lines a
-// minute, never less than a minute per file.
+// readingMinutes estimates careful reading at about twenty lines a minute,
+// never less than a minute per file.
 func readingMinutes(added, deleted int) int {
 	lines := added + deleted
 	minutes := (lines + 19) / 20

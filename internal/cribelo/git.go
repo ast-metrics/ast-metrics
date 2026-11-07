@@ -122,10 +122,17 @@ type Change struct {
 	Untracked bool
 }
 
-// Hunk is an inclusive range of lines in the new file.
+// Hunk is one block of a diff: an inclusive range of lines in the new file,
+// the inclusive range it replaces in the old file, and the lines themselves.
+// A pure addition has an old range of zero lines (OldStart == OldEnd, no
+// Removed lines); a pure deletion has a new range of zero lines.
 type Hunk struct {
-	Start int
-	End   int
+	Start    int
+	End      int
+	OldStart int
+	OldEnd   int
+	Added    []string
+	Removed  []string
 }
 
 // Changes lists the files that differ between base and head. An empty head

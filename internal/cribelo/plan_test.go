@@ -397,11 +397,11 @@ func TestChangesAgainstRealGit(t *testing.T) {
 	assert.Equal(t, 0, byPath["util/u2.go"].Added)
 	assert.True(t, byPath["scratch.go"].Untracked)
 	assert.Equal(t, 3, byPath["scratch.go"].Added)
-	assert.Equal(t, []Hunk{{1, 3}}, byPath["scratch.go"].Hunks)
+	assert.Equal(t, [][2]int{{1, 3}}, ranges(byPath["scratch.go"].Hunks))
 	assert.Equal(t, byte('M'), byPath["a/a.go"].Status)
 	assert.Equal(t, 1, byPath["a/a.go"].Added)
 	assert.Equal(t, 1, byPath["a/a.go"].Deleted)
-	assert.Equal(t, []Hunk{{5, 5}}, byPath["a/a.go"].Hunks)
+	assert.Equal(t, [][2]int{{5, 5}}, ranges(byPath["a/a.go"].Hunks))
 	assert.Greater(t, byPath["svc/svc.go"].Added, 10)
 	// sorted by path
 	for i := 1; i < len(changes); i++ {

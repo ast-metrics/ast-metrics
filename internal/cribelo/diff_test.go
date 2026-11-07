@@ -67,11 +67,11 @@ func TestParseHunkHeader(t *testing.T) {
 		want Hunk
 		ok   bool
 	}{
-		{"@@ -1,3 +4,6 @@", Hunk{4, 9}, true},
-		{"@@ -1,3 +7 @@ func foo() {", Hunk{7, 7}, true},
-		{"@@ -10,4 +9,0 @@", Hunk{9, 9}, true},
-		{"@@ -0,0 +1,2 @@", Hunk{1, 2}, true},
-		{"@@ -1 +1 @@", Hunk{1, 1}, true},
+		{"@@ -1,3 +4,6 @@", Hunk{Start: 4, End: 9, OldStart: 1, OldEnd: 3}, true},
+		{"@@ -1,3 +7 @@ func foo() {", Hunk{Start: 7, End: 7, OldStart: 1, OldEnd: 3}, true},
+		{"@@ -10,4 +9,0 @@", Hunk{Start: 9, End: 9, OldStart: 10, OldEnd: 13}, true},
+		{"@@ -0,0 +1,2 @@", Hunk{Start: 1, End: 2, OldStart: 0, OldEnd: 0}, true},
+		{"@@ -1 +1 @@", Hunk{Start: 1, End: 1, OldStart: 1, OldEnd: 1}, true},
 		{"@@ nonsense", Hunk{}, false},
 		{"@@ -1,3 @@", Hunk{}, false},
 		{"@@ -1,3 -4,6 @@", Hunk{}, false},
@@ -115,29 +115,42 @@ new file mode 100644
 @@ -30,2 +29,0 @@ func z() {
 `
 
+// ranges keeps the new ranges of hunks, for comparisons that ignore content.
+func ranges(hunks []Hunk) [][2]int {
+	var out [][2]int
+	for _, h := range hunks {
+		out = append(out, [2]int{h.Start, h.End})
+	}
+	return out
+}
+
 func TestParseHunks(t *testing.T) {
 	hunks := parseHunks(realisticDiff)
-	assert.Equal(t, []Hunk{{4, 5}, {22, 24}}, hunks["a.go"])
-	_, hasRemoved := hunks["removed.go"]
-	assert.False(t, hasRemoved, "/dev/null target is not a file")
-	assert.Equal(t, []Hunk{{1, 10}, {29, 29}}, hunks["dir/b.go"])
-	assert.Len(t, hunks, 2)
+	assert.Equal(t, [][2]int{{4, 5}, {22, 24}}, ranges(hunks["a.go"]))
+	assert.Equal(t, []string{"\tnew1", "\tnew2", "\tnew3"}, hunks["a.go"][1].Added)
+	assert.Equal(t, []string{"\told"}, hunks["a.go"][1].Removed)
+	assert.Equal(t, 20, hunks["a.go"][1].OldStart)
+	removed := hunks["removed.go"]
+	assert.Equal(t, [][2]int{{0, 0}}, ranges(removed), "a deleted file is kept under its old path")
+	assert.Equal(t, []string{"package x"}, removed[0].Removed)
+	assert.Equal(t, [][2]int{{1, 10}, {29, 29}}, ranges(hunks["dir/b.go"]))
+	assert.Len(t, hunks, 3)
 }
 
 func TestParseHunksStripsTrailingTab(t *testing.T) {
 	hunks := parseHunks("+++ b/with space.go\t\n@@ -1 +1 @@\n")
-	assert.Equal(t, []Hunk{{1, 1}}, hunks["with space.go"])
+	assert.Equal(t, [][2]int{{1, 1}}, ranges(hunks["with space.go"]))
 }
 
 func TestApplyHunks(t *testing.T) {
 	changes := []Change{{Path: "a.go"}, {Path: "z.go"}}
-	applyHunks(changes, map[string][]Hunk{"a.go": {{1, 2}}})
-	assert.Equal(t, []Hunk{{1, 2}}, changes[0].Hunks)
+	applyHunks(changes, map[string][]Hunk{"a.go": {{Start: 1, End: 2}}})
+	assert.Equal(t, [][2]int{{1, 2}}, ranges(changes[0].Hunks))
 	assert.Nil(t, changes[1].Hunks)
 }
 
 func TestTouches(t *testing.T) {
-	hunks := []Hunk{{10, 12}, {30, 30}}
+	hunks := []Hunk{{Start: 10, End: 12}, {Start: 30, End: 30}}
 	assert.True(t, touches(hunks, 1, 10), "end edge")
 	assert.True(t, touches(hunks, 12, 20), "start edge")
 	assert.True(t, touches(hunks, 11, 11), "inside")

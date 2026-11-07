@@ -83,8 +83,23 @@ var columns = []column{
 		cell:   func(f *FileReport) cell { return barCell(int(f.Values[FeatureMaxComplexity]), complexitySteps) },
 	},
 	{
-		header: "lines",
-		cell:   func(f *FileReport) cell { return barCell(f.Added+f.Deleted, lineSteps) },
+		// The bar measures what is left to read; the total follows when
+		// mechanical hunks were set aside.
+		header: "to read",
+		cell: func(f *FileReport) cell {
+			total, toRead := f.Added+f.Deleted, f.ToRead
+			if f.Hunks == nil {
+				toRead = total // no classification: everything is read
+			}
+			c := barCell(toRead, lineSteps)
+			if total != toRead {
+				suffix := fmt.Sprintf(" of %d", total)
+				c.text += styleDim.Render(suffix)
+				c.plain += suffix
+				c.markdown += suffix
+			}
+			return c
+		},
 	},
 	{
 		header: "used by",
@@ -172,6 +187,28 @@ func isNew(f *FileReport) bool { return f.Status == "A" || f.Values[FeatureNewFi
 // summary is the first sentence of a plan: how much there is to read.
 func (p *Plan) summary() string {
 	return fmt.Sprintf("Read %d of %d changed %s, about %s.", p.ReadCount, p.Changed, plural(p.Changed, "file"), duration(p.ReadMinutes))
+}
+
+// mechanicalSentence says how many of the changed lines are moves, renames,
+// formatting, comments or imports, and so need a glance rather than a
+// reading. Empty when every line is to be read.
+func (p *Plan) mechanicalSentence() string {
+	if p.LinesChanged == 0 || p.LinesToRead >= p.LinesChanged {
+		return ""
+	}
+	var parts []string
+	for _, n := range []Nature{NatureMoved, NatureExtracted, NatureRename, NatureFormat, NatureComment, NatureImports} {
+		if c, ok := p.Natures[n]; ok && c.Hunks > 0 {
+			parts = append(parts, natureLabel(n, c.Hunks))
+		}
+	}
+	for i, r := range p.Renames {
+		if i == 2 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s ×%d", r.Pair, r.Hunks))
+	}
+	return fmt.Sprintf("%d of %d changed lines to read: %s.", p.LinesToRead, p.LinesChanged, strings.Join(parts, ", "))
 }
 
 // startSentence names the first file and why it comes first.

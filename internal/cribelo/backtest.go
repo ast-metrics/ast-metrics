@@ -55,10 +55,14 @@ type BacktestOptions struct {
 
 // Sample is one code file of one landing, with its features and its label.
 type Sample struct {
-	Path    string              `json:"path"`
-	Added   int                 `json:"added"`
-	Deleted int                 `json:"deleted"`
-	Values  map[Feature]float64 `json:"features"`
+	Path    string `json:"path"`
+	Added   int    `json:"added"`
+	Deleted int    `json:"deleted"`
+	// ToRead is what is left of the lines once the mechanical hunks are set
+	// aside; Natures counts those hunks.
+	ToRead  int                    `json:"to_read"`
+	Natures map[Nature]natureCount `json:"natures,omitempty"`
+	Values  map[Feature]float64    `json:"features"`
 	// Fixed: a fix commit touched the file within the window.
 	Fixed bool `json:"fixed"`
 	// Induced: a fix within the window repaired lines this change wrote in
@@ -90,16 +94,23 @@ type ChangeEval struct {
 
 // Metrics measure a ranking over a set of landings.
 type Metrics struct {
-	Changes       int     `json:"changes"`
-	Files         int     `json:"files"`
-	FixedFiles    int     `json:"fixed_files"`
-	Covered       int     `json:"covered"`
-	Coverage      float64 `json:"coverage"`
-	LinesRead     int     `json:"lines_read"`
-	LinesTotal    int     `json:"lines_total"`
-	LinesShare    float64 `json:"lines_share"`
-	BaselineCover float64 `json:"baseline_coverage"`
-	BaselineShare float64 `json:"baseline_lines_share"`
+	Changes    int     `json:"changes"`
+	Files      int     `json:"files"`
+	FixedFiles int     `json:"fixed_files"`
+	Covered    int     `json:"covered"`
+	Coverage   float64 `json:"coverage"`
+	LinesRead  int     `json:"lines_read"`
+	LinesTotal int     `json:"lines_total"`
+	LinesShare float64 `json:"lines_share"`
+	// ToRead is what the hunk classification leaves to read of every file,
+	// and its share of the changed lines.
+	ToRead      int     `json:"to_read"`
+	ToReadShare float64 `json:"to_read_share"`
+	// ToReadTop is the same for the top files.
+	ToReadTop      int     `json:"to_read_top"`
+	ToReadTopShare float64 `json:"to_read_top_share"`
+	BaselineCover  float64 `json:"baseline_coverage"`
+	BaselineShare  float64 `json:"baseline_lines_share"`
 	// PathOrder reads the first files by path, the order a pull request
 	// shows them in.
 	PathOrderCover float64 `json:"path_order_coverage"`
@@ -283,10 +294,12 @@ func replay(repo *Repo, landing Landing, config Config, history *History, affere
 	}
 	changes = filterIgnored(changes, config)
 
-	var analyzed []Change
+	var analyzed, deletedCode []Change
 	for _, c := range changes {
 		if c.Status != 'D' && !c.Binary && analyzedExtensions[strings.ToLower(path.Ext(c.Path))] {
 			analyzed = append(analyzed, c)
+		} else if isDeletedCode(c) {
+			deletedCode = append(deletedCode, c)
 		}
 	}
 	if len(analyzed) < opts.MinFiles {
@@ -306,7 +319,7 @@ func replay(repo *Repo, landing Landing, config Config, history *History, affere
 	}
 
 	headPaths := make([]string, 0, len(analyzed))
-	basePaths := make([]string, 0, len(analyzed))
+	basePaths := make([]string, 0, len(analyzed)+len(deletedCode))
 	for _, c := range analyzed {
 		headPaths = append(headPaths, c.Path)
 		if c.Status != 'A' {
@@ -316,6 +329,9 @@ func replay(repo *Repo, landing Landing, config Config, history *History, affere
 			}
 			basePaths = append(basePaths, old)
 		}
+	}
+	for _, c := range deletedCode {
+		basePaths = append(basePaths, c.Path)
 	}
 	headContents, err := repo.ShowMany(landing.Sha, headPaths)
 	if err != nil {
@@ -327,7 +343,7 @@ func replay(repo *Repo, landing Landing, config Config, history *History, affere
 	}
 	// Base files are stored under their head path so that base and head match.
 	baseByHead := map[string][]byte{}
-	for _, c := range analyzed {
+	for _, c := range append(append([]Change{}, analyzed...), deletedCode...) {
 		old := c.OldPath
 		if old == "" {
 			old = c.Path
@@ -373,11 +389,17 @@ func replay(repo *Repo, landing Landing, config Config, history *History, affere
 	}
 
 	measure := &Measure{Head: head, Base: base, Afferent: afferent, History: history, At: landing.Time, TestPaths: testPaths}
+	measure.Moves = buildMoveIndex(head, base, codeChanges, deletedCode)
 	eval := &ChangeEval{Sha: landing.Sha, Time: landing.Time, Subject: landing.Subject}
+	reports := make([]FileReport, 0, len(codeChanges))
 	for _, c := range codeChanges {
-		report := measure.features(c)
+		reports = append(reports, measure.features(c))
+	}
+	resolveRenames(reports)
+	for i, c := range codeChanges {
+		report := reports[i]
 		eval.Files = append(eval.Files, Sample{
-			Path: c.Path, Added: c.Added, Deleted: c.Deleted, Values: report.Values,
+			Path: c.Path, Added: c.Added, Deleted: c.Deleted, ToRead: report.ToRead, Natures: report.Natures, Values: report.Values,
 			Fixed: history.FixedAfter(c.Path, landing.Time, Window),
 		})
 	}
@@ -395,12 +417,15 @@ func (b *Backtest) Evaluate(weights Weights, from int) Metrics {
 	pathCovered, pathLines := 0, 0
 	for _, change := range b.Changes[from:] {
 		m.Changes++
+		toRead := map[string]int{}
 		scored := make([]FileReport, 0, len(change.Files))
 		for _, s := range change.Files {
 			r := FileReport{Path: s.Path, Added: s.Added, Deleted: s.Deleted, Values: s.Values}
 			r.Score, _ = weights.Score(s.Values)
 			scored = append(scored, r)
 			m.LinesTotal += s.Added + s.Deleted
+			m.ToRead += s.ToRead
+			toRead[s.Path] = s.ToRead
 			m.Files++
 			if b.positive(s) {
 				m.FixedFiles++
@@ -414,6 +439,7 @@ func (b *Backtest) Evaluate(weights Weights, from int) Metrics {
 		for i, r := range scored {
 			if i < b.Top {
 				m.LinesRead += r.Added + r.Deleted
+				m.ToReadTop += toRead[r.Path]
 				if fixed[r.Path] {
 					m.Covered++
 				}
@@ -454,6 +480,8 @@ func (b *Backtest) Evaluate(weights Weights, from int) Metrics {
 		m.RuleCoverage = float64(m.RuleCovered) / float64(m.FixedFiles)
 	}
 	if m.LinesTotal > 0 {
+		m.ToReadShare = float64(m.ToRead) / float64(m.LinesTotal)
+		m.ToReadTopShare = float64(m.ToReadTop) / float64(m.LinesTotal)
 		m.LinesShare = float64(m.LinesRead) / float64(m.LinesTotal)
 		m.BaselineShare = float64(baselineLines) / float64(m.LinesTotal)
 		m.PathOrderShare = float64(pathLines) / float64(m.LinesTotal)
@@ -501,7 +529,8 @@ func (b *Backtest) Text() string {
 func metricsLines(m Metrics, top int, label string) string {
 	var s strings.Builder
 	fmt.Fprintf(&s, "%s\n", styleTitle.Render(label))
-	fmt.Fprintf(&s, "  Reading the top-%d files covered %s of those files, for %s of the changed lines.\n", top, pct(m.Coverage), pct(m.LinesShare))
+	fmt.Fprintf(&s, "  Setting aside moves, extractions, renames, formatting and imports leaves %s of the changed lines to read.\n", pct(m.ToReadShare))
+	fmt.Fprintf(&s, "  Reading the top-%d files covered %s of those files, for %s of the changed lines (%s once classified).\n", top, pct(m.Coverage), pct(m.LinesShare), pct(m.ToReadTopShare))
 	fmt.Fprintf(&s, "  Reading the first %d in path order, as a pull request lists them: %s, for %s of the lines.\n", top, pct(m.PathOrderCover), pct(m.PathOrderShare))
 	fmt.Fprintf(&s, "  Reading the %d largest files instead: %s, for %s of the lines.\n", top, pct(m.BaselineCover), pct(m.BaselineShare))
 	perChange := float64(m.RuleRead) / float64(maxInt(m.Changes, 1))

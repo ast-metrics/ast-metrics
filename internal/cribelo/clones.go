@@ -115,9 +115,14 @@ func (idx *CloneIndex) Closest(path, function string, source string) *CloneMatch
 
 // Fingerprints tokenizes, normalizes and winnows a piece of source. The result
 // is a sorted set of fingerprints, or nil when the source is too short.
-func Fingerprints(source string) []uint64 {
+func Fingerprints(source string) []uint64 { return fingerprints(source, cloneMinTokens) }
+
+// fingerprints is Fingerprints with its own minimum length: a move or an
+// extraction is matched on shorter functions than a clone, since the source
+// is known to have disappeared.
+func fingerprints(source string, minTokens int) []uint64 {
 	tokens := Tokenize(source)
-	if len(tokens) < cloneMinTokens {
+	if len(tokens) < minTokens || len(tokens) < cloneKGram+cloneWindow {
 		return nil
 	}
 	grams := make([]uint64, 0, len(tokens)-cloneKGram+1)
@@ -154,7 +159,18 @@ func Fingerprints(source string) []uint64 {
 // strings, while the mapping boilerplate of two data holders (toArray,
 // fromArray, a configuration block) differs by its keys and must not pass
 // for a clone. Punctuation is kept as is, one rune per token.
-func Tokenize(source string) []string {
+func Tokenize(source string) []string { return tokenize(source, true, true) }
+
+// rawTokens is Tokenize without the normalization: identifiers and numbers
+// are kept as written. Two pieces of code with the same raw tokens differ
+// only by whitespace and comments.
+func rawTokens(source string) []string { return tokenize(source, false, false) }
+
+// shapeTokens normalizes identifiers but keeps numbers: two pieces of code
+// with the same shape tokens differ only by the names they use.
+func shapeTokens(source string) []string { return tokenize(source, true, false) }
+
+func tokenize(source string, normalizeIdentifiers, normalizeNumbers bool) []string {
 	var tokens []string
 	runes := []rune(source)
 	n := len(runes)
@@ -187,15 +203,25 @@ func Tokenize(source string) []string {
 			i++
 			tokens = append(tokens, "\""+string(runes[start:end]))
 		case unicode.IsLetter(c) || c == '_' || c == '$':
+			start := i
 			for i < n && (unicode.IsLetter(runes[i]) || unicode.IsDigit(runes[i]) || runes[i] == '_' || runes[i] == '$') {
 				i++
 			}
-			tokens = append(tokens, "$")
+			if normalizeIdentifiers {
+				tokens = append(tokens, "$")
+			} else {
+				tokens = append(tokens, string(runes[start:i]))
+			}
 		case unicode.IsDigit(c):
+			start := i
 			for i < n && (unicode.IsLetter(runes[i]) || unicode.IsDigit(runes[i]) || runes[i] == '.' || runes[i] == '_') {
 				i++
 			}
-			tokens = append(tokens, "0")
+			if normalizeNumbers {
+				tokens = append(tokens, "0")
+			} else {
+				tokens = append(tokens, string(runes[start:i]))
+			}
 		default:
 			tokens = append(tokens, string(c))
 			i++

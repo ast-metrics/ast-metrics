@@ -2,12 +2,15 @@ package cribelo
 
 import (
 	"fmt"
-	pb "github.com/ast-metrics/ast-metrics/pb"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
+
+	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
 // Options drive one plan.
@@ -51,16 +54,25 @@ type Plan struct {
 	// Skipped lists every other changed file, grouped later by Kind.
 	Skipped []Skipped `json:"skipped"`
 
-	Changed      int    `json:"changed"`
-	ReadCount    int    `json:"read"`
-	ReadMinutes  int    `json:"read_minutes"`
-	TestFiles    int    `json:"test_files"`
-	Gate         string `json:"gate"`
-	FailOn       string `json:"fail_on"`
-	Calibrated   bool   `json:"calibrated"`
-	TrainedOn    int    `json:"trained_on,omitempty"`
-	TrainedAt    string `json:"trained_at,omitempty"`
-	CloneIndexed int    `json:"clone_indexed"`
+	Changed     int `json:"changed"`
+	ReadCount   int `json:"read"`
+	ReadMinutes int `json:"read_minutes"`
+	// LinesChanged counts the changed lines of the ranked code files;
+	// LinesToRead what is left once the mechanical hunks are set aside.
+	LinesChanged int                    `json:"lines_changed"`
+	LinesToRead  int                    `json:"lines_to_read"`
+	Natures      map[Nature]natureCount `json:"natures,omitempty"`
+	Moves        []Move                 `json:"moves,omitempty"`
+	// Renames are the "old → new" pairs of the change with the number of
+	// hunks each one touches, most frequent first.
+	Renames      []Rename `json:"renames,omitempty"`
+	TestFiles    int      `json:"test_files"`
+	Gate         string   `json:"gate"`
+	FailOn       string   `json:"fail_on"`
+	Calibrated   bool     `json:"calibrated"`
+	TrainedOn    int      `json:"trained_on,omitempty"`
+	TrainedAt    string   `json:"trained_at,omitempty"`
+	CloneIndexed int      `json:"clone_indexed"`
 }
 
 // Run builds the plan of the working tree against the base branch.
@@ -166,7 +178,7 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	}
 
 	kinds := map[string]Kind{}
-	var codeChanges []Change
+	var codeChanges, deletedCode []Change
 	var testPaths []string
 	for _, c := range changes {
 		var isTest bool
@@ -180,12 +192,17 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 			codeChanges = append(codeChanges, c)
 		case KindTest:
 			testPaths = append(testPaths, c.Path)
+		case KindDeleted:
+			if isDeletedCode(c) {
+				deletedCode = append(deletedCode, c)
+			}
 		}
 	}
 	plan.TestFiles = len(testPaths)
 
-	// Only the changed files are needed from the base version.
-	base, cleanup, err := snapshotBase(repo, mergeBase, codeChanges)
+	// Only the changed files are needed from the base version. Deleted code
+	// files come along: their functions may have moved somewhere else.
+	base, cleanup, err := snapshotBase(repo, mergeBase, append(append([]Change{}, codeChanges...), deletedCode...))
 	if err != nil {
 		return nil, err
 	}
@@ -204,6 +221,8 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 		measure.Clones = buildCloneIndex(head)
 		plan.CloneIndexed = measure.Clones.Len()
 	}
+	measure.Moves = buildMoveIndex(head, base, codeChanges, deletedCode)
+	plan.Moves = measure.Moves.Moves
 
 	for _, c := range codeChanges {
 		report := measure.features(c)
@@ -211,6 +230,19 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 		report.Level = weights.Level(report.Score)
 		report.Reasons = reasons(&report)
 		plan.Files = append(plan.Files, report)
+	}
+	resolveRenames(plan.Files)
+	plan.Renames = renamesOf(plan.Files)
+	plan.Natures = map[Nature]natureCount{}
+	for _, report := range plan.Files {
+		plan.LinesChanged += report.Added + report.Deleted
+		plan.LinesToRead += report.ToRead
+		for n, count := range report.Natures {
+			total := plan.Natures[n]
+			total.Hunks += count.Hunks
+			total.Lines += count.Lines
+			plan.Natures[n] = total
+		}
 	}
 	rank(plan.Files)
 	selectReads(plan, opts)
@@ -237,6 +269,13 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 
 	plan.Gate = gate(plan.Files, opts.FailOn)
 	return plan, nil
+}
+
+// isDeletedCode tells a removed file whose functions are worth looking for
+// elsewhere in the change: a code file in a parsed language, not a test, not
+// generated.
+func isDeletedCode(c Change) bool {
+	return c.Status == 'D' && analyzedExtensions[strings.ToLower(path.Ext(c.Path))] && !IsTestPath(c.Path) && !IsGeneratedPath(c.Path)
 }
 
 func filterIgnored(changes []Change, config Config) []Change {
@@ -324,17 +363,36 @@ func selectReads(plan *Plan, opts Options) {
 	}
 }
 
-// unchanged reports a code file whose change is too small to measure.
+// unchanged reports a code file whose change is too small to measure, or
+// whose every hunk is mechanical.
 func unchanged(f FileReport) bool {
-	return f.Values[FeatureComplexityAdded] == 0 && f.Added <= 10 && f.Clone == nil
+	return allMechanical(f) || (f.Values[FeatureComplexityAdded] == 0 && f.Added <= 10 && f.Clone == nil)
+}
+
+// allMechanical reports a classified file without a behavior hunk.
+func allMechanical(f FileReport) bool {
+	return f.Hunks != nil && f.Natures[NatureBehavior].Hunks == 0
 }
 
 // skipReason explains why a ranked code file is not in the reading list.
 func skipReason(f FileReport) string {
+	if allMechanical(f) {
+		return mechanicalReason(f)
+	}
 	if unchanged(f) {
 		return "no measurable change"
 	}
 	return "ranked lower"
+}
+
+// mechanicalReason names what a file made only of mechanical hunks holds.
+func mechanicalReason(f FileReport) string {
+	for _, n := range []Nature{NatureMoved, NatureExtracted, NatureRename, NatureFormat, NatureComment, NatureImports} {
+		if c, ok := f.Natures[n]; ok && c.Hunks == len(f.Hunks) {
+			return map[Nature]string{NatureMoved: "moved code only", NatureExtracted: "extracted code only", NatureRename: "renames only", NatureFormat: "formatting only", NatureComment: "comments only", NatureImports: "imports only"}[n]
+		}
+	}
+	return "mechanical changes only"
 }
 
 // gate is "failed" when a ranked file reaches the fail-on level.
