@@ -44,6 +44,8 @@ type FileReport struct {
 	Hunks   []HunkReport           `json:"hunks,omitempty"`
 	ToRead  int                    `json:"to_read"`
 	Natures map[Nature]natureCount `json:"natures,omitempty"`
+	// Test marks a test file read along with the file it exercises.
+	Test bool `json:"test,omitempty"`
 }
 
 // Measure holds what the features are computed from.

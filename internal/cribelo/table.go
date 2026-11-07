@@ -145,6 +145,9 @@ var columns = []column{
 	{
 		header: "tests",
 		cell: func(f *FileReport) cell {
+			if f.Test {
+				return plainCell("")
+			}
 			if f.Values[FeatureUntested] > 0 {
 				return cell{styleBad.Render("✗"), "✗", "❌"}
 			}
@@ -183,6 +186,30 @@ func visibleColumns(files []*FileReport) []column {
 }
 
 func isNew(f *FileReport) bool { return f.Status == "A" || f.Values[FeatureNewFile] > 0 }
+
+// tag is the word after a path in the table: new, test, or nothing.
+func tag(f *FileReport) string {
+	switch {
+	case f.Test:
+		return "test"
+	case isNew(f):
+		return "new"
+	}
+	return ""
+}
+
+// groupOf maps every path of the reading list to its group.
+func (p *Plan) groupOf() (map[string]int, bool) {
+	index := map[string]int{}
+	headers := false
+	for i, g := range p.Groups {
+		headers = headers || len(g.Files) > 1
+		for _, path := range g.Files {
+			index[path] = i
+		}
+	}
+	return index, headers
+}
 
 // summary is the first sentence of a plan: how much there is to read.
 func (p *Plan) summary() string {
@@ -241,20 +268,18 @@ func (p *Plan) textTable(b *strings.Builder) {
 	for j, c := range cols {
 		widths[j] = width(c.header)
 	}
-	pathWidth, anyNew := 0, false
+	pathWidth, tagWidth := 0, 0
 	for i, f := range files {
 		pathWidth = max(pathWidth, len(f.Path))
-		anyNew = anyNew || isNew(f)
+		if t := tag(f); t != "" {
+			tagWidth = max(tagWidth, 2+len(t))
+		}
 		for j, c := range cols {
 			grid[i] = append(grid[i], c.cell(f))
 			widths[j] = max(widths[j], width(grid[i][j].plain))
 		}
 	}
 	indexWidth := len(fmt.Sprintf("%d", len(files)))
-	tagWidth := 0
-	if anyNew {
-		tagWidth = len("  new")
-	}
 
 	header := strings.Repeat(" ", 2+indexWidth+2+pathWidth+tagWidth)
 	for j, c := range cols {
@@ -262,12 +287,30 @@ func (p *Plan) textTable(b *strings.Builder) {
 	}
 	b.WriteString(styleDim.Render(strings.TrimRight(header, " ")) + "\n")
 
+	groupIndex, headers := p.groupOf()
+	lastGroup := -1
 	for i, f := range files {
-		tag := strings.Repeat(" ", tagWidth)
-		if isNew(f) {
-			tag = "  " + styleNew.Render("new")
+		if g, ok := groupIndex[f.Path]; ok && headers && g != lastGroup {
+			lastGroup = g
+			if title := groupTitle(p.Groups[g]); title != "" {
+				fmt.Fprintf(b, "%s%s\n", strings.Repeat(" ", 2+indexWidth+2), styleDim.Render("↳ "+title))
+			} else if i > 0 {
+				b.WriteString("\n")
+			}
 		}
-		line := fmt.Sprintf("  %s  %s%s%s", levelStyle(f.Level).Render(fmt.Sprintf("%*d", indexWidth, i+1)), stylePath.Render(f.Path), strings.Repeat(" ", pathWidth-len(f.Path)), tag)
+		word := strings.Repeat(" ", tagWidth)
+		if t := tag(f); t != "" {
+			style := styleDim
+			if t == "new" {
+				style = styleNew
+			}
+			word = "  " + style.Render(t) + strings.Repeat(" ", tagWidth-2-len(t))
+		}
+		index := levelStyle(f.Level).Render(fmt.Sprintf("%*d", indexWidth, i+1))
+		if f.Test {
+			index = styleDim.Render(fmt.Sprintf("%*d", indexWidth, i+1))
+		}
+		line := fmt.Sprintf("  %s  %s%s%s", index, stylePath.Render(f.Path), strings.Repeat(" ", pathWidth-len(f.Path)), word)
 		for j := range cols {
 			c := grid[i][j]
 			line += "  " + c.text
@@ -295,10 +338,21 @@ func (p *Plan) markdownTable(b *strings.Builder) {
 		}
 	}
 	b.WriteString("\n")
+	groupIndex, headers := p.groupOf()
+	lastGroup := -1
 	for i, f := range files {
+		if g, ok := groupIndex[f.Path]; ok && headers && g != lastGroup {
+			lastGroup = g
+			if title := groupTitle(p.Groups[g]); title != "" {
+				fmt.Fprintf(b, "| | *%s* |%s\n", title, strings.Repeat(" |", len(cols)))
+			}
+		}
 		path := "`" + f.Path + "`"
-		if isNew(f) {
+		switch tag(f) {
+		case "new":
 			path += " 🆕"
+		case "test":
+			path += " _test_"
 		}
 		fmt.Fprintf(b, "| %d | %s |", i+1, path)
 		for _, c := range cols {

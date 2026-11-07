@@ -49,8 +49,12 @@ type Plan struct {
 	BaseSha     string `json:"base_sha"`
 	HeadSha     string `json:"head_sha"`
 
-	// Files are the ranked code files, best first; Read marks the selection.
+	// Files are the code files of the change, those to read first and in
+	// reading order, with the tests paired with them, then the rest by
+	// rank; Read marks the selection.
 	Files []FileReport `json:"files"`
+	// Groups are the files to read, grouped by dependency.
+	Groups []ReadingGroup `json:"groups,omitempty"`
 	// Skipped lists every other changed file, grouped later by Kind.
 	Skipped []Skipped `json:"skipped"`
 
@@ -182,7 +186,7 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	}
 
 	kinds := map[string]Kind{}
-	var codeChanges, deletedCode []Change
+	var codeChanges, deletedCode, testChanges []Change
 	var testPaths []string
 	for _, c := range changes {
 		var isTest bool
@@ -196,6 +200,9 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 			codeChanges = append(codeChanges, c)
 		case KindTest:
 			testPaths = append(testPaths, c.Path)
+			if c.Status != 'D' && !c.Binary && analyzedExtensions[strings.ToLower(path.Ext(c.Path))] {
+				testChanges = append(testChanges, c)
+			}
 		case KindDeleted:
 			if isDeletedCode(c) {
 				deletedCode = append(deletedCode, c)
@@ -237,7 +244,8 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	}
 	resolveRenames(plan.Files)
 	plan.Renames = renamesOf(plan.Files)
-	plan.Facts = collectFacts(repo.Root, head, base, codeChanges, deletedCode, plan.Files)
+	graphs := buildGraphs(repo.Root, head, base, codeChanges, deletedCode)
+	plan.Facts = collectFacts(graphs, head, base, codeChanges, plan.Files)
 	plan.Natures = map[Nature]natureCount{}
 	for _, report := range plan.Files {
 		plan.LinesChanged += report.Added + report.Deleted
@@ -251,16 +259,27 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	}
 	rank(plan.Files)
 	selectReads(plan, opts)
+	tests := make([]FileReport, 0, len(testChanges))
+	for _, c := range testChanges {
+		tests = append(tests, measure.features(c))
+	}
+	orderReads(plan, graphs.head.efferent, head, tests)
 
+	readTests := map[string]bool{}
+	for _, f := range plan.Files {
+		if f.Test {
+			readTests[f.Path] = true
+		}
+	}
 	for _, c := range changes {
 		kind := kinds[c.Path]
-		if kind == KindCode {
+		if kind == KindCode || readTests[c.Path] {
 			continue
 		}
 		plan.Skipped = append(plan.Skipped, Skipped{Path: c.Path, Kind: kind.String(), Reason: kind.Label()})
 	}
 	for _, f := range plan.Files {
-		if f.Read {
+		if f.Read || f.Test {
 			continue
 		}
 		plan.Skipped = append(plan.Skipped, Skipped{Path: f.Path, Kind: "code", Reason: skipReason(f), Score: f.Score})
@@ -346,8 +365,9 @@ func rank(files []FileReport) {
 
 // selectReads marks the files to read: every file at the high level and at
 // least the top N, or exactly N with Exact, or as many as the budget allows.
-// A budget is not spent on a file with no measurable change. Always at least one when there is something to rank. Files
-// are ranked, so the high ones come first.
+// A budget is not spent on a file with no measurable change. A file whose
+// every hunk is mechanical is never read, only listed with its reason.
+// Files are ranked, so the high ones come first.
 func selectReads(plan *Plan, opts Options) {
 	budget := 0
 	if opts.Budget > 0 {
@@ -355,6 +375,9 @@ func selectReads(plan *Plan, opts Options) {
 	}
 	for i := range plan.Files {
 		f := &plan.Files[i]
+		if allMechanical(*f) {
+			continue
+		}
 		if budget > 0 {
 			if plan.ReadCount > 0 && (plan.ReadMinutes+f.Minutes > budget || unchanged(*f)) {
 				continue

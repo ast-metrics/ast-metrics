@@ -439,7 +439,7 @@ func sortFacts(facts []Fact) {
 }
 
 // collectFacts gathers every fact about a change and orders them.
-func collectFacts(root string, head, base *Parsed, codeChanges, deletedCode []Change, files []FileReport) []Fact {
+func collectFacts(gs graphs, head, base *Parsed, codeChanges []Change, files []FileReport) []Fact {
 	changed := map[string]bool{}
 	for _, c := range codeChanges {
 		changed[c.Path] = true
@@ -451,7 +451,7 @@ func collectFacts(root string, head, base *Parsed, codeChanges, deletedCode []Ch
 		}
 		return names
 	}
-	facts := graphFacts(buildGraphs(root, head, base, codeChanges, deletedCode), codeChanges)
+	facts := graphFacts(gs, codeChanges)
 	facts = append(facts, cloneFacts(files, changed)...)
 	facts = append(facts, signatureFacts(head, base, codeChanges, lazyNames)...)
 	sortFacts(facts)

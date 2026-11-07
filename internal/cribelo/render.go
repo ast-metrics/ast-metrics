@@ -49,7 +49,10 @@ func (p *Plan) Text() string {
 	}
 	b.WriteString("\n")
 	if p.ReadCount == 0 {
-		b.WriteString(styleTitle.Render("Nothing to read") + styleDim.Render("  no code file changed") + "\n")
+		b.WriteString(styleTitle.Render("Nothing to read") + styleDim.Render("  "+p.nothingReason(false)) + "\n")
+		if mechanical := p.mechanicalSentence(); mechanical != "" {
+			b.WriteString(mechanical + "\n")
+		}
 	} else {
 		b.WriteString(styleTitle.Render(p.summary()) + "\n")
 		if mechanical := p.mechanicalSentence(); mechanical != "" {
@@ -204,7 +207,10 @@ func (p *Plan) Markdown() string {
 	if p.Changed == 0 {
 		b.WriteString("## Cribelo: nothing changed\n")
 	} else if p.ReadCount == 0 {
-		fmt.Fprintf(&b, "## Cribelo: nothing to read (%d %s changed, no code)\n\n", p.Changed, plural(p.Changed, "file"))
+		fmt.Fprintf(&b, "## Cribelo: nothing to read (%d %s changed, %s)\n\n", p.Changed, plural(p.Changed, "file"), p.nothingReason(true))
+		if mechanical := p.mechanicalSentence(); mechanical != "" {
+			fmt.Fprintf(&b, "%s\n\n", mechanical)
+		}
 	} else {
 		lead := p.summary()
 		fmt.Fprintf(&b, "## Cribelo: %s\n\n", strings.TrimSuffix(strings.ToLower(lead[:1])+lead[1:], "."))
@@ -244,6 +250,17 @@ func (p *Plan) Markdown() string {
 	}
 	fmt.Fprintf(&b, "<sub>cribelo %s · methodology %s · %s · powered by AST Metrics</sub>\n", Version, p.Methodology, p.weightsLine())
 	return b.String()
+}
+
+// nothingReason says why the reading list is empty.
+func (p *Plan) nothingReason(markdown bool) string {
+	switch {
+	case len(p.Files) > 0:
+		return "every change is mechanical"
+	case markdown:
+		return "no code"
+	}
+	return "no code file changed"
 }
 
 // maxFactsShown bounds the facts of the terminal plan: the rest is in
