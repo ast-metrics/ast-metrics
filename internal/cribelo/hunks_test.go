@@ -182,30 +182,45 @@ func TestMoveIndexAcrossFiles(t *testing.T) {
 	// The hunk that adds the function to the new file, doc comment included.
 	added := append([]string{"// Total sums the cart."}, splitLines("func Total(items []Item) int {"+movedBody)...)
 	h := Hunk{Start: 5, End: 5 + len(added) - 1, OldStart: 4, OldEnd: 4, Added: added}
-	nature, detail, fresh, ok := idx.hunkNature("new/pricing.go", h)
+	carry, ok := idx.hunkNature("new/pricing.go", h)
 	assert.True(t, ok)
-	assert.Equal(t, NatureMoved, nature)
-	assert.Equal(t, "moved from old/cart.go:Total()", detail)
-	assert.Empty(t, fresh)
+	assert.Equal(t, NatureMoved, carry.nature)
+	assert.Equal(t, "moved from old/cart.go:Total()", carry.detail)
+	assert.Empty(t, carry.fresh)
+	assert.Equal(t, 0, carry.edited)
 
 	// The hunk that removes it from the old file.
 	removed := splitLines("func Total(items []Item) int {" + movedBody)
 	h = Hunk{Start: 4, End: 4, OldStart: 5, OldEnd: 5 + len(removed) - 1, Removed: removed}
-	nature, detail, _, ok = idx.hunkNature("old/cart.go", h)
+	carry, ok = idx.hunkNature("old/cart.go", h)
 	assert.True(t, ok)
-	assert.Equal(t, NatureMoved, nature)
-	assert.Equal(t, "moved to new/pricing.go:Total()", detail)
+	assert.Equal(t, NatureMoved, carry.nature)
+	assert.Equal(t, "moved to new/pricing.go:Total()", carry.detail)
 
-	// A hunk that adds a new line on top of the moved code is read.
-	h = Hunk{Start: 5, End: 5 + len(added), OldStart: 4, OldEnd: 4, Added: append([]string{"var discount = 10"}, added...)}
-	_, _, _, ok = idx.hunkNature("new/pricing.go", h)
-	assert.False(t, ok)
+	// A new line on top of the moved code is the one line read.
+	h = Hunk{Start: 4, End: 4 + len(added), OldStart: 4, OldEnd: 4, Added: append([]string{"var discount = 10"}, added...)}
+	carry, ok = idx.hunkNature("new/pricing.go", h)
+	assert.True(t, ok)
+	assert.Equal(t, 1, carry.edited)
+	reports := classifyHunks(Change{Path: "new/pricing.go", Hunks: []Hunk{h}}, "go", idx, identifierSets{})
+	require.Len(t, reports, 1)
+	assert.Equal(t, NatureMoved, reports[0].Nature)
+	assert.Equal(t, 1, reports[0].New)
+	assert.Equal(t, 3, reports[0].ReadCost())
+	assert.Equal(t, "moved from old/cart.go:Total(), 1 line new", reports[0].Detail)
+	assert.False(t, reports[0].Mechanical())
 
-	// A line of the moved function that changed on the way is read.
+	// A line of the moved function that changed on the way is read too.
 	edited := append([]string{}, added...)
 	edited[8] = "\tif total > 2000 {"
 	h = Hunk{Start: 5, End: 5 + len(edited) - 1, OldStart: 4, OldEnd: 4, Added: edited}
-	_, _, _, ok = idx.hunkNature("new/pricing.go", h)
+	carry, ok = idx.hunkNature("new/pricing.go", h)
+	assert.True(t, ok)
+	assert.Equal(t, 1, carry.edited)
+
+	// A hunk where most lines are new is not a move.
+	h = Hunk{Start: 5 - 20, End: 5 + len(added) - 1, OldStart: 4, OldEnd: 4, Added: append(splitLines(strings.Repeat("var x = 1\n", 20)), added...)}
+	_, ok = idx.hunkNature("new/pricing.go", h)
 	assert.False(t, ok)
 }
 
@@ -337,23 +352,56 @@ func TestMovedHunkWithNewNameIsRead(t *testing.T) {
 
 	added := splitLines("func Total(items []Item) int {" + body("discount"))
 	h := Hunk{Start: 7, End: 7 + len(added) - 1, OldStart: 4, OldEnd: 4, Added: added}
-	nature, _, fresh, ok := idx.hunkNature("new/pricing.go", h)
+	carry, ok := idx.hunkNature("new/pricing.go", h)
 	require.True(t, ok)
-	assert.Equal(t, NatureMoved, nature)
-	assert.Equal(t, []string{"discount"}, fresh)
+	assert.Equal(t, NatureMoved, carry.nature)
+	assert.Equal(t, []string{"discount"}, carry.fresh)
+	assert.Equal(t, 1, carry.freshLines)
 
-	files := []FileReport{{Path: "new/pricing.go", Hunks: []HunkReport{{Start: 7, End: 7 + len(added) - 1, Added: len(added), Nature: NatureMoved, Detail: "moved from old/cart.go:Total()", fresh: fresh}}}}
-	resolveRenames(files)
-	assert.Equal(t, NatureBehavior, files[0].Hunks[0].Nature)
-	assert.Equal(t, "moved from old/cart.go:Total(); new: discount", files[0].Hunks[0].Detail)
-	assert.Equal(t, len(added), files[0].ToRead)
-
-	// The same hunk stays a move when the change renamed rebate to discount.
-	files = []FileReport{
-		{Path: "new/pricing.go", Hunks: []HunkReport{{Start: 7, End: 7 + len(added) - 1, Added: len(added), Nature: NatureMoved, Detail: "moved from old/cart.go:Total()", fresh: fresh}}},
-		{Path: "a.go", Hunks: []HunkReport{{Added: 1, Deleted: 1, renames: []string{"rebate → discount"}}, {Added: 1, Deleted: 1, renames: []string{"rebate → discount"}}}},
+	report := func() []FileReport {
+		return []FileReport{{Path: "new/pricing.go", Hunks: classifyHunks(Change{Path: "new/pricing.go", Hunks: []Hunk{h}}, "go", idx, identifierSets{})}}
 	}
+	files := report()
 	resolveRenames(files)
 	assert.Equal(t, NatureMoved, files[0].Hunks[0].Nature)
+	assert.Equal(t, 1, files[0].Hunks[0].New)
+	assert.Equal(t, "moved from old/cart.go:Total(), 1 line new (discount)", files[0].Hunks[0].Detail)
+	assert.Equal(t, 3, files[0].ToRead)
+
+	// The line is carried when the change renamed rebate to discount.
+	files = append(report(), FileReport{Path: "a.go", Hunks: []HunkReport{{Added: 1, Deleted: 1, renames: []string{"rebate → discount"}}, {Added: 1, Deleted: 1, renames: []string{"rebate → discount"}}}})
+	resolveRenames(files)
+	assert.Equal(t, NatureMoved, files[0].Hunks[0].Nature)
+	assert.Equal(t, 0, files[0].Hunks[0].New)
+	assert.Equal(t, "moved from old/cart.go:Total()", files[0].Hunks[0].Detail)
+	assert.Equal(t, 2, files[0].ToRead)
 	assert.Equal(t, NatureRename, files[1].Hunks[0].Nature)
+}
+
+// A file split moves many functions in one hunk: the hunk says so, and the
+// lines around the functions are what is read.
+func TestFileSplitIsOneMoveWithItsNewLines(t *testing.T) {
+	one := "func One(items []Item) int {" + movedBody
+	two := strings.ReplaceAll("func Two(items []Item) int {"+movedBody, "1000", "500")
+	base := parsedTree(t, map[string]string{
+		"old/cart.go": "package old\n\ntype Item struct{ Price, Quantity int }\n\n" + one + "\n" + two,
+	})
+	headSource := "package pricing\n\nimport \"fmt\"\n\nvar Currency = \"EUR\"\n\ntype Item struct{ Price, Quantity int }\n\n" + one + "\n" + two + "\nfunc init() { fmt.Println(Currency) }\n"
+	head := parsedTree(t, map[string]string{
+		"old/cart.go":    "package old\n\ntype Item struct{ Price, Quantity int }\n",
+		"new/pricing.go": headSource,
+	})
+	changes := []Change{{Path: "old/cart.go", Status: 'M'}, {Path: "new/pricing.go", Status: 'A'}}
+	idx := buildMoveIndex(head, base, changes, nil)
+	require.Len(t, idx.Moves, 2)
+
+	added := splitLines(strings.TrimSuffix(headSource, "\n"))
+	h := Hunk{Start: 1, End: len(added), Added: added}
+	reports := classifyHunks(Change{Path: "new/pricing.go", Hunks: []Hunk{h}}, "go", idx, identifierSets{})
+	require.Len(t, reports, 1)
+	assert.Equal(t, NatureMoved, reports[0].Nature)
+	// package, import, var, type and init: five lines with tokens outside the moved functions.
+	assert.Equal(t, 5, reports[0].New)
+	assert.Equal(t, "2 functions moved from old/cart.go, 5 lines new", reports[0].Detail)
+	assert.Equal(t, 7, reports[0].ReadCost())
 }

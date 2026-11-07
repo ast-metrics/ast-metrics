@@ -42,13 +42,21 @@ type HunkReport struct {
 	Deleted  int    `json:"deleted"`
 	Nature   Nature `json:"nature"`
 	Detail   string `json:"detail,omitempty"`
+	// New counts the lines of a moved or extracted hunk that did not come
+	// along: edits made on the way, code around the moved functions. They
+	// are read.
+	New int `json:"new,omitempty"`
 	// renames are the "old → new" pairs of a hunk whose two sides have the
 	// same shape; the hunk becomes a rename once the change as a whole
 	// vouches for them (see resolveRenames).
 	renames []string
 	// fresh are the identifiers of a moved hunk that the code it came from
-	// never named; the hunk is read unless the change renamed them.
-	fresh []string
+	// never named, on freshLines of its lines; those lines are read unless
+	// the change renamed them (see resolveRenames).
+	fresh      []string
+	freshLines int
+	// where is the detail of a move before the count of new lines is added.
+	where string
 }
 
 // Lines is the size of the hunk.
@@ -56,9 +64,10 @@ func (h HunkReport) Lines() int { return h.Added + h.Deleted }
 
 // ReadCost is how many lines a reader spends on the hunk: every line of a
 // behavior hunk, a line per rename to check the new name, two lines per move
-// or extraction to see where the code went, nothing for formatting and
-// imports. Moves are counted after RAID (Brito and Valente, 2021), which
-// measured a moved block at two lines of reading instead of fifteen.
+// or extraction to see where the code went plus the lines that did not come
+// along, nothing for formatting and imports. Moves are counted after RAID
+// (Brito and Valente, 2021), which measured a moved block at two lines of
+// reading instead of fifteen.
 func (h HunkReport) ReadCost() int {
 	switch h.Nature {
 	case NatureBehavior:
@@ -66,9 +75,15 @@ func (h HunkReport) ReadCost() int {
 	case NatureRename:
 		return minInt(1, h.Lines())
 	case NatureMoved, NatureExtracted:
-		return minInt(2, h.Lines())
+		return minInt(2, h.Lines()) + h.New
 	}
 	return 0
+}
+
+// Mechanical reports a hunk the reader checks rather than reads: a rename,
+// a format or comment change, an import, or a move that brought nothing new.
+func (h HunkReport) Mechanical() bool {
+	return h.Nature != NatureBehavior && h.New == 0
 }
 
 // importShapes are the shapes of import statements, per language. A hunk
@@ -268,8 +283,10 @@ func classifyHunks(c Change, language string, moves *MoveIndex, idents identifie
 				}
 			}
 			if moves != nil {
-				if nature, detail, fresh, ok := moves.hunkNature(c.Path, h); ok {
-					r.Nature, r.Detail, r.fresh = nature, detail, fresh
+				if carry, ok := moves.hunkNature(c.Path, h); ok {
+					r.Nature, r.where, r.fresh, r.freshLines = carry.nature, carry.detail, carry.fresh, carry.freshLines
+					r.New = carry.edited + carry.freshLines
+					r.Detail = moveDetail(r.where, r.New, nil)
 				}
 			}
 		}
@@ -278,13 +295,29 @@ func classifyHunks(c Change, language string, moves *MoveIndex, idents identifie
 	return out
 }
 
+// moveDetail words a move: where the code came from, how many of its lines
+// did not come along, and what new names they use.
+func moveDetail(where string, newLines int, fresh []string) string {
+	detail := where
+	if newLines > 0 {
+		detail = fmt.Sprintf("%s, %d %s new", where, newLines, plural(newLines, "line"))
+	}
+	if len(fresh) > 3 {
+		fresh = append(fresh[:3], fmt.Sprintf("+%d more", len(fresh)-3))
+	}
+	if len(fresh) > 0 {
+		detail += " (" + strings.Join(fresh, ", ") + ")"
+	}
+	return detail
+}
+
 // resolveRenames turns the candidate renames into renames when the change
 // vouches for them: a pair "old → new" seen in two hunks at least, in one
 // file or across files, is a name changed everywhere. A pair seen once may
 // be a different method put to use on one line, which is a change of
-// behavior however small, and stays one. A moved hunk that names something
-// its origin never named is an edit, and is read, unless that name is the
-// new side of a vouched rename. Totals are recomputed.
+// behavior however small, and stays one. The lines of a moved hunk that
+// name something its origin never named are edits, and are read, unless
+// those names are the new side of vouched renames. Totals are recomputed.
 func resolveRenames(files []FileReport) {
 	seen := map[string]int{}
 	for _, f := range files {
@@ -312,13 +345,12 @@ func resolveRenames(files []FileReport) {
 						fresh = append(fresh, name)
 					}
 				}
-				if len(fresh) > 0 {
-					if len(fresh) > 3 {
-						fresh = append(fresh[:3], fmt.Sprintf("+%d more", len(fresh)-3))
-					}
-					h.Nature, h.Detail = NatureBehavior, h.Detail+"; new: "+strings.Join(fresh, ", ")
-					changed = true
+				if len(fresh) == 0 {
+					h.New -= h.freshLines
 				}
+				h.Detail = moveDetail(h.where, h.New, fresh)
+				h.fresh = nil
+				changed = true
 				continue
 			}
 			if len(h.renames) == 0 {

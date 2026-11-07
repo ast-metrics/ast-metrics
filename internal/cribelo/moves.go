@@ -67,6 +67,8 @@ type moveSpan struct {
 	counterpart map[uint64]bool
 	// names holds the identifiers of that function.
 	names map[string]bool
+	// other is the path of the file on the other side of the move.
+	other string
 }
 
 // lineShape hashes a line with its identifiers normalized; "" for a line
@@ -240,13 +242,13 @@ func buildMoveIndex(head, base *Parsed, changed []Change, deleted []Change) *Mov
 		if same < 1 {
 			detail = fmt.Sprintf("%s, %d%% identical", detail, int(same*100+0.5))
 		}
-		idx.arrived[to.path] = append(idx.arrived[to.path], moveSpan{to.start, to.end, nature, detail, from.lines, from.names})
+		idx.arrived[to.path] = append(idx.arrived[to.path], moveSpan{to.start, to.end, nature, detail, from.lines, from.names, from.path})
 		if nature == NatureMoved {
 			target := fmt.Sprintf("%s:%s()", to.path, shortName(to.name))
 			if from.path == to.path {
 				target = shortName(to.name) + "()"
 			}
-			idx.left[from.path] = append(idx.left[from.path], moveSpan{from.start, from.end, nature, "moved to " + target, to.lines, to.names})
+			idx.left[from.path] = append(idx.left[from.path], moveSpan{from.start, from.end, nature, "moved to " + target, to.lines, to.names, to.path})
 		}
 	}
 
@@ -351,29 +353,42 @@ func sharedCount(a, b []uint64) int {
 	return shared
 }
 
-// hunkNature tells whether a hunk is carried by a move or an extraction: every
-// added line sits in a function that arrived and exists, identifiers aside,
-// in the function it came from; every removed line sits in a function that
-// left and exists in the one it went to. A line that is in a moved function
-// but not in its counterpart was edited on the way, and the hunk is read.
-// Lines without a token (blank, comments) are never in the way.
-//
-// fresh lists the identifiers of a moved hunk that its counterpart never
-// named: a line whose shape matches but which calls something else is an
-// edit, unless the change renamed that thing everywhere (see
-// resolveRenames, which has the whole change at hand).
-func (idx *MoveIndex) hunkNature(path string, h Hunk) (nature Nature, detail string, fresh []string, ok bool) {
+// moveCarry is what a move or an extraction carries of a hunk.
+type moveCarry struct {
+	nature Nature
+	detail string
+	// carried counts the lines with a token that sit in a moved function and
+	// exist, identifiers aside, in its counterpart; edited counts the lines
+	// that do not, and are read.
+	carried, edited int
+	// fresh lists the identifiers that the counterpart never named, found
+	// on freshLines carried lines: those lines are read too, unless the
+	// change renamed those things everywhere (see resolveRenames).
+	fresh      []string
+	freshLines int
+	// functions counts the moved functions the hunk spans; others lists the
+	// files they come from or go to.
+	functions map[string]bool
+	others    map[string]bool
+	verb      string
+}
+
+// hunkNature tells whether a hunk is carried by a move or an extraction: a
+// line that sits in a function that arrived and exists, identifiers aside, in
+// the function it came from is carried, as is a removed line that sits in a
+// function that left and exists in the one it went to. A line in a moved
+// function but not in its counterpart was edited on the way, and a line
+// outside any moved function is new: both are read. The hunk is carried when
+// at least half of its lines are, which lets a file split or a function
+// edited a little on the way be told from its edits, instead of being read
+// whole. Lines without a token (blank, comments) are never in the way.
+func (idx *MoveIndex) hunkNature(path string, h Hunk) (moveCarry, bool) {
+	c := moveCarry{functions: map[string]bool{}, others: map[string]bool{}}
 	if idx == nil {
-		return "", "", nil, false
+		return c, false
 	}
 	seen := map[string]bool{}
-	carried := func(lines []string, first int, spans []moveSpan) bool {
-		if len(lines) == 0 {
-			return true
-		}
-		if len(spans) == 0 {
-			return false
-		}
+	look := func(lines []string, first int, spans []moveSpan, verb string) {
 		for i, line := range lines {
 			shape, hasTokens := lineShape(line)
 			if !hasTokens {
@@ -384,32 +399,58 @@ func (idx *MoveIndex) hunkNature(path string, h Hunk) (nature Nature, detail str
 			for _, s := range spans {
 				if s.start <= n && n <= s.end && s.counterpart[shape] {
 					found = true
-					if nature == "" || s.nature == NatureExtracted {
-						nature, detail = s.nature, s.detail
+					if c.nature == "" || s.nature == NatureExtracted {
+						c.nature, c.detail = s.nature, s.detail
 					}
+					c.functions[fmt.Sprintf("%d:%d", s.start, s.end)] = true
+					c.others[s.other] = true
+					if s.nature == NatureMoved && c.verb == "" {
+						c.verb = verb
+					}
+					freshHere := false
 					if s.nature == NatureMoved {
 						for name := range identifiers([]byte(line)) {
-							if !s.names[name] && !seen[name] {
-								seen[name] = true
-								fresh = append(fresh, name)
+							if !s.names[name] {
+								freshHere = true
+								if !seen[name] {
+									seen[name] = true
+									c.fresh = append(c.fresh, name)
+								}
 							}
 						}
+					}
+					if freshHere {
+						c.freshLines++
+					} else {
+						c.carried++
 					}
 					break
 				}
 			}
 			if !found {
-				return false
+				c.edited++
 			}
 		}
-		return true
 	}
-	if !carried(h.Added, h.Start, idx.arrived[path]) || !carried(h.Removed, h.OldStart, idx.left[path]) || nature == "" {
-		return "", "", nil, false
+	look(h.Added, h.Start, idx.arrived[path], "moved from")
+	look(h.Removed, h.OldStart, idx.left[path], "moved to")
+	if c.nature == "" || c.carried == 0 || c.carried < c.edited+c.freshLines {
+		return moveCarry{}, false
 	}
-	if nature != NatureMoved {
-		fresh = nil
+	if n := len(c.functions); n > 1 && c.nature == NatureMoved {
+		// Several functions in one hunk: a file split or merged.
+		c.detail = fmt.Sprintf("%d functions %s ", n, c.verb)
+		switch {
+		case len(c.others) > 1:
+			c.detail += fmt.Sprintf("%d files", len(c.others))
+		case c.others[path]:
+			c.detail = fmt.Sprintf("%d functions moved within the file", n)
+		default:
+			for other := range c.others {
+				c.detail += other
+			}
+		}
 	}
-	sort.Strings(fresh)
-	return nature, detail, fresh, true
+	sort.Strings(c.fresh)
+	return c, true
 }

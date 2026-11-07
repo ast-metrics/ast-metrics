@@ -420,9 +420,18 @@ func unchanged(f FileReport) bool {
 	return allMechanical(f) || (f.Values[FeatureComplexityAdded] == 0 && f.Added <= 10 && f.Clone == nil)
 }
 
-// allMechanical reports a classified file without a behavior hunk.
+// allMechanical reports a classified file whose hunks are all mechanical:
+// no behavior hunk, no move that brought new lines along.
 func allMechanical(f FileReport) bool {
-	return f.Hunks != nil && f.Natures[NatureBehavior].Hunks == 0
+	if f.Hunks == nil {
+		return false
+	}
+	for _, h := range f.Hunks {
+		if !h.Mechanical() {
+			return false
+		}
+	}
+	return true
 }
 
 // skipReason explains why a ranked code file is not in the reading list.
