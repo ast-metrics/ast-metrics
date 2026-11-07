@@ -68,14 +68,15 @@ type graph struct {
 	// libraryUsers counts the files importing each module.
 	libraryUsers map[string]int
 	standard     map[string]struct{}
-	// modules are the directories that hold a file.
+	// modules are the directories that hold a production file; a directory
+	// of tests alone is not a module.
 	modules map[string]bool
 }
 
 func toGraph(root string, g analyzer.FileDependencyGraph, files []*pb.File) graph {
 	out := graph{efferent: map[string][]string{}, afferent: map[string][]string{}, libraries: map[string][]string{}, libraryUsers: map[string]int{}, standard: g.StandardLibraries, modules: map[string]bool{}}
 	for _, f := range files {
-		if f != nil {
+		if f != nil && !IsTestPath(relPath(root, f.Path)) {
 			out.modules[module(relPath(root, f.Path))] = true
 		}
 	}

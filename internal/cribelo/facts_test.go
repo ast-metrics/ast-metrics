@@ -52,6 +52,24 @@ func TestGraphFactsCycleAndFirstDependency(t *testing.T) {
 	assert.Empty(t, facts)
 }
 
+func TestGraphFactsNewDirectoryWithATestDependsOnNothingForTheFirstTime(t *testing.T) {
+	base := parsedTree(t, map[string]string{
+		"go.mod":    goMod,
+		"util/u.go": "package util\n\nfunc U() int { return 3 }\n",
+	})
+	head := parsedTree(t, map[string]string{
+		"go.mod":      goMod,
+		"d/d.go":      "package d\n\nimport \"example.com/app/util\"\n\nfunc D() int { return util.U() }\n",
+		"d/d_test.go": "package d\n\nimport \"testing\"\n\nfunc TestD(t *testing.T) { D() }\n",
+		"util/u.go":   "package util\n\nfunc U() int { return 3 }\n",
+	})
+	// The test file is not a code change, so it stays in the base graph as
+	// it is in the head one; it must not make the directory look old.
+	changes := []Change{{Path: "d/d.go", Status: 'A'}}
+	facts := graphFacts(buildGraphs(head.Root, analyzer.FileDependencies(head.All), head, base, changes, nil), changes)
+	assert.Empty(t, factTexts(facts, FactDependency))
+}
+
 func TestGraphFactsDeletedFileBreaksNothing(t *testing.T) {
 	base := parsedTree(t, map[string]string{
 		"go.mod":   goMod,
