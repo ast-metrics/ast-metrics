@@ -50,6 +50,9 @@ type fnEntry struct {
 	// lines are the shapes of the function's lines (identifiers normalized,
 	// numbers kept), to tell the lines that moved unchanged from the edits.
 	lines map[uint64]bool
+	// names are the identifiers of the function, signature included: a
+	// moved line that names something the function never named was edited.
+	names map[string]bool
 }
 
 // moveSpan is a range of lines, in a file of the head or of the base, that
@@ -62,6 +65,8 @@ type moveSpan struct {
 	// counterpart holds the line shapes of the function on the other side
 	// of the move: a line of the hunk that is not among them was edited.
 	counterpart map[uint64]bool
+	// names holds the identifiers of that function.
+	names map[string]bool
 }
 
 // lineShape hashes a line with its identifiers normalized; "" for a line
@@ -72,6 +77,15 @@ func lineShape(line string) (uint64, bool) {
 		return 0, false
 	}
 	return hashTokens(tokens), true
+}
+
+// identifierSet lists the identifiers of a source, keywords included.
+func identifierSet(source string) map[string]bool {
+	set := map[string]bool{}
+	for name := range identifiers([]byte(source)) {
+		set[name] = true
+	}
+	return set
 }
 
 func lineShapes(lines []string) map[uint64]bool {
@@ -150,6 +164,7 @@ func functionEntries(rel string, file *pb.File) []fnEntry {
 			path: rel, name: name, start: start, end: end, raw: raw,
 			rawHash: hashTokens(raw), normHash: hashTokens(shapeTokens(body)), prints: fingerprints(body, moveMinPrints),
 			lines: lineShapes(strings.Split(source, "\n")),
+			names: identifierSet(source),
 		})
 	}
 	return entries
@@ -225,13 +240,13 @@ func buildMoveIndex(head, base *Parsed, changed []Change, deleted []Change) *Mov
 		if same < 1 {
 			detail = fmt.Sprintf("%s, %d%% identical", detail, int(same*100+0.5))
 		}
-		idx.arrived[to.path] = append(idx.arrived[to.path], moveSpan{to.start, to.end, nature, detail, from.lines})
+		idx.arrived[to.path] = append(idx.arrived[to.path], moveSpan{to.start, to.end, nature, detail, from.lines, from.names})
 		if nature == NatureMoved {
 			target := fmt.Sprintf("%s:%s()", to.path, shortName(to.name))
 			if from.path == to.path {
 				target = shortName(to.name) + "()"
 			}
-			idx.left[from.path] = append(idx.left[from.path], moveSpan{from.start, from.end, nature, "moved to " + target, to.lines})
+			idx.left[from.path] = append(idx.left[from.path], moveSpan{from.start, from.end, nature, "moved to " + target, to.lines, to.names})
 		}
 	}
 
@@ -336,17 +351,22 @@ func sharedCount(a, b []uint64) int {
 	return shared
 }
 
-// hunkNature tells whether a hunk is made of moved or extracted code: every
+// hunkNature tells whether a hunk is carried by a move or an extraction: every
 // added line sits in a function that arrived and exists, identifiers aside,
 // in the function it came from; every removed line sits in a function that
 // left and exists in the one it went to. A line that is in a moved function
 // but not in its counterpart was edited on the way, and the hunk is read.
 // Lines without a token (blank, comments) are never in the way.
-func (idx *MoveIndex) hunkNature(path string, h Hunk) (Nature, string, bool) {
+//
+// fresh lists the identifiers of a moved hunk that its counterpart never
+// named: a line whose shape matches but which calls something else is an
+// edit, unless the change renamed that thing everywhere (see
+// resolveRenames, which has the whole change at hand).
+func (idx *MoveIndex) hunkNature(path string, h Hunk) (nature Nature, detail string, fresh []string, ok bool) {
 	if idx == nil {
-		return "", "", false
+		return "", "", nil, false
 	}
-	nature, detail := Nature(""), ""
+	seen := map[string]bool{}
 	carried := func(lines []string, first int, spans []moveSpan) bool {
 		if len(lines) == 0 {
 			return true
@@ -367,6 +387,14 @@ func (idx *MoveIndex) hunkNature(path string, h Hunk) (Nature, string, bool) {
 					if nature == "" || s.nature == NatureExtracted {
 						nature, detail = s.nature, s.detail
 					}
+					if s.nature == NatureMoved {
+						for name := range identifiers([]byte(line)) {
+							if !s.names[name] && !seen[name] {
+								seen[name] = true
+								fresh = append(fresh, name)
+							}
+						}
+					}
 					break
 				}
 			}
@@ -377,7 +405,11 @@ func (idx *MoveIndex) hunkNature(path string, h Hunk) (Nature, string, bool) {
 		return true
 	}
 	if !carried(h.Added, h.Start, idx.arrived[path]) || !carried(h.Removed, h.OldStart, idx.left[path]) || nature == "" {
-		return "", "", false
+		return "", "", nil, false
 	}
-	return nature, detail, true
+	if nature != NatureMoved {
+		fresh = nil
+	}
+	sort.Strings(fresh)
+	return nature, detail, fresh, true
 }

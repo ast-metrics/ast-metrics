@@ -46,6 +46,9 @@ type HunkReport struct {
 	// same shape; the hunk becomes a rename once the change as a whole
 	// vouches for them (see resolveRenames).
 	renames []string
+	// fresh are the identifiers of a moved hunk that the code it came from
+	// never named; the hunk is read unless the change renamed them.
+	fresh []string
 }
 
 // Lines is the size of the hunk.
@@ -265,8 +268,8 @@ func classifyHunks(c Change, language string, moves *MoveIndex, idents identifie
 				}
 			}
 			if moves != nil {
-				if nature, detail, ok := moves.hunkNature(c.Path, h); ok {
-					r.Nature, r.Detail = nature, detail
+				if nature, detail, fresh, ok := moves.hunkNature(c.Path, h); ok {
+					r.Nature, r.Detail, r.fresh = nature, detail, fresh
 				}
 			}
 		}
@@ -279,7 +282,9 @@ func classifyHunks(c Change, language string, moves *MoveIndex, idents identifie
 // vouches for them: a pair "old → new" seen in two hunks at least, in one
 // file or across files, is a name changed everywhere. A pair seen once may
 // be a different method put to use on one line, which is a change of
-// behavior however small, and stays one. Totals are recomputed.
+// behavior however small, and stays one. A moved hunk that names something
+// its origin never named is an edit, and is read, unless that name is the
+// new side of a vouched rename. Totals are recomputed.
 func resolveRenames(files []FileReport) {
 	seen := map[string]int{}
 	for _, f := range files {
@@ -289,11 +294,33 @@ func resolveRenames(files []FileReport) {
 			}
 		}
 	}
+	renamed := map[string]bool{}
+	for pair, n := range seen {
+		if n >= 2 {
+			renamed[pair[strings.LastIndex(pair, " ")+1:]] = true
+		}
+	}
 	for i := range files {
 		f := &files[i]
 		changed := false
 		for j := range f.Hunks {
 			h := &f.Hunks[j]
+			if h.Nature == NatureMoved && len(h.fresh) > 0 {
+				var fresh []string
+				for _, name := range h.fresh {
+					if !renamed[name] {
+						fresh = append(fresh, name)
+					}
+				}
+				if len(fresh) > 0 {
+					if len(fresh) > 3 {
+						fresh = append(fresh[:3], fmt.Sprintf("+%d more", len(fresh)-3))
+					}
+					h.Nature, h.Detail = NatureBehavior, h.Detail+"; new: "+strings.Join(fresh, ", ")
+					changed = true
+				}
+				continue
+			}
 			if len(h.renames) == 0 {
 				continue
 			}
