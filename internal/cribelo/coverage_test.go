@@ -36,6 +36,9 @@ func TestLoadCoverageFormats(t *testing.T) {
 	u, n = cov.uncovered("src/c.ts", []Hunk{{Start: 1, End: 1}})
 	assert.Equal(t, [2]int{0, 1}, [2]int{u, n})
 
+	cov, err = loadCoverage(root, filepath.Join(root, "coverage.xml"))
+	require.NoError(t, err, "an absolute path is read as it is")
+	assert.Equal(t, "coverage.xml", cov.Source)
 	cov, err = loadCoverage(root, "coverage.xml")
 	require.NoError(t, err)
 	u, n = cov.uncovered("pkg/d.py", []Hunk{{Start: 1, End: 10}})

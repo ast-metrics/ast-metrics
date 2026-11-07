@@ -65,11 +65,17 @@ func findCoverage(root string) string {
 // paths by stripping it, Go import paths by stripping the module path of
 // go.mod, the rest kept as they are.
 func loadCoverage(root, rel string) (*Coverage, error) {
-	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	// The report is named from the repository root, or by an absolute path
+	// when the tests wrote it elsewhere.
+	path := filepath.FromSlash(rel)
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	cov := &Coverage{Source: rel, files: map[string]*fileCoverage{}}
+	cov := &Coverage{Source: filepath.Base(rel), files: map[string]*fileCoverage{}}
 	text := string(data)
 	switch {
 	case strings.HasPrefix(strings.TrimSpace(text), "mode:"):
