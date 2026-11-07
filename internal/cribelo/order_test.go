@@ -163,7 +163,7 @@ func TestDescribe(t *testing.T) {
 	assert.Contains(t, out, "- `app/store.go`: Load() changed its parameters")
 	assert.Contains(t, out, "**Structure**")
 	assert.Contains(t, out, "- `old → new` in 4 hunks")
-	assert.Contains(t, out, "1. `app/store.go` — the others use it\n2. `app/handler.go`\n")
+	assert.Contains(t, out, "1. `app/store.go`: the others use it\n2. `app/handler.go`\n")
 	assert.Contains(t, out, "Left out: not analyzed")
 	assert.Equal(t, "Nothing changed.\n", (&Plan{}).Describe())
 }

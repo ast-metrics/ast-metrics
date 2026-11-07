@@ -65,7 +65,7 @@ func (p *Plan) Describe() string {
 				n++
 				note := ""
 				if i == 0 && len(g.Files) > 1 && g.Linked {
-					note = " — the others use it"
+					note = ": the others use it"
 				}
 				if f := p.file(path); f != nil && f.Test {
 					note = " (test)"
