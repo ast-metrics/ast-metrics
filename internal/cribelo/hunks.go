@@ -225,6 +225,16 @@ func renaming(old, new []string, idents identifierSets) ([]string, bool) {
 	return pairs, len(pairs) > 0
 }
 
+// allBlank reports lines that hold nothing but whitespace.
+func allBlank(lines []string) bool {
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // differsInComments tells lines that keep their tokens but change a
 // comment from lines merely laid out differently: as many lines on both
 // sides, each pair identical once whitespace is collapsed, or differing
@@ -266,8 +276,12 @@ func classifyHunks(c Change, language string, moves *MoveIndex, idents identifie
 		case importsOnly(language, h.Added, h.Removed):
 			r.Nature = NatureImports
 		case len(rawAdded) == 0 && len(rawRemoved) == 0:
-			// Lines without a token: comments, blank lines.
-			r.Nature = NatureComment
+			// Lines without a token: blank lines are layout, the rest comments.
+			if allBlank(h.Added) && allBlank(h.Removed) {
+				r.Nature, r.Detail = NatureFormat, "blank lines"
+			} else {
+				r.Nature = NatureComment
+			}
 		case len(rawAdded) > 0 && len(rawRemoved) > 0 && sameTokens(rawAdded, rawRemoved):
 			if differsInComments(h.Added, h.Removed) {
 				r.Nature = NatureComment

@@ -405,3 +405,10 @@ func TestFileSplitIsOneMoveWithItsNewLines(t *testing.T) {
 	assert.Equal(t, "2 functions moved from old/cart.go, 5 lines new", reports[0].Detail)
 	assert.Equal(t, 7, reports[0].ReadCost())
 }
+
+func TestBlankLinesAreFormatNotComment(t *testing.T) {
+	reports := classifyHunks(Change{Path: "a.go", Hunks: []Hunk{hunk(nil, []string{"", "\t"}), hunk([]string{"// a note"}, nil)}}, "go", nil, identifierSets{})
+	require.Len(t, reports, 2)
+	assert.Equal(t, NatureFormat, reports[0].Nature)
+	assert.Equal(t, NatureComment, reports[1].Nature)
+}
