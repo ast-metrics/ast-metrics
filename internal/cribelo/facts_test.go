@@ -1,8 +1,10 @@
 package cribelo
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,4 +118,41 @@ func TestSortFacts(t *testing.T) {
 	facts := []Fact{{Kind: FactClone, Path: "z"}, {Kind: FactCycle, Path: "b"}, {Kind: FactSignature, Path: "a"}, {Kind: FactCycle, Path: "a"}}
 	sortFacts(facts)
 	assert.Equal(t, []Fact{{Kind: FactCycle, Path: "a"}, {Kind: FactCycle, Path: "b"}, {Kind: FactSignature, Path: "a"}, {Kind: FactClone, Path: "z"}}, facts)
+}
+
+func TestHistoryFactsCountFixesOfAFunction(t *testing.T) {
+	dir := initRepo(t)
+	put(t, dir, "go.mod", goMod)
+	body := func(n int) string {
+		return fmt.Sprintf("package p\n\nfunc Parse(s string) int {\n\tif s == \"\" {\n\t\treturn %d\n\t}\n\treturn len(s)\n}\n\nfunc Other() int { return 1 }\n", n)
+	}
+	put(t, dir, "p/p.go", body(0))
+	git(t, dir, "2026-01-01T10:00:00Z", "add", "-A")
+	git(t, dir, "2026-01-01T10:00:00Z", "commit", "-q", "-m", "initial")
+	put(t, dir, "p/p.go", body(1))
+	git(t, dir, "2026-02-01T10:00:00Z", "commit", "-q", "-am", "fix: empty input")
+	put(t, dir, "p/p.go", body(2))
+	git(t, dir, "2026-03-01T10:00:00Z", "commit", "-q", "-am", "Revert \"empty input\"")
+	put(t, dir, "p/p.go", body(3))
+	git(t, dir, "2026-04-01T10:00:00Z", "commit", "-q", "-am", "feat: something else")
+	// A fix elsewhere in the file does not count for Parse.
+	put(t, dir, "p/p.go", body(3)+"\nfunc Later() int { return 2 }\n")
+	git(t, dir, "2026-05-01T10:00:00Z", "commit", "-q", "-am", "fix: add Later")
+
+	repo, err := OpenRepo(dir)
+	require.NoError(t, err)
+	baseSha, err := repo.ResolveRef("HEAD")
+	require.NoError(t, err)
+	base, err := parseFiles(dir, []string{"p/p.go"})
+	require.NoError(t, err)
+	files := []FileReport{{Path: "p/p.go", Read: true, Functions: []TouchedFunction{{Name: "Parse", After: 3}, {Name: "Other", After: 1}}}}
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC).Unix()
+	facts := historyFacts(repo, baseSha, base, files, map[string]Change{}, now)
+	require.Len(t, facts, 1)
+	assert.Equal(t, FactHistory, facts[0].Kind)
+	assert.Equal(t, "Parse() was fixed 2 times in the past year, once by a revert", facts[0].Text)
+
+	// Outside the window, nothing is said.
+	later := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+	assert.Empty(t, historyFacts(repo, baseSha, base, files, map[string]Change{}, later))
 }

@@ -245,7 +245,6 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	resolveRenames(plan.Files)
 	plan.Renames = renamesOf(plan.Files)
 	graphs := buildGraphs(repo.Root, head, base, codeChanges, deletedCode)
-	plan.Facts = collectFacts(graphs, head, base, codeChanges, plan.Files)
 	plan.Natures = map[Nature]natureCount{}
 	for _, report := range plan.Files {
 		plan.LinesChanged += report.Added + report.Deleted
@@ -259,6 +258,7 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	}
 	rank(plan.Files)
 	selectReads(plan, opts)
+	plan.Facts = collectFacts(graphs, head, base, codeChanges, plan.Files, repo, mergeBase, opts.Now.Unix())
 	tests := make([]FileReport, 0, len(testChanges))
 	for _, c := range testChanges {
 		tests = append(tests, measure.features(c))

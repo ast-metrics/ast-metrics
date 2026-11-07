@@ -141,12 +141,13 @@ func orderReads(plan *Plan, efferent map[string][]string, head *Parsed, tests []
 		return out
 	}
 
-	// Only the facts that bear on the structure pull a group forward; a
-	// new library or an export nobody calls yet does not.
+	// Only the facts that bear on the structure, or on a function's
+	// record, pull a group forward; a new library or an export nobody
+	// calls yet does not.
 	factsOn := map[string]int{}
 	for _, f := range plan.Facts {
 		switch f.Kind {
-		case FactCycle, FactSignature, FactDependency, FactClone:
+		case FactCycle, FactSignature, FactHistory, FactDependency, FactClone:
 			factsOn[f.Path]++
 		}
 	}

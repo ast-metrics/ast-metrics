@@ -22,7 +22,8 @@ import (
 // predictions; each one is true by construction of the graphs it comes from,
 // and says so plainly.
 type Fact struct {
-	// Kind is one of cycle, dependency, library, clone, signature, api.
+	// Kind is one of cycle, signature, history, dependency, library,
+	// clone, api.
 	Kind string `json:"kind"`
 	// Path is the changed file the fact is about.
 	Path string `json:"path"`
@@ -39,11 +40,12 @@ const (
 	FactClone      = "clone"
 	FactSignature  = "signature"
 	FactAPI        = "api"
+	FactHistory    = "history"
 )
 
 // factOrder is the order facts are shown in: what breaks the structure
 // first, what callers feel next, what was left behind last.
-var factOrder = map[string]int{FactCycle: 0, FactSignature: 1, FactDependency: 2, FactLibrary: 3, FactClone: 4, FactAPI: 5}
+var factOrder = map[string]int{FactCycle: 0, FactSignature: 1, FactHistory: 2, FactDependency: 3, FactLibrary: 4, FactClone: 5, FactAPI: 6}
 
 // graphs holds the dependency graph of the project after the change and
 // the graph as it was before it, both keyed by repository-relative path.
@@ -438,11 +440,14 @@ func sortFacts(facts []Fact) {
 	})
 }
 
-// collectFacts gathers every fact about a change and orders them.
-func collectFacts(gs graphs, head, base *Parsed, codeChanges []Change, files []FileReport) []Fact {
+// collectFacts gathers every fact about a change and orders them. repo may
+// be nil, in which case the history of functions is not asked.
+func collectFacts(gs graphs, head, base *Parsed, codeChanges []Change, files []FileReport, repo *Repo, baseSha string, now int64) []Fact {
 	changed := map[string]bool{}
+	byPath := map[string]Change{}
 	for _, c := range codeChanges {
 		changed[c.Path] = true
+		byPath[c.Path] = c
 	}
 	var names *nameIndex
 	lazyNames := func() *nameIndex {
@@ -454,6 +459,7 @@ func collectFacts(gs graphs, head, base *Parsed, codeChanges []Change, files []F
 	facts := graphFacts(gs, codeChanges)
 	facts = append(facts, cloneFacts(files, changed)...)
 	facts = append(facts, signatureFacts(head, base, codeChanges, lazyNames)...)
+	facts = append(facts, historyFacts(repo, baseSha, base, files, byPath, now)...)
 	sortFacts(facts)
 	return facts
 }
