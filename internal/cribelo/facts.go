@@ -46,7 +46,7 @@ const (
 
 // factOrder is the order facts are shown in: what breaks the structure
 // first, what callers feel next, what was left behind last.
-var factOrder = map[string]int{FactCycle: 0, FactSignature: 1, FactHistory: 2, FactCoverage: 3, FactDependency: 4, FactLibrary: 5, FactClone: 6, FactAPI: 7}
+var factOrder = map[string]int{FactCycle: 0, FactSignature: 1, FactHistory: 2, FactDependency: 3, FactLibrary: 4, FactClone: 5, FactAPI: 6, FactCoverage: 7}
 
 // graphs holds the dependency graph of the project after the change and
 // the graph as it was before it, both keyed by repository-relative path.
