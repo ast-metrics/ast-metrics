@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
+	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +42,7 @@ func TestGraphFactsCycleAndFirstDependency(t *testing.T) {
 	changes := []Change{{Path: "b/b.go", Status: 'M'}, {Path: "c/c.go", Status: 'M'}}
 	facts := graphFacts(buildGraphs(head.Root, analyzer.FileDependencies(head.All), head, base, changes, nil), changes)
 	assert.Equal(t, []string{"introduces a cycle: b.go → a.go → b.go"}, factTexts(facts, FactCycle))
-	assert.Equal(t, []string{"c depends on util for the first time (imports u.go)"}, factTexts(facts, FactDependency))
+	assert.Equal(t, []string{"c depends on util for the first time"}, factTexts(facts, FactDependency))
 	assert.Equal(t, []string{"first use of github.com/acme/tool in the repository"}, factTexts(facts, FactLibrary))
 
 	// The same change against a base where the edges already exist says nothing.
@@ -94,9 +95,53 @@ func TestSignatureFacts(t *testing.T) {
 	})
 	lines := len(strings.Split(headA, "\n"))
 	changes := []Change{{Path: "a/a.go", Status: 'M', Hunks: []Hunk{{Start: 1, End: lines}}}, {Path: "b/b.go", Status: 'M'}, {Path: "b/b2.go", Status: 'M'}}
-	facts := signatureFacts(head, base, changes, func() *nameIndex { return buildNameIndex(head) })
-	assert.Equal(t, []string{"Sum() changed its parameters (a, b → a, b, c), called by name from 2 files"}, factTexts(facts, FactSignature))
+	gs := buildGraphs(head.Root, analyzer.FileDependencies(head.All), head, base, changes, nil)
+	facts := signatureFacts(gs, head, base, changes, func() *nameIndex { return buildNameIndex(head) })
+	assert.Equal(t, []string{"Sum() went from 2 to 3 parameters (adds c), called from 2 files"}, factTexts(facts, FactSignature))
 	assert.Equal(t, []string{"1 new exported function called nowhere yet: Fresh()"}, factTexts(facts, FactAPI))
+}
+
+func TestGraphFactsSkipNewDirectoriesTestsAndPathAliases(t *testing.T) {
+	base := parsedTree(t, map[string]string{
+		"go.mod": goMod,
+		"a/a.go": "package a\n\nfunc A() int { return 1 }\n",
+		"b/b.go": "package b\n\nfunc B() int { return 1 }\n",
+	})
+	head := parsedTree(t, map[string]string{
+		"go.mod":      goMod,
+		"a/a.go":      "package a\n\nfunc A() int { return 1 }\n",
+		"a/a_test.go": "package a\n\nimport (\n\t\"testing\"\n\n\t\"example.com/app/b\"\n)\n\nfunc TestA(t *testing.T) { _ = b.B() }\n",
+		"b/b.go":      "package b\n\nimport \"example.com/app/a\"\n\nfunc B() int { return a.A() }\n",
+		"fresh/f.go":  "package fresh\n\nimport \"example.com/app/a\"\n\nfunc F() int { return a.A() }\n",
+	})
+	changes := []Change{{Path: "b/b.go", Status: 'M'}, {Path: "fresh/f.go", Status: 'A'}, {Path: "a/a_test.go", Status: 'A'}}
+	facts := graphFacts(buildGraphs(head.Root, analyzer.FileDependencies(head.All), head, base, changes, nil), changes)
+	// b → a → (a_test → b) is not a cycle: tests are out of the graph. b
+	// depends on a for the first time; the new directory fresh says nothing.
+	assert.Empty(t, factTexts(facts, FactCycle))
+	assert.Equal(t, []string{"b depends on a for the first time"}, factTexts(facts, FactDependency))
+
+	assert.True(t, looksLikePath(head.Root, "fresh/f.go", "a/thing"), "a directory of the repository is a path alias, not a library")
+	assert.True(t, looksLikePath(head.Root, "fresh/f.go", "./local"))
+	assert.False(t, looksLikePath(head.Root, "fresh/f.go", "github.com/acme/tool"))
+	assert.False(t, looksLikePath(head.Root, "fresh/f.go", "react"))
+}
+
+func TestParameterChange(t *testing.T) {
+	params := func(names ...string) *pb.StmtFunction {
+		fn := &pb.StmtFunction{}
+		for _, n := range names {
+			fn.Parameters = append(fn.Parameters, &pb.StmtParameter{Name: n})
+		}
+		return fn
+	}
+	assert.True(t, sameParameters(params("a", "b"), params("x", "y")), "a rename is not a signature change")
+	assert.False(t, sameParameters(params("a"), params("a", "b")))
+	assert.Equal(t, "went from 1 to 2 parameters (adds b)", parameterChange(params("a"), params("a", "b")))
+	assert.Equal(t, "went from 2 to 1 parameter (drops b)", parameterChange(params("a", "b"), params("a")))
+	assert.Equal(t, "went from 0 to 1 parameter (adds ctx)", parameterChange(params(), params("ctx")))
+	assert.Equal(t, "a, b and c", joinWords([]string{"a", "b", "c"}, 3))
+	assert.Equal(t, "a, b, c and 2 more", joinWords([]string{"a", "b", "c", "d", "e"}, 3))
 }
 
 func TestIsExported(t *testing.T) {

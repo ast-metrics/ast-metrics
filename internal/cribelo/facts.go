@@ -50,28 +50,50 @@ var factOrder = map[string]int{FactCycle: 0, FactSignature: 1, FactHistory: 2, F
 // graphs holds the dependency graph of the project after the change and
 // the graph as it was before it, both keyed by repository-relative path.
 type graphs struct {
+	root       string
 	head, base graph
 }
 
+// graph is a dependency graph of the production code, test files left out:
+// a cycle through a test, or a test's first import, says nothing about the
+// structure.
 type graph struct {
 	efferent  map[string][]string
+	afferent  map[string][]string
 	libraries map[string][]string
 	// libraryUsers counts the files importing each module.
 	libraryUsers map[string]int
 	standard     map[string]struct{}
+	// modules are the directories that hold a file.
+	modules map[string]bool
 }
 
-func toGraph(root string, g analyzer.FileDependencyGraph) graph {
-	out := graph{efferent: map[string][]string{}, libraries: map[string][]string{}, libraryUsers: map[string]int{}, standard: g.StandardLibraries}
+func toGraph(root string, g analyzer.FileDependencyGraph, files []*pb.File) graph {
+	out := graph{efferent: map[string][]string{}, afferent: map[string][]string{}, libraries: map[string][]string{}, libraryUsers: map[string]int{}, standard: g.StandardLibraries, modules: map[string]bool{}}
+	for _, f := range files {
+		if f != nil {
+			out.modules[module(relPath(root, f.Path))] = true
+		}
+	}
 	for from, tos := range g.Efferent {
 		rel := relPath(root, from)
+		if IsTestPath(rel) {
+			continue
+		}
 		for _, to := range tos {
-			out.efferent[rel] = append(out.efferent[rel], relPath(root, to))
+			toRel := relPath(root, to)
+			if IsTestPath(toRel) {
+				continue
+			}
+			out.efferent[rel] = append(out.efferent[rel], toRel)
+			out.afferent[toRel] = append(out.afferent[toRel], rel)
 		}
 		sort.Strings(out.efferent[rel])
 	}
 	for from, libs := range g.Libraries {
-		out.libraries[relPath(root, from)] = libs
+		if rel := relPath(root, from); !IsTestPath(rel) {
+			out.libraries[rel] = libs
+		}
 	}
 	for lib, users := range g.LibraryUsers {
 		out.libraryUsers[lib] = len(users)
@@ -113,7 +135,7 @@ func buildGraphs(root string, headGraph analyzer.FileDependencyGraph, head, base
 	for _, c := range deletedCode {
 		stand(c)
 	}
-	return graphs{head: toGraph(root, headGraph), base: toGraph(root, analyzer.FileDependencies(baseFiles))}
+	return graphs{root: root, head: toGraph(root, headGraph, head.All), base: toGraph(root, analyzer.FileDependencies(baseFiles), baseFiles)}
 }
 
 // module is the unit dependencies are judged between: the directory of a
@@ -167,50 +189,106 @@ func (g graph) moduleEdges() map[[2]string]bool {
 
 // graphFacts compares the dependencies of the changed files before and
 // after the change: a cycle that did not exist, a module that depends on
-// another for the first time, a library nobody used.
+// another for the first time, a library nobody used. One fact of each kind
+// per file at most.
 func graphFacts(gs graphs, codeChanges []Change) []Fact {
 	var facts []Fact
 	baseModules := gs.base.moduleEdges()
-	seenModule := map[[2]string]bool{}
 	for _, c := range codeChanges {
 		before := map[string]bool{}
 		for _, to := range gs.base.efferent[c.Path] {
 			before[to] = true
 		}
+		var cycle []string
+		var newModules []string
+		seenModule := map[string]bool{}
 		for _, to := range gs.head.efferent[c.Path] {
 			if before[to] || to == c.Path {
 				continue
 			}
 			if back := gs.head.pathBetween(to, c.Path, 12); back != nil {
-				chain := append([]string{c.Path}, back...)
-				facts = append(facts, Fact{Kind: FactCycle, Path: c.Path, Files: back,
-					Text: fmt.Sprintf("introduces a cycle: %s", strings.Join(shortChain(chain), " → "))})
+				if cycle == nil || len(back) < len(cycle) {
+					cycle = back
+				}
 				continue
 			}
 			pair := [2]string{module(c.Path), module(to)}
-			if pair[0] != pair[1] && !baseModules[pair] && !seenModule[pair] {
-				seenModule[pair] = true
-				facts = append(facts, Fact{Kind: FactDependency, Path: c.Path, Files: []string{to},
-					Text: fmt.Sprintf("%s depends on %s for the first time (imports %s)", pair[0], pair[1], path.Base(to))})
+			// A new directory depends on everything for the first time;
+			// only a directory that existed is compared with its past.
+			if pair[0] != pair[1] && !baseModules[pair] && !seenModule[pair[1]] && gs.base.modules[pair[0]] {
+				seenModule[pair[1]] = true
+				newModules = append(newModules, pair[1])
 			}
+		}
+		if cycle != nil {
+			chain := append([]string{c.Path}, cycle...)
+			facts = append(facts, Fact{Kind: FactCycle, Path: c.Path, Files: cycle,
+				Text: fmt.Sprintf("introduces a cycle: %s", strings.Join(shortChain(chain), " → "))})
+		}
+		if len(newModules) > 0 {
+			facts = append(facts, Fact{Kind: FactDependency, Path: c.Path, Files: newModules,
+				Text: fmt.Sprintf("%s depends on %s for the first time", module(c.Path), joinWords(newModules, 3))})
 		}
 		beforeLibs := map[string]bool{}
 		for _, lib := range gs.base.libraries[c.Path] {
 			beforeLibs[lib] = true
 		}
+		var newLibs []string
 		for _, lib := range gs.head.libraries[c.Path] {
-			if beforeLibs[lib] {
+			if beforeLibs[lib] || gs.base.libraryUsers[lib] > 0 {
 				continue
 			}
-			if _, standard := gs.head.standard[lib]; standard {
+			if _, standard := gs.head.standard[lib]; standard || looksLikePath(gs.root, c.Path, lib) {
 				continue
 			}
-			if gs.base.libraryUsers[lib] == 0 {
-				facts = append(facts, Fact{Kind: FactLibrary, Path: c.Path, Text: fmt.Sprintf("first use of %s in the repository", lib)})
-			}
+			newLibs = append(newLibs, lib)
+		}
+		if len(newLibs) > 0 {
+			facts = append(facts, Fact{Kind: FactLibrary, Path: c.Path, Files: newLibs,
+				Text: fmt.Sprintf("first use of %s in the repository", joinWords(newLibs, 3))})
 		}
 	}
 	return facts
+}
+
+// looksLikePath tells an import that names a directory of the repository
+// (a path alias, "src/parser/type", or a relative module) from a package of
+// a registry: its first segment is a directory next to the importing file
+// or above it.
+func looksLikePath(root, from, module string) bool {
+	if strings.HasPrefix(module, ".") || strings.HasPrefix(module, "/") || strings.HasPrefix(module, "~") || strings.HasPrefix(module, "@/") {
+		return true
+	}
+	first := module
+	if i := strings.IndexByte(first, '/'); i >= 0 {
+		first = first[:i]
+	}
+	if first == "" || strings.Contains(first, ".") {
+		return false
+	}
+	for dir := path.Dir(from); ; dir = path.Dir(dir) {
+		candidate := filepath.Join(root, filepath.FromSlash(dir), first)
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return true
+		}
+		if dir == "." || dir == "/" || dir == "" {
+			return false
+		}
+	}
+}
+
+// joinWords lists words with commas and "and", the tail counted past max.
+func joinWords(words []string, max int) string {
+	if len(words) > max {
+		return fmt.Sprintf("%s and %d more", strings.Join(words[:max], ", "), len(words)-max)
+	}
+	switch len(words) {
+	case 0:
+		return ""
+	case 1:
+		return words[0]
+	}
+	return strings.Join(words[:len(words)-1], ", ") + " and " + words[len(words)-1]
 }
 
 // shortChain shortens the paths of a cycle to their base names, keeping the
@@ -325,9 +403,12 @@ func (idx *nameIndex) callersOf(name, except string) []string {
 }
 
 // signatureFacts reports the exported functions whose parameters changed,
-// with the files that call them by name, and the exported functions the
-// change adds that nothing calls yet.
-func signatureFacts(head, base *Parsed, codeChanges []Change, names func() *nameIndex) []Fact {
+// with the files that call them, and the exported functions the change
+// adds that nothing calls yet. A caller is a file that holds the name
+// followed by a parenthesis and depends on the file, or sits in its
+// directory; when the graph knows no dependent, every file holding the
+// name counts, and the fact says so.
+func signatureFacts(gs graphs, head, base *Parsed, codeChanges []Change, names func() *nameIndex) []Fact {
 	var facts []Fact
 	for _, c := range codeChanges {
 		var headFile, baseFile *pb.File
@@ -346,6 +427,20 @@ func signatureFacts(head, base *Parsed, codeChanges []Change, names func() *name
 			continue
 		}
 		lines := strings.Split(string(source), "\n")
+		related := relatedFiles(gs.head, head, c.Path)
+		callers := func(name string) ([]string, bool) {
+			byName := names().callersOf(name, c.Path)
+			if len(related) == 0 {
+				return byName, false
+			}
+			var out []string
+			for _, rel := range byName {
+				if related[rel] {
+					out = append(out, rel)
+				}
+			}
+			return out, true
+		}
 		headFns, baseFns := review.CollectFunctions(headFile), review.CollectFunctions(baseFile)
 		fnNames := make([]string, 0, len(headFns))
 		for name := range headFns {
@@ -372,14 +467,17 @@ func signatureFacts(head, base *Parsed, codeChanges []Change, names func() *name
 					unused = append(unused, shortName(name)+"()")
 				}
 			case !sameParameters(before, fn):
-				callers := names().callersOf(name, c.Path)
-				text := fmt.Sprintf("%s() changed its parameters (%s → %s)", shortName(name), parameterList(before), parameterList(fn))
-				if len(callers) > 0 {
-					text += fmt.Sprintf(", called by name from %d %s", len(callers), plural(len(callers), "file"))
-				} else {
-					text += ", no caller by name in the repository"
+				files, resolved := callers(name)
+				text := fmt.Sprintf("%s() %s", shortName(name), parameterChange(before, fn))
+				switch {
+				case len(files) > 0 && resolved:
+					text += fmt.Sprintf(", called from %d %s", len(files), plural(len(files), "file"))
+				case len(files) > 0:
+					text += fmt.Sprintf(", called by name from %d %s", len(files), plural(len(files), "file"))
+				default:
+					text += ", no caller in the repository"
 				}
-				facts = append(facts, Fact{Kind: FactSignature, Path: c.Path, Files: callers, Text: text})
+				facts = append(facts, Fact{Kind: FactSignature, Path: c.Path, Files: files, Text: text})
 			}
 		}
 		if len(unused) > 0 {
@@ -403,27 +501,77 @@ func isEntryPoint(name string) bool {
 	return strings.HasPrefix(short, "test")
 }
 
+// relatedFiles are the files that may call a file's functions: those the
+// graph says depend on it, and those of its directory.
+func relatedFiles(g graph, head *Parsed, rel string) map[string]bool {
+	related := map[string]bool{}
+	for _, dependent := range g.afferent[rel] {
+		related[dependent] = true
+	}
+	if head != nil {
+		dir := path.Dir(rel)
+		for other := range head.Files {
+			if other != rel && path.Dir(other) == dir {
+				related[other] = true
+			}
+		}
+	}
+	return related
+}
+
+// sameParameters compares two parameter lists by count and, when the
+// parser gives them, by type. Names are left out: renaming a parameter
+// changes nothing for a caller.
 func sameParameters(a, b *pb.StmtFunction) bool {
 	if len(a.Parameters) != len(b.Parameters) {
 		return false
 	}
 	for i := range a.Parameters {
-		if a.Parameters[i].GetName() != b.Parameters[i].GetName() || a.Parameters[i].GetType() != b.Parameters[i].GetType() {
+		ta, tb := a.Parameters[i].GetType(), b.Parameters[i].GetType()
+		if ta != "" && tb != "" && ta != tb {
 			return false
 		}
 	}
 	return true
 }
 
-func parameterList(fn *pb.StmtFunction) string {
-	if len(fn.Parameters) == 0 {
-		return "none"
+// parameterChange words what happened to a parameter list: the counts, and
+// the names that appeared or went when the lists tell them apart.
+func parameterChange(before, after *pb.StmtFunction) string {
+	text := fmt.Sprintf("went from %d to %d %s", len(before.Parameters), len(after.Parameters), plural(len(after.Parameters), "parameter"))
+	was := map[string]bool{}
+	for _, p := range before.Parameters {
+		was[p.GetName()] = true
 	}
-	names := make([]string, 0, len(fn.Parameters))
-	for _, p := range fn.Parameters {
-		names = append(names, p.GetName())
+	is := map[string]bool{}
+	for _, p := range after.Parameters {
+		is[p.GetName()] = true
 	}
-	return strings.Join(names, ", ")
+	var added, dropped []string
+	for _, p := range after.Parameters {
+		if n := p.GetName(); n != "" && n != "_" && !was[n] {
+			added = append(added, n)
+		}
+	}
+	for _, p := range before.Parameters {
+		if n := p.GetName(); n != "" && n != "_" && !is[n] {
+			dropped = append(dropped, n)
+		}
+	}
+	var notes []string
+	if len(added) > 0 {
+		notes = append(notes, "adds "+joinWords(added, 3))
+	}
+	if len(dropped) > 0 {
+		notes = append(notes, "drops "+joinWords(dropped, 3))
+	}
+	if len(notes) == 0 && len(before.Parameters) == len(after.Parameters) {
+		notes = append(notes, "types changed")
+	}
+	if len(notes) > 0 {
+		text += " (" + strings.Join(notes, ", ") + ")"
+	}
+	return text
 }
 
 // sortFacts orders facts by kind, then by path.
@@ -457,7 +605,7 @@ func collectFacts(gs graphs, head, base *Parsed, codeChanges []Change, files []F
 	}
 	facts := graphFacts(gs, codeChanges)
 	facts = append(facts, cloneFacts(files, changed)...)
-	facts = append(facts, signatureFacts(head, base, codeChanges, lazyNames)...)
+	facts = append(facts, signatureFacts(gs, head, base, codeChanges, lazyNames)...)
 	facts = append(facts, historyFacts(repo, baseSha, base, files, byPath, now)...)
 	sortFacts(facts)
 	return facts
