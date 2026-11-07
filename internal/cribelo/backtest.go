@@ -100,6 +100,10 @@ type Metrics struct {
 	LinesShare    float64 `json:"lines_share"`
 	BaselineCover float64 `json:"baseline_coverage"`
 	BaselineShare float64 `json:"baseline_lines_share"`
+	// PathOrder reads the first files by path, the order a pull request
+	// shows them in.
+	PathOrderCover float64 `json:"path_order_coverage"`
+	PathOrderShare float64 `json:"path_order_lines_share"`
 	// The rule the plan applies: every high file, at least Top.
 	RuleRead     int     `json:"rule_files_read"`
 	RuleCovered  int     `json:"rule_covered"`
@@ -388,6 +392,7 @@ func replay(repo *Repo, landing Landing, config Config, history *History, affere
 func (b *Backtest) Evaluate(weights Weights, from int) Metrics {
 	var m Metrics
 	baselineCovered, baselineLines, ruleLines := 0, 0, 0
+	pathCovered, pathLines := 0, 0
 	for _, change := range b.Changes[from:] {
 		m.Changes++
 		scored := make([]FileReport, 0, len(change.Files))
@@ -434,15 +439,24 @@ func (b *Backtest) Evaluate(weights Weights, from int) Metrics {
 				baselineCovered++
 			}
 		}
+		sort.SliceStable(scored, func(i, j int) bool { return scored[i].Path < scored[j].Path })
+		for _, r := range scored[:minInt(b.Top, len(scored))] {
+			pathLines += r.Added + r.Deleted
+			if fixed[r.Path] {
+				pathCovered++
+			}
+		}
 	}
 	if m.FixedFiles > 0 {
 		m.Coverage = float64(m.Covered) / float64(m.FixedFiles)
 		m.BaselineCover = float64(baselineCovered) / float64(m.FixedFiles)
+		m.PathOrderCover = float64(pathCovered) / float64(m.FixedFiles)
 		m.RuleCoverage = float64(m.RuleCovered) / float64(m.FixedFiles)
 	}
 	if m.LinesTotal > 0 {
 		m.LinesShare = float64(m.LinesRead) / float64(m.LinesTotal)
 		m.BaselineShare = float64(baselineLines) / float64(m.LinesTotal)
+		m.PathOrderShare = float64(pathLines) / float64(m.LinesTotal)
 		m.RuleShare = float64(ruleLines) / float64(m.LinesTotal)
 	}
 	return m
@@ -467,9 +481,9 @@ func (b *Backtest) Text() string {
 		s.WriteString(metricsLines(b.Generic, b.Top, "generic weights, all qualified changes"))
 		if b.Calibrated != nil && b.GenericHeldOut != nil {
 			fmt.Fprintf(&s, "\n%s\n", styleTitle.Render(fmt.Sprintf("held-out check, the %d most recent changes", b.Calibrated.Changes)))
-			fmt.Fprintf(&s, "  generic weights     top-%d covers %s of the files later fixed for %s of the lines; every high file: %s for %s\n", b.Top, pct(b.GenericHeldOut.Coverage), pct(b.GenericHeldOut.LinesShare), pct(b.GenericHeldOut.RuleCoverage), pct(b.GenericHeldOut.RuleShare))
-			fmt.Fprintf(&s, "  calibrated weights  top-%d covers %s of the files later fixed for %s of the lines; every high file: %s for %s\n", b.Top, pct(b.Calibrated.Coverage), pct(b.Calibrated.LinesShare), pct(b.Calibrated.RuleCoverage), pct(b.Calibrated.RuleShare))
-			fmt.Fprintf(&s, "  %d largest files     cover %s of the files later fixed for %s of the lines\n", b.Top, pct(b.Calibrated.BaselineCover), pct(b.Calibrated.BaselineShare))
+			fmt.Fprintf(&s, "  generic weights     top-%d covers %s of those files for %s of the lines; every high file: %s for %s\n", b.Top, pct(b.GenericHeldOut.Coverage), pct(b.GenericHeldOut.LinesShare), pct(b.GenericHeldOut.RuleCoverage), pct(b.GenericHeldOut.RuleShare))
+			fmt.Fprintf(&s, "  calibrated weights  top-%d covers %s of those files for %s of the lines; every high file: %s for %s\n", b.Top, pct(b.Calibrated.Coverage), pct(b.Calibrated.LinesShare), pct(b.Calibrated.RuleCoverage), pct(b.Calibrated.RuleShare))
+			fmt.Fprintf(&s, "  %d largest files     cover %s of those files for %s of the lines\n", b.Top, pct(b.Calibrated.BaselineCover), pct(b.Calibrated.BaselineShare))
 		}
 	}
 	if len(b.LeftOut) > 0 {
@@ -487,10 +501,11 @@ func (b *Backtest) Text() string {
 func metricsLines(m Metrics, top int, label string) string {
 	var s strings.Builder
 	fmt.Fprintf(&s, "%s\n", styleTitle.Render(label))
-	fmt.Fprintf(&s, "  Reading the top-%d files covered %s of the files later fixed, for %s of the changed lines.\n", top, pct(m.Coverage), pct(m.LinesShare))
-	fmt.Fprintf(&s, "  Reading the %d largest files instead: %s of the files later fixed, for %s of the lines.\n", top, pct(m.BaselineCover), pct(m.BaselineShare))
+	fmt.Fprintf(&s, "  Reading the top-%d files covered %s of those files, for %s of the changed lines.\n", top, pct(m.Coverage), pct(m.LinesShare))
+	fmt.Fprintf(&s, "  Reading the first %d in path order, as a pull request lists them: %s, for %s of the lines.\n", top, pct(m.PathOrderCover), pct(m.PathOrderShare))
+	fmt.Fprintf(&s, "  Reading the %d largest files instead: %s, for %s of the lines.\n", top, pct(m.BaselineCover), pct(m.BaselineShare))
 	perChange := float64(m.RuleRead) / float64(maxInt(m.Changes, 1))
-	fmt.Fprintf(&s, "  Reading every high file, at least %d (%.1f files a change): %s of the files later fixed, for %s of the lines.\n", top, perChange, pct(m.RuleCoverage), pct(m.RuleShare))
+	fmt.Fprintf(&s, "  Reading every high file, at least %d (%.1f files a change): %s, for %s of the lines.\n", top, perChange, pct(m.RuleCoverage), pct(m.RuleShare))
 	return s.String()
 }
 
