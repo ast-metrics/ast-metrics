@@ -195,6 +195,8 @@ func (g graph) moduleEdges() map[[2]string]bool {
 func graphFacts(gs graphs, codeChanges []Change) []Fact {
 	var facts []Fact
 	baseModules := gs.base.moduleEdges()
+	// A cycle is one fact, however many of its files the change touches.
+	seenCycle := map[string]bool{}
 	for _, c := range codeChanges {
 		before := map[string]bool{}
 		for _, to := range gs.base.efferent[c.Path] {
@@ -208,7 +210,7 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 				continue
 			}
 			if back := gs.head.pathBetween(to, c.Path, 12); back != nil {
-				if cycle == nil || len(back) < len(cycle) {
+				if !throughBarrel(c.Path, back) && (cycle == nil || len(back) < len(cycle)) {
 					cycle = back
 				}
 				continue
@@ -223,8 +225,13 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 		}
 		if cycle != nil {
 			chain := append([]string{c.Path}, cycle...)
-			facts = append(facts, Fact{Kind: FactCycle, Path: c.Path, Files: cycle,
-				Text: fmt.Sprintf("introduces a cycle: %s", strings.Join(shortChain(chain), " → "))})
+			members := append([]string{}, chain[:len(chain)-1]...)
+			sort.Strings(members)
+			if key := strings.Join(members, "\x00"); !seenCycle[key] {
+				seenCycle[key] = true
+				facts = append(facts, Fact{Kind: FactCycle, Path: c.Path, Files: cycle,
+					Text: fmt.Sprintf("introduces a cycle: %s", strings.Join(shortChain(chain), " → "))})
+			}
 		}
 		if len(newModules) > 0 {
 			facts = append(facts, Fact{Kind: FactDependency, Path: c.Path, Files: newModules,
@@ -235,6 +242,7 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 			beforeLibs[lib] = true
 		}
 		var newLibs []string
+		seenLib := map[string]bool{}
 		for _, lib := range gs.head.libraries[c.Path] {
 			if beforeLibs[lib] || gs.base.libraryUsers[lib] > 0 {
 				continue
@@ -242,7 +250,10 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 			if _, standard := gs.head.standard[lib]; standard || looksLikePath(gs.root, c.Path, lib) {
 				continue
 			}
-			newLibs = append(newLibs, lib)
+			if pkg := packageOf(c.Path, lib); !seenLib[pkg] {
+				seenLib[pkg] = true
+				newLibs = append(newLibs, pkg)
+			}
 		}
 		if len(newLibs) > 0 {
 			facts = append(facts, Fact{Kind: FactLibrary, Path: c.Path, Files: newLibs,
@@ -251,6 +262,45 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 	}
 	return facts
 }
+
+// throughBarrel tells, in JavaScript and TypeScript, a cycle that goes
+// through an index file: a barrel re-exporting its directory imports back
+// what imports it by design, and the cycle says nothing.
+func throughBarrel(from string, back []string) bool {
+	switch path.Ext(from) {
+	case ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs":
+	default:
+		return false
+	}
+	for _, p := range append([]string{from}, back...) {
+		if strings.HasPrefix(path.Base(p), "index.") {
+			return true
+		}
+	}
+	return false
+}
+
+// packageOf reduces a module to the package it belongs to, so that a
+// package imported by two of its paths counts once: "@scope/name" or
+// "name" in JavaScript and TypeScript, the first segment in Python, the
+// module as it is elsewhere.
+func packageOf(from, module string) string {
+	switch path.Ext(from) {
+	case ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs":
+		parts := strings.Split(module, "/")
+		if strings.HasPrefix(module, "@") && len(parts) >= 2 {
+			return parts[0] + "/" + parts[1]
+		}
+		return parts[0]
+	case ".py":
+		return strings.SplitN(module, ".", 2)[0]
+	}
+	return module
+}
+
+// sourceExtensions are the files a bare JavaScript or TypeScript import
+// may point to when the resolver could not tell.
+var sourceExtensions = []string{".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".d.ts", ".vue", ".svelte"}
 
 // looksLikePath tells an import that names a directory of the repository
 // (a path alias, "src/parser/type" in TypeScript, "python.pkg.mod" in
@@ -276,10 +326,24 @@ func looksLikePath(root, from, module string) bool {
 	if first == "" || (separator == "/" && strings.Contains(first, ".")) {
 		return false
 	}
+	script := false
+	switch path.Ext(from) {
+	case ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs":
+		script = true
+	}
 	for dir := path.Dir(from); ; dir = path.Dir(dir) {
 		candidate := filepath.Join(root, filepath.FromSlash(dir), first)
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 			return true
+		}
+		if script {
+			// "scan" next to the importing file is "./scan" that the
+			// resolver did not bind, not a package.
+			for _, ext := range sourceExtensions {
+				if _, err := os.Stat(candidate + ext); err == nil {
+					return true
+				}
+			}
 		}
 		if dir == "." || dir == "/" || dir == "" {
 			return false

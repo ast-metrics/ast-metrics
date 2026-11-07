@@ -2,6 +2,8 @@ package cribelo
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -128,6 +130,37 @@ func TestGraphFactsSkipNewDirectoriesTestsAndPathAliases(t *testing.T) {
 	assert.True(t, looksLikePath(head.Root, "a/pkg/mod.py", "a.other.thing"), "a dotted Python module rooted in a directory of the repository")
 	assert.False(t, looksLikePath(head.Root, "a/pkg/mod.py", "numpy.linalg"))
 	assert.False(t, looksLikePath(head.Root, "a/Main.java", "a.b.c"), "Java namespaces are not checked against directories")
+}
+
+func TestLibraryHelpersForScripts(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "src", "node"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "src", "node", "scan.ts"), []byte("export const x = 1\n"), 0o644))
+	assert.True(t, looksLikePath(root, "src/node/index.ts", "scan"), "a bare name that is a file next to the importer")
+	assert.False(t, looksLikePath(root, "src/node/index.ts", "rollup"))
+	assert.Equal(t, "@voidzero-dev/vitepress-theme", packageOf("a.ts", "@voidzero-dev/vitepress-theme/index.css"))
+	assert.Equal(t, "lodash", packageOf("a.ts", "lodash/fp"))
+	assert.Equal(t, "numpy", packageOf("a.py", "numpy.linalg"))
+	assert.Equal(t, "github.com/acme/tool", packageOf("a.go", "github.com/acme/tool"))
+	assert.True(t, throughBarrel("src/a.ts", []string{"src/index.ts", "src/a.ts"}))
+	assert.False(t, throughBarrel("src/a.ts", []string{"src/b.ts", "src/a.ts"}))
+	assert.False(t, throughBarrel("a/a.go", []string{"a/index.go", "a/a.go"}))
+}
+
+func TestGraphFactsReportACycleOnce(t *testing.T) {
+	base := parsedTree(t, map[string]string{
+		"go.mod": goMod,
+		"a/a.go": "package a\n\nfunc A() int { return 1 }\n",
+		"b/b.go": "package b\n\nfunc B() int { return 1 }\n",
+	})
+	head := parsedTree(t, map[string]string{
+		"go.mod": goMod,
+		"a/a.go": "package a\n\nimport \"example.com/app/b\"\n\nfunc A() int { return b.B() }\n",
+		"b/b.go": "package b\n\nimport \"example.com/app/a\"\n\nfunc B() int { return a.A() }\n",
+	})
+	changes := []Change{{Path: "a/a.go", Status: 'M'}, {Path: "b/b.go", Status: 'M'}}
+	facts := graphFacts(buildGraphs(head.Root, analyzer.FileDependencies(head.All), head, base, changes, nil), changes)
+	assert.Equal(t, []string{"introduces a cycle: a.go → b.go → a.go"}, factTexts(facts, FactCycle))
 }
 
 func TestParameterChange(t *testing.T) {
