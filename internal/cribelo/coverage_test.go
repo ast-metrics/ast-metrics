@@ -65,4 +65,21 @@ func TestCoverageFacts(t *testing.T) {
 	assert.Equal(t, "a.go", facts[0].Path)
 	assert.Equal(t, "3 of 6 changed lines not run by any test, by lcov.info", facts[0].Text)
 	assert.Nil(t, coverageFacts(nil, files, changes))
+
+	// Two uncovered lines out of thirty are not worth a line of the plan; ten are.
+	wide := func(uncovered int) *Coverage {
+		c := &Coverage{Source: "lcov.info", files: map[string]*fileCoverage{"a.go": newFileCoverage()}}
+		for n := 1; n <= 30; n++ {
+			hits := 1
+			if n <= uncovered {
+				hits = 0
+			}
+			c.files["a.go"].mark(n, hits)
+		}
+		return c
+	}
+	changes = map[string]Change{"a.go": {Hunks: []Hunk{{Start: 1, End: 30}}}}
+	assert.Empty(t, coverageFacts(wide(2), files, changes))
+	require.Len(t, coverageFacts(wide(10), files, changes), 1)
+	assert.Equal(t, "10 of 30 changed lines not run by any test, by lcov.info", coverageFacts(wide(10), files, changes)[0].Text)
 }

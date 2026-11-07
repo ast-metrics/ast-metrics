@@ -281,7 +281,10 @@ func (c *Coverage) uncovered(rel string, hunks []Hunk) (uncovered, instrumented 
 }
 
 // coverageFacts states, for the files of the reading list the report
-// knows, how many of their changed lines no test runs.
+// knows, how many of their changed lines no test runs. A handful of
+// uncovered lines in a well covered change is not worth a line of the plan:
+// the fact is stated from ten uncovered lines, or half of the instrumented
+// ones.
 func coverageFacts(cov *Coverage, files []FileReport, changes map[string]Change) []Fact {
 	if cov == nil {
 		return nil
@@ -296,7 +299,7 @@ func coverageFacts(cov *Coverage, files []FileReport, changes map[string]Change)
 			continue
 		}
 		uncovered, instrumented := cov.uncovered(f.Path, c.Hunks)
-		if uncovered == 0 {
+		if uncovered == 0 || (uncovered < 10 && uncovered*2 < instrumented) {
 			continue
 		}
 		facts = append(facts, Fact{Kind: FactCoverage, Path: f.Path,
