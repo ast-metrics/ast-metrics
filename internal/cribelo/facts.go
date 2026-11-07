@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
+	"github.com/ast-metrics/ast-metrics/internal/engine"
 	"github.com/ast-metrics/ast-metrics/internal/review"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"google.golang.org/protobuf/proto"
@@ -73,13 +74,22 @@ type graph struct {
 	modules map[string]bool
 }
 
-func toGraph(root string, g analyzer.FileDependencyGraph, files []*pb.File) graph {
+// source gives the text of a file of the graph by its repository path, or
+// nil when the graph is built without texts (then every edge is kept).
+func toGraph(root string, g analyzer.FileDependencyGraph, files []*pb.File, source func(rel string) string) graph {
 	out := graph{efferent: map[string][]string{}, afferent: map[string][]string{}, libraries: map[string][]string{}, libraryUsers: map[string]int{}, standard: g.StandardLibraries, modules: map[string]bool{}}
+	byRel := map[string]*pb.File{}
 	for _, f := range files {
-		if f != nil && !IsTestPath(relPath(root, f.Path)) {
-			out.modules[module(relPath(root, f.Path))] = true
+		if f == nil {
+			continue
+		}
+		rel := relPath(root, f.Path)
+		byRel[rel] = f
+		if !IsTestPath(rel) {
+			out.modules[module(rel)] = true
 		}
 	}
+	names := namesInSource(source, byRel)
 	for from, tos := range g.Efferent {
 		rel := relPath(root, from)
 		if IsTestPath(rel) {
@@ -87,7 +97,7 @@ func toGraph(root string, g analyzer.FileDependencyGraph, files []*pb.File) grap
 		}
 		for _, to := range tos {
 			toRel := relPath(root, to)
-			if IsTestPath(toRel) || declarationEdge(rel, toRel) {
+			if IsTestPath(toRel) || declarationEdge(rel, toRel) || !names(rel, toRel) {
 				continue
 			}
 			out.efferent[rel] = append(out.efferent[rel], toRel)
@@ -104,6 +114,84 @@ func toGraph(root string, g analyzer.FileDependencyGraph, files []*pb.File) grap
 		out.libraryUsers[lib] = len(users)
 	}
 	return out
+}
+
+// namesInSource tells whether a file names a type the other declares. In
+// C#, a `using Namespace;` directive is resolved to every file of the
+// namespace, which is what the directive says and forty times what the file
+// reads: the graph of the facts keeps, of those edges, the ones to a file
+// whose class or interface the source names. Other languages import by
+// file, package or class and keep every edge. Without sources, every edge
+// is kept.
+func namesInSource(source func(rel string) string, byRel map[string]*pb.File) func(from, to string) bool {
+	if source == nil {
+		return func(string, string) bool { return true }
+	}
+	idents := map[string]map[string]bool{}
+	declared := map[string][]string{}
+	return func(from, to string) bool {
+		if path.Ext(from) != ".cs" || path.Ext(to) != ".cs" {
+			return true
+		}
+		ids, ok := idents[from]
+		if !ok {
+			ids = identifierSet(source(from))
+			idents[from] = ids
+		}
+		names, ok := declared[to]
+		if !ok {
+			names = declaredTypes(byRel[to])
+			declared[to] = names
+		}
+		for _, n := range names {
+			if ids[n] {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// declaredTypes lists the short names of the classes and interfaces a file declares.
+func declaredTypes(f *pb.File) []string {
+	if f == nil {
+		return nil
+	}
+	var names []string
+	for _, c := range engine.GetClassesInFile(f) {
+		if c.Name != nil && c.Name.Short != "" {
+			names = append(names, c.Name.Short)
+		}
+	}
+	for _, i := range engine.GetInterfacesInFile(f) {
+		if i.Name != nil && i.Name.Short != "" {
+			names = append(names, i.Name.Short)
+		}
+	}
+	return names
+}
+
+// sourceReader gives the text of a file of a graph: the snapshot's text when
+// the file was parsed from memory, the working tree's otherwise.
+func sourceReader(root string, snapshot *Parsed) func(rel string) string {
+	cache := map[string]string{}
+	return func(rel string) string {
+		if text, ok := cache[rel]; ok {
+			return text
+		}
+		var text string
+		if snapshot != nil {
+			if b, ok := snapshot.Source[rel]; ok {
+				text = string(b)
+			}
+		}
+		if text == "" {
+			b, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+			text = string(b)
+		}
+		cache[rel] = text
+		return text
+	}
 }
 
 // declarationEdge tells, in Rust, the edge from a module file to a file it
@@ -159,7 +247,7 @@ func buildGraphs(root string, headGraph analyzer.FileDependencyGraph, head, base
 	for _, c := range deletedCode {
 		stand(c)
 	}
-	return graphs{root: root, head: toGraph(root, headGraph, head.All), base: toGraph(root, analyzer.FileDependencies(baseFiles), baseFiles), workspace: workspacePackages(root)}
+	return graphs{root: root, head: toGraph(root, headGraph, head.All, sourceReader(root, nil)), base: toGraph(root, analyzer.FileDependencies(baseFiles), baseFiles, sourceReader(root, base)), workspace: workspacePackages(root)}
 }
 
 // module is the unit dependencies are judged between: the directory of a

@@ -70,6 +70,25 @@ func TestGraphFactsNewDirectoryWithATestDependsOnNothingForTheFirstTime(t *testi
 	assert.Empty(t, factTexts(facts, FactDependency))
 }
 
+func TestGraphFactsCSharpUsingReachesOnlyTheTypesNamed(t *testing.T) {
+	peer := "namespace App.Peers {\n    public class Peer { }\n}\n"
+	other := "using App.Ui;\nnamespace App.Peers {\n    public class Other { Row r; }\n}\n"
+	base := parsedTree(t, map[string]string{
+		"Ui/Row.cs":      "namespace App.Ui {\n    public class Row { }\n}\n",
+		"Peers/Peer.cs":  peer,
+		"Peers/Other.cs": other,
+	})
+	head := parsedTree(t, map[string]string{
+		"Ui/Row.cs":      "using App.Peers;\nnamespace App.Ui {\n    public class Row { Peer p; }\n}\n",
+		"Peers/Peer.cs":  peer,
+		"Peers/Other.cs": other,
+	})
+	changes := []Change{{Path: "Ui/Row.cs", Status: 'M'}}
+	gs := buildGraphs(head.Root, analyzer.FileDependencies(head.All), head, base, changes, nil)
+	assert.Equal(t, []string{"Peers/Peer.cs"}, gs.head.efferent["Ui/Row.cs"], "the using reaches the type the file names, not the whole namespace")
+	assert.Empty(t, factTexts(graphFacts(gs, changes), FactCycle), "Row.cs → Other.cs → Row.cs is not a cycle: Row.cs never names Other")
+}
+
 func TestGraphFactsDeletedFileBreaksNothing(t *testing.T) {
 	base := parsedTree(t, map[string]string{
 		"go.mod":   goMod,
@@ -319,4 +338,10 @@ func TestIsConfigFile(t *testing.T) {
 	assert.True(t, isConfigFile(".eslintrc.js"))
 	assert.False(t, isConfigFile("src/config.ts"))
 	assert.False(t, isConfigFile("src/node/config/index.ts"))
+}
+
+func TestHistoryTextIsOneLinePerFile(t *testing.T) {
+	assert.Equal(t, "Parse() was fixed 2 times in the past year, once by a revert", historyText([]fixedFunction{{name: "Parse", fixes: 2, reverts: 1}}))
+	assert.Equal(t, "getDocBlockFromMethod() was fixed 6 times in the past year, findDocBlock() 4 times, +3 more functions",
+		historyText([]fixedFunction{{name: "findDocBlock", fixes: 4}, {name: "getType", fixes: 2}, {name: "getDocBlockFromMethod", fixes: 6}, {name: "a", fixes: 2}, {name: "b", fixes: 2}}))
 }

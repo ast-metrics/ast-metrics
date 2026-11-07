@@ -34,6 +34,9 @@ type Parsed struct {
 	Root  string
 	Files map[string]*pb.File
 	All   []*pb.File
+	// Source holds the text of the files parsed from memory, a snapshot of
+	// another revision; files parsed from the tree are read from disk.
+	Source map[string][]byte
 }
 
 // analyzedExtensionList is the list form of analyzedExtensions.
@@ -94,7 +97,12 @@ func parseSnapshot(dir string, contents map[string][]byte) (*Parsed, error) {
 		}
 		rels = append(rels, rel)
 	}
-	return parseFiles(dir, rels)
+	parsed, err := parseFiles(dir, rels)
+	if err != nil {
+		return nil, err
+	}
+	parsed.Source = contents
+	return parsed, nil
 }
 
 func relPath(root, path string) string {
