@@ -91,6 +91,17 @@ func TestPairTestsLeavesDirectoryMatchToUnreadFile(t *testing.T) {
 	assert.Equal(t, []string{"pkg/misc_test.go"}, paths(paired["pkg/facts.go"]), "diff_test.go belongs to the unread diff.go")
 }
 
+func TestPairTestsStayInTheirDirectoryWhenItHoldsChangedCode(t *testing.T) {
+	better := func(a, b string) bool { return a < b }
+	tests := []FileReport{{Path: "engine/csharp/deps/resolver_test.go"}, {Path: "tests/ScannerTest.php"}}
+	all := []string{"engine/php/deps/resolver.go", "engine/csharp/deps/resolver.go", "src/Scanner.php"}
+	paired := pairTests([]string{"engine/php/deps/resolver.go", "src/Scanner.php"}, all, tests, better)
+	// The C# test is not paired with the PHP resolver, its own one is not read.
+	assert.Empty(t, paired["engine/php/deps/resolver.go"])
+	// A test in a directory of its own is still matched by name across the tree.
+	assert.Len(t, paired["src/Scanner.php"], 1)
+}
+
 func TestTestStrength(t *testing.T) {
 	assert.Equal(t, 3, testStrength("pkg/invoice.go", "pkg/invoice_test.go"))
 	assert.Equal(t, 3, testStrength("src/token.py", "tests/test_token.py"))

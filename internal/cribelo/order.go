@@ -220,8 +220,19 @@ func orderReads(plan *Plan, efferent map[string][]string, head *Parsed, tests []
 func pairTests(readPaths, allPaths []string, tests []FileReport, better func(a, b string) bool) map[string][]FileReport {
 	paired := map[string][]FileReport{}
 	for _, t := range tests {
+		// A test next to changed code belongs to that directory: the
+		// resolver_test.go of one engine does not exercise the resolver.go
+		// of another, whatever the names say. Only a test in a directory of
+		// its own (tests/, __tests__/) is matched by name across the tree.
+		candidates := readPaths
+		for _, p := range allPaths {
+			if path.Dir(p) == path.Dir(t.Path) {
+				candidates = sameDir(readPaths, t.Path)
+				break
+			}
+		}
 		best, strength := "", 0
-		for _, p := range readPaths {
+		for _, p := range candidates {
 			s := testStrength(p, t.Path)
 			if s > strength || (s == strength && s > 0 && better(p, best)) {
 				best, strength = p, s
@@ -243,6 +254,17 @@ func pairTests(readPaths, allPaths []string, tests []FileReport, better func(a, 
 		sort.Slice(paired[p], func(i, j int) bool { return paired[p][i].Path < paired[p][j].Path })
 	}
 	return paired
+}
+
+// sameDir keeps the paths that share the directory of a file.
+func sameDir(paths []string, file string) []string {
+	var out []string
+	for _, p := range paths {
+		if path.Dir(p) == path.Dir(file) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // testStrength says how surely a test file exercises a code file: 3 when
