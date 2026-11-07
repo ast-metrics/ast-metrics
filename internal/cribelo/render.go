@@ -57,6 +57,15 @@ func (p *Plan) Text() string {
 		}
 		b.WriteString(p.startSentence("") + "\n\n")
 		p.textTable(&b)
+		if len(p.Facts) > 0 {
+			fmt.Fprintf(&b, "\n%s%s\n", styleTitle.Render("Worth knowing"), styleDim.Render("  true by construction, not predicted"))
+			for _, f := range factsToShow(p.Facts) {
+				fmt.Fprintf(&b, "  %s  %s\n", stylePath.Render(f.Path), f.Text)
+			}
+			if rest := len(p.Facts) - len(factsToShow(p.Facts)); rest > 0 {
+				fmt.Fprintf(&b, "  %s\n", styleDim.Render(fmt.Sprintf("+%d more, see cribelo explain <file>", rest)))
+			}
+		}
 	}
 
 	if len(p.Skipped) > 0 {
@@ -159,6 +168,12 @@ func (p *Plan) Explain(path string) (string, error) {
 				fmt.Fprintf(&b, "  %-22s %-10s +%d/\u2212%d%s\n", where, h.Nature, h.Added, h.Deleted, detail)
 			}
 		}
+		if facts := factsOf(p.Facts, f.Path); len(facts) > 0 {
+			b.WriteString("\n" + styleTitle.Render("Worth knowing") + "\n")
+			for _, fact := range facts {
+				fmt.Fprintf(&b, "  %s\n", fact.Text)
+			}
+		}
 		if len(f.Functions) > 0 {
 			b.WriteString("\n" + styleTitle.Render("Functions touched") + "\n")
 			for _, fn := range f.Functions {
@@ -199,6 +214,13 @@ func (p *Plan) Markdown() string {
 		fmt.Fprintf(&b, "%s\n\n", p.startSentence("`"))
 		p.markdownTable(&b)
 		b.WriteString("\n")
+		if len(p.Facts) > 0 {
+			b.WriteString("**Worth knowing**\n\n")
+			for _, f := range p.Facts {
+				fmt.Fprintf(&b, "- `%s`: %s\n", f.Path, f.Text)
+			}
+			b.WriteString("\n")
+		}
 		if len(p.Moves) > 0 || len(p.Renames) > 0 {
 			b.WriteString("<details><summary><b>Moves and renames</b></summary>\n\n")
 			for _, m := range p.Moves {
@@ -222,6 +244,17 @@ func (p *Plan) Markdown() string {
 	}
 	fmt.Fprintf(&b, "<sub>cribelo %s · methodology %s · %s · powered by AST Metrics</sub>\n", Version, p.Methodology, p.weightsLine())
 	return b.String()
+}
+
+// maxFactsShown bounds the facts of the terminal plan: the rest is in
+// explain. Facts are sorted by what matters most first.
+const maxFactsShown = 6
+
+func factsToShow(facts []Fact) []Fact {
+	if len(facts) > maxFactsShown {
+		return facts[:maxFactsShown]
+	}
+	return facts
 }
 
 // moveLine words one move for a report.

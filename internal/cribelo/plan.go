@@ -65,14 +65,18 @@ type Plan struct {
 	Moves        []Move                 `json:"moves,omitempty"`
 	// Renames are the "old → new" pairs of the change with the number of
 	// hunks each one touches, most frequent first.
-	Renames      []Rename `json:"renames,omitempty"`
-	TestFiles    int      `json:"test_files"`
-	Gate         string   `json:"gate"`
-	FailOn       string   `json:"fail_on"`
-	Calibrated   bool     `json:"calibrated"`
-	TrainedOn    int      `json:"trained_on,omitempty"`
-	TrainedAt    string   `json:"trained_at,omitempty"`
-	CloneIndexed int      `json:"clone_indexed"`
+	Renames []Rename `json:"renames,omitempty"`
+	// Facts are what the diff does not show about the change: a cycle, a
+	// dependency between modules that did not exist, a clone left behind, a
+	// signature that callers rely on.
+	Facts        []Fact `json:"facts,omitempty"`
+	TestFiles    int    `json:"test_files"`
+	Gate         string `json:"gate"`
+	FailOn       string `json:"fail_on"`
+	Calibrated   bool   `json:"calibrated"`
+	TrainedOn    int    `json:"trained_on,omitempty"`
+	TrainedAt    string `json:"trained_at,omitempty"`
+	CloneIndexed int    `json:"clone_indexed"`
 }
 
 // Run builds the plan of the working tree against the base branch.
@@ -233,6 +237,7 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	}
 	resolveRenames(plan.Files)
 	plan.Renames = renamesOf(plan.Files)
+	plan.Facts = collectFacts(repo.Root, head, base, codeChanges, deletedCode, plan.Files)
 	plan.Natures = map[Nature]natureCount{}
 	for _, report := range plan.Files {
 		plan.LinesChanged += report.Added + report.Deleted

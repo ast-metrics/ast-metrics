@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
-	"time"
+	"sync"
+	"weak"
 
 	"github.com/elliotchance/orderedmap/v2"
 
@@ -609,34 +611,29 @@ func SearchFilesByExtension(dirs []string, ext string) ([]string, error) {
 	return files, nil
 }
 
-// in-memory cache for dependencies per file path, invalidated by file mtime
+// depCache remembers the dependencies of a parsed file for as long as that
+// file is alive: the key is the file itself, held weakly, so that two ASTs
+// of the same path (a base and a head version, a re-parse) never share an
+// entry, and the entry goes when the file is collected.
 var depCache = struct {
-	items map[string]struct {
-		mtime time.Time
-		deps  []*pb.StmtExternalDependency
-	}
-}{items: make(map[string]struct {
-	mtime time.Time
-	deps  []*pb.StmtExternalDependency
-})}
+	sync.Mutex
+	items map[weak.Pointer[pb.File]][]*pb.StmtExternalDependency
+}{items: make(map[weak.Pointer[pb.File]][]*pb.StmtExternalDependency)}
 
 // GetDependenciesInFile aggregates all dependencies found in a file across namespaces,
 // classes (including extends/implements/uses), traits, and functions. It deduplicates
-// the list and caches results per file path using modification time for invalidation.
+// the list and caches results per parsed file.
 func GetDependenciesInFile(file *pb.File) []*pb.StmtExternalDependency {
 	if file == nil || file.Stmts == nil {
 		return []*pb.StmtExternalDependency{}
 	}
 
-	// Try cache based on file path mtime if path is set
-	var mtime time.Time
-	if file.Path != "" {
-		if fi, err := os.Stat(file.Path); err == nil {
-			mtime = fi.ModTime()
-			if c, ok := depCache.items[file.Path]; ok && c.mtime.Equal(mtime) && c.deps != nil {
-				return c.deps
-			}
-		}
+	key := weak.Make(file)
+	depCache.Lock()
+	cached, ok := depCache.items[key]
+	depCache.Unlock()
+	if ok {
+		return cached
 	}
 
 	uniq := make(map[string]*pb.StmtExternalDependency)
@@ -745,12 +742,16 @@ func GetDependenciesInFile(file *pb.File) []*pb.StmtExternalDependency {
 		res = append(res, v)
 	}
 
-	// Save in cache
-	if file.Path != "" && !mtime.IsZero() {
-		depCache.items[file.Path] = struct {
-			mtime time.Time
-			deps  []*pb.StmtExternalDependency
-		}{mtime: mtime, deps: res}
+	depCache.Lock()
+	_, known := depCache.items[key]
+	depCache.items[key] = res
+	depCache.Unlock()
+	if !known {
+		runtime.AddCleanup(file, func(k weak.Pointer[pb.File]) {
+			depCache.Lock()
+			delete(depCache.items, k)
+			depCache.Unlock()
+		}, key)
 	}
 
 	return res
