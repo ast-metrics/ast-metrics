@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,13 +39,13 @@ func TestGraphFactsCycleAndFirstDependency(t *testing.T) {
 		"util/u.go": "package util\n\nfunc U() int { return 3 }\n",
 	})
 	changes := []Change{{Path: "b/b.go", Status: 'M'}, {Path: "c/c.go", Status: 'M'}}
-	facts := graphFacts(buildGraphs(head.Root, head, base, changes, nil), changes)
+	facts := graphFacts(buildGraphs(head.Root, analyzer.FileDependencies(head.All), head, base, changes, nil), changes)
 	assert.Equal(t, []string{"introduces a cycle: b.go → a.go → b.go"}, factTexts(facts, FactCycle))
 	assert.Equal(t, []string{"c depends on util for the first time (imports u.go)"}, factTexts(facts, FactDependency))
 	assert.Equal(t, []string{"first use of github.com/acme/tool in the repository"}, factTexts(facts, FactLibrary))
 
 	// The same change against a base where the edges already exist says nothing.
-	facts = graphFacts(buildGraphs(head.Root, head, head, changes, nil), changes)
+	facts = graphFacts(buildGraphs(head.Root, analyzer.FileDependencies(head.All), head, head, changes, nil), changes)
 	assert.Empty(t, facts)
 }
 
@@ -61,7 +62,7 @@ func TestGraphFactsDeletedFileBreaksNothing(t *testing.T) {
 		"b/b.go": "package b\n\nfunc B() int { return 2 }\n",
 	})
 	changes := []Change{{Path: "b/b.go", Status: 'M'}}
-	facts := graphFacts(buildGraphs(head.Root, head, base, changes, []Change{{Path: "b/old.go", Status: 'D'}}), changes)
+	facts := graphFacts(buildGraphs(head.Root, analyzer.FileDependencies(head.All), head, base, changes, []Change{{Path: "b/old.go", Status: 'D'}}), changes)
 	assert.Empty(t, facts)
 }
 

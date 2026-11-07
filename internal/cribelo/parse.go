@@ -109,11 +109,15 @@ func relPath(root, path string) string {
 // module and lean on each other by construction, which says nothing about
 // how far a change travels.
 func afferentCounts(p *Parsed) map[string]int {
-	counts := map[string]int{}
 	if p == nil {
-		return counts
+		return map[string]int{}
 	}
-	graph := analyzer.FileDependencies(p.All)
+	return afferentFromGraph(p, analyzer.FileDependencies(p.All))
+}
+
+// afferentFromGraph is afferentCounts on a graph already resolved.
+func afferentFromGraph(p *Parsed, graph analyzer.FileDependencyGraph) map[string]int {
+	counts := map[string]int{}
 	for path, dependents := range graph.Afferent {
 		rel := relPath(p.Root, path)
 		n := 0

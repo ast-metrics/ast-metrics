@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
@@ -224,8 +225,9 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 		return nil, err
 	}
 
+	headGraph := analyzer.FileDependencies(head.All)
 	measure := &Measure{
-		Head: head, Base: base, Afferent: afferentCounts(head), History: history,
+		Head: head, Base: base, Afferent: afferentFromGraph(head, headGraph), History: history,
 		At: opts.Now.Unix(), TestPaths: testPaths, HeadSource: headSource,
 	}
 	if opts.Clones {
@@ -244,7 +246,7 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	}
 	resolveRenames(plan.Files)
 	plan.Renames = renamesOf(plan.Files)
-	graphs := buildGraphs(repo.Root, head, base, codeChanges, deletedCode)
+	graphs := buildGraphs(repo.Root, headGraph, head, base, codeChanges, deletedCode)
 	plan.Natures = map[Nature]natureCount{}
 	for _, report := range plan.Files {
 		plan.LinesChanged += report.Added + report.Deleted

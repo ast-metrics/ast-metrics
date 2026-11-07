@@ -79,12 +79,11 @@ func toGraph(root string, g analyzer.FileDependencyGraph) graph {
 	return out
 }
 
-// buildGraphs resolves the dependencies of the project after the change,
-// and before it: the base version of every changed file stands in for its
-// head version, under its head path so that imports resolve the same way,
-// the deleted files come back and the new ones go.
-func buildGraphs(root string, head, base *Parsed, codeChanges, deletedCode []Change) graphs {
-	headGraph := analyzer.FileDependencies(head.All)
+// buildGraphs takes the dependencies of the project after the change and
+// resolves them as they were before it: the base version of every changed
+// file stands in for its head version, under its head path so that imports
+// resolve the same way, the deleted files come back and the new ones go.
+func buildGraphs(root string, headGraph analyzer.FileDependencyGraph, head, base *Parsed, codeChanges, deletedCode []Change) graphs {
 	changed := map[string]bool{}
 	for _, c := range codeChanges {
 		changed[c.Path] = true
