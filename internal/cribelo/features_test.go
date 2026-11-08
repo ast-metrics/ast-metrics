@@ -46,3 +46,20 @@ func TestTouchedFunctionGrowth(t *testing.T) {
 func TestCyclomaticNilSafe(t *testing.T) {
 	assert.Equal(t, 0, cyclomatic(nil))
 }
+
+func TestAttributeReadsSplitsAHunkOverTheFunctionsItSpans(t *testing.T) {
+	functions := []TouchedFunction{
+		{Name: "a", Line: 10, End: 19},
+		{Name: "b", Line: 30, End: 49},
+		{Name: "inner", Line: 35, End: 39},
+	}
+	hunks := []HunkReport{
+		{Start: 1, End: 50, Added: 50, Nature: NatureBehavior}, // a whole new file
+		{Start: 60, End: 60, Added: 0, Deleted: 4, Nature: NatureBehavior},
+		{Start: 12, End: 12, Added: 1, Nature: NatureFormat},
+	}
+	attributeReads(functions, hunks)
+	assert.Equal(t, 10, functions[0].ToRead, "lines 10-19")
+	assert.Equal(t, 15, functions[1].ToRead, "lines 30-49 minus the inner function")
+	assert.Equal(t, 5, functions[2].ToRead, "lines 35-39 go to the innermost function")
+}

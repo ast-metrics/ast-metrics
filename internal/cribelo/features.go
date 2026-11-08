@@ -18,9 +18,12 @@ const Window int64 = 90 * 24 * 3600
 type TouchedFunction struct {
 	Name   string `json:"name"`
 	Line   int    `json:"line"`
+	End    int    `json:"end,omitempty"`
 	Before int    `json:"before"`
 	After  int    `json:"after"`
 	New    bool   `json:"new"`
+	// ToRead is the reading cost of the hunks that start inside the function.
+	ToRead int `json:"to_read,omitempty"`
 }
 
 // FileReport is everything known about one ranked file.
@@ -98,7 +101,7 @@ func (m *Measure) features(c Change) FileReport {
 			continue
 		}
 		after := cyclomatic(fn)
-		touched := TouchedFunction{Name: name, Line: start, After: after}
+		touched := TouchedFunction{Name: name, Line: start, End: end, After: after}
 		if baseFn, existed := baseFunctions[name]; existed {
 			touched.Before = cyclomatic(baseFn)
 			if after > touched.Before {
@@ -170,8 +173,51 @@ func (m *Measure) features(c Change) FileReport {
 	for _, h := range report.Hunks {
 		report.ToRead += h.ReadCost()
 	}
+	attributeReads(report.Functions, report.Hunks)
 	report.Minutes = readingMinutes(report.ToRead, 0)
 	return report
+}
+
+// attributeReads charges each hunk's reading cost to the touched functions
+// it spans, line by line, the innermost function taking a nested line; the
+// lines outside every function (declarations, fields, data) are charged to
+// none. A hunk with no new-side span (a pure deletion) goes to the function
+// that holds its position.
+func attributeReads(functions []TouchedFunction, hunks []HunkReport) {
+	innermost := func(line int) int {
+		best := -1
+		for i, fn := range functions {
+			if line < fn.Line || line > fn.End {
+				continue
+			}
+			if best < 0 || fn.End-fn.Line < functions[best].End-functions[best].Line {
+				best = i
+			}
+		}
+		return best
+	}
+	for _, h := range hunks {
+		cost := h.ReadCost()
+		if cost == 0 {
+			continue
+		}
+		span := h.End - h.Start + 1
+		if span <= 1 {
+			if i := innermost(h.Start); i >= 0 {
+				functions[i].ToRead += cost
+			}
+			continue
+		}
+		counts := map[int]int{}
+		for line := h.Start; line <= h.End; line++ {
+			if i := innermost(line); i >= 0 {
+				counts[i]++
+			}
+		}
+		for i, n := range counts {
+			functions[i].ToRead += cost * n / span
+		}
+	}
 }
 
 // languageOf names the language of a file, from the parser when it saw the

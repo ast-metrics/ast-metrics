@@ -38,23 +38,23 @@ func TestParseBlameSkipsBlankAndCommentLines(t *testing.T) {
 		b + " 9 4 1\ncommitter-time 200\nfilename f.go\n\tif y {\n"
 	lines := parseBlame(out, "f.go")
 	require.Len(t, lines, 2)
-	assert.Equal(t, blamed{Commit: a, Time: 100, Path: "f.go"}, lines[0])
-	assert.Equal(t, blamed{Commit: b, Time: 200, Path: "f.go"}, lines[1])
+	assert.Equal(t, blamed{Commit: a, Time: 100, Path: "f.go", Line: 1}, lines[0])
+	assert.Equal(t, blamed{Commit: b, Time: 200, Path: "f.go", Line: 9}, lines[1], "the line of the inducing commit")
 }
 
 func TestPickInducing(t *testing.T) {
 	old, recent := strings.Repeat("1", 40), strings.Repeat("2", 40)
-	lines := []blamed{{old, 100, "a.go"}, {recent, 200, "a.go"}, {recent, 200, "b.go"}}
+	lines := []blamed{{old, 100, "a.go", 0}, {recent, 200, "a.go", 0}, {recent, 200, "b.go", 0}}
 
 	kept := pickInducing(fixCommit{}, lines)
-	assert.Equal(t, []blamed{{recent, 200, "a.go"}, {recent, 200, "b.go"}}, kept, "R-SZZ keeps the latest candidate")
+	assert.Equal(t, []blamed{{recent, 200, "a.go", 0}, {recent, 200, "b.go", 0}}, kept, "R-SZZ keeps the latest candidate")
 
 	kept = pickInducing(fixCommit{Reverts: old}, lines)
-	assert.Equal(t, []blamed{{old, 100, "a.go"}}, kept, "a revert names its commit")
+	assert.Equal(t, []blamed{{old, 100, "a.go", 0}}, kept, "a revert names its commit")
 
 	var many []blamed
 	for i := 0; i <= szzMaxCandidates; i++ {
-		many = append(many, blamed{fmt.Sprintf("%040d", i), int64(i), "a.go"})
+		many = append(many, blamed{fmt.Sprintf("%040d", i), int64(i), "a.go", 0})
 	}
 	assert.Empty(t, pickInducing(fixCommit{}, many), "a fix blaming many commits is not targeted")
 }

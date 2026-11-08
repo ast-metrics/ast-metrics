@@ -39,12 +39,33 @@ type blamed struct {
 	Commit string
 	Time   int64
 	Path   string
+	// Line is the line in the inducing commit's version of the file.
+	Line int
 }
 
 // InducedLabels returns, per landing sha, the paths of that landing which a
 // later fix traced back to it.
 func (r *Repo) InducedLabels(ref string, changes []ChangeEval, workers int) (map[string]map[string]bool, error) {
+	lines, err := r.InducedLines(ref, changes, workers)
+	if err != nil {
+		return nil, err
+	}
 	labels := map[string]map[string]bool{}
+	for sha, paths := range lines {
+		labels[sha] = map[string]bool{}
+		for p := range paths {
+			labels[sha][p] = true
+		}
+	}
+	return labels, nil
+}
+
+// InducedLines returns, per landing sha and path, the lines a later fix
+// traced back to that landing. The line numbers are those of the inducing
+// commit's version of the file: for a merge they may drift by the edits the
+// merged branch made afterwards.
+func (r *Repo) InducedLines(ref string, changes []ChangeEval, workers int) (map[string]map[string][]int, error) {
+	labels := map[string]map[string][]int{}
 	if len(changes) == 0 {
 		return labels, nil
 	}
@@ -121,9 +142,9 @@ func (r *Repo) InducedLabels(ref string, changes []ChangeEval, workers int) (map
 			t := times[landing]
 			if fix.Time > t && fix.Time <= t+Window && files[landing][b.Path] {
 				if labels[landing] == nil {
-					labels[landing] = map[string]bool{}
+					labels[landing] = map[string][]int{}
 				}
-				labels[landing][b.Path] = true
+				labels[landing][b.Path] = append(labels[landing][b.Path], b.Line)
 			}
 		}
 	}
@@ -259,7 +280,7 @@ func oldRange(header string) (start, count int, ok bool) {
 func parseBlame(out, path string) []blamed {
 	var lines []blamed
 	committed := map[string]int64{}
-	commit := ""
+	commit, origLine := "", 0
 	scanner := bufio.NewScanner(strings.NewReader(out))
 	scanner.Buffer(make([]byte, 1<<20), 1<<24)
 	for scanner.Scan() {
@@ -268,7 +289,7 @@ func parseBlame(out, path string) []blamed {
 		case strings.HasPrefix(line, "\t"):
 			text := strings.TrimSpace(line[1:])
 			if commit != "" && text != "" && !isCommentLine(text) {
-				lines = append(lines, blamed{Commit: commit, Time: committed[commit], Path: path})
+				lines = append(lines, blamed{Commit: commit, Time: committed[commit], Path: path, Line: origLine})
 			}
 		case strings.HasPrefix(line, "committer-time "):
 			t, _ := strconv.ParseInt(strings.TrimPrefix(line, "committer-time "), 10, 64)
@@ -276,6 +297,7 @@ func parseBlame(out, path string) []blamed {
 		default:
 			if fields := strings.Fields(line); len(fields) >= 3 && len(fields[0]) == 40 && isHex(fields[0]) {
 				commit = fields[0]
+				origLine, _ = strconv.Atoi(fields[1])
 			}
 		}
 	}

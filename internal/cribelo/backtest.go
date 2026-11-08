@@ -68,6 +68,21 @@ type Sample struct {
 	// Induced: a fix within the window repaired lines this change wrote in
 	// the file (SZZ).
 	Induced bool `json:"induced"`
+	// Functions are the touched functions, each with the lines read inside
+	// it and whether a later fix repaired one of its lines.
+	Functions []FunctionSample `json:"functions,omitempty"`
+}
+
+// FunctionSample is one touched function of a sample.
+type FunctionSample struct {
+	Name    string `json:"name"`
+	Line    int    `json:"line"`
+	End     int    `json:"end"`
+	Before  int    `json:"before"`
+	After   int    `json:"after"`
+	New     bool   `json:"new,omitempty"`
+	ToRead  int    `json:"to_read"`
+	Induced bool   `json:"induced,omitempty"`
 }
 
 // Labels of the backtest: what counts as a file that needed a reader.
@@ -266,14 +281,25 @@ func RunBacktest(repo *Repo, opts BacktestOptions) (*Backtest, error) {
 		}
 		result.Changes = append(result.Changes, *o.eval)
 	}
-	induced, err := repo.InducedLabels(opts.Ref, result.Changes, workers)
+	induced, err := repo.InducedLines(opts.Ref, result.Changes, workers)
 	if err != nil {
 		return nil, err
 	}
 	for i := range result.Changes {
 		change := &result.Changes[i]
 		for j := range change.Files {
-			change.Files[j].Induced = induced[change.Sha][change.Files[j].Path]
+			file := &change.Files[j]
+			lines, hit := induced[change.Sha][file.Path]
+			file.Induced = hit
+			for k := range file.Functions {
+				fn := &file.Functions[k]
+				for _, l := range lines {
+					if l >= fn.Line && l <= fn.End {
+						fn.Induced = true
+						break
+					}
+				}
+			}
 		}
 	}
 	if len(result.Changes) > 0 {
@@ -398,10 +424,14 @@ func replay(repo *Repo, landing Landing, config Config, history *History, affere
 	resolveRenames(reports)
 	for i, c := range codeChanges {
 		report := reports[i]
-		eval.Files = append(eval.Files, Sample{
+		sample := Sample{
 			Path: c.Path, Added: c.Added, Deleted: c.Deleted, ToRead: report.ToRead, Natures: report.Natures, Values: report.Values,
 			Fixed: history.FixedAfter(c.Path, landing.Time, Window),
-		})
+		}
+		for _, fn := range report.Functions {
+			sample.Functions = append(sample.Functions, FunctionSample{Name: fn.Name, Line: fn.Line, End: fn.End, Before: fn.Before, After: fn.After, New: fn.New, ToRead: fn.ToRead})
+		}
+		eval.Files = append(eval.Files, sample)
 	}
 	return eval, "", nil
 }
