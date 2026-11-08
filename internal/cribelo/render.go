@@ -49,11 +49,26 @@ func (p *Plan) Text() string {
 	}
 	b.WriteString("\n")
 	if p.ReadCount == 0 {
-		b.WriteString(styleTitle.Render("Nothing to read") + styleDim.Render("  no code file changed") + "\n")
+		b.WriteString(styleTitle.Render("Nothing to read") + styleDim.Render("  "+p.nothingReason(false)) + "\n")
+		if mechanical := p.mechanicalSentence(); mechanical != "" {
+			b.WriteString(mechanical + "\n")
+		}
 	} else {
 		b.WriteString(styleTitle.Render(p.summary()) + "\n")
+		if mechanical := p.mechanicalSentence(); mechanical != "" {
+			b.WriteString(mechanical + "\n")
+		}
 		b.WriteString(p.startSentence("") + "\n\n")
 		p.textTable(&b)
+		if len(p.Facts) > 0 {
+			fmt.Fprintf(&b, "\n%s%s\n", styleTitle.Render("Worth knowing"), styleDim.Render("  true by construction, not predicted"))
+			for _, f := range factsToShow(p.Facts) {
+				fmt.Fprintf(&b, "  %s  %s\n", stylePath.Render(f.Path), f.Text)
+			}
+			if rest := len(p.Facts) - len(factsToShow(p.Facts)); rest > 0 {
+				fmt.Fprintf(&b, "  %s\n", styleDim.Render(fmt.Sprintf("+%d more, see cribelo explain <file>", rest)))
+			}
+		}
 	}
 
 	if len(p.Skipped) > 0 {
@@ -63,11 +78,15 @@ func (p *Plan) Text() string {
 	}
 
 	b.WriteString("\n")
-	gateStyle := styleLow
-	if p.Gate == "failed" {
-		gateStyle = styleHigh
+	switch p.Gate {
+	case "failed":
+		fmt.Fprintf(&b, "Gate: %s\n", styleHigh.Render("failed"))
+		for _, reason := range p.GateReasons {
+			fmt.Fprintf(&b, "  %s\n", reason)
+		}
+	case "passed":
+		fmt.Fprintf(&b, "Gate: %s %s\n", styleLow.Render("passed"), styleDim.Render("("+p.gateTerms()+")"))
 	}
-	fmt.Fprintf(&b, "Gate: %s %s\n", gateStyle.Render(p.Gate), styleDim.Render(fmt.Sprintf("(%d high, %d medium, fail on %s)", p.Count(LevelHigh), p.Count(LevelMedium), p.FailOn)))
 	fmt.Fprintf(&b, "%s\n", styleDim.Render("Weights: "+p.weightsLine()))
 	return b.String()
 }
@@ -140,6 +159,31 @@ func (p *Plan) Explain(path string) (string, error) {
 			}
 			fmt.Fprintf(&b, "  %-56s %8s  %+.2f\n", c.Feature.Describe(), value, c.Logit)
 		}
+		if len(f.Hunks) > 0 {
+			fmt.Fprintf(&b, "\n%s%s\n", styleTitle.Render("Hunks"), styleDim.Render(fmt.Sprintf("  %d changed lines, %d to read closely, %d to glance at", f.Added+f.Deleted, f.ToRead, f.ToGlance)))
+			for _, h := range f.Hunks {
+				where := fmt.Sprintf("lines %d-%d", h.Start, h.End)
+				if h.Added == 0 {
+					where = fmt.Sprintf("before line %d", h.Start)
+				} else if h.Start == h.End {
+					where = fmt.Sprintf("line %d", h.Start)
+				}
+				detail := ""
+				if h.Detail != "" {
+					detail = "  " + styleDim.Render(h.Detail)
+				}
+				if h.Glance > 0 {
+					detail += "  " + styleDim.Render(fmt.Sprintf("read %d, glance at %d", h.ReadCost()-h.Glance, h.Glance))
+				}
+				fmt.Fprintf(&b, "  %-22s %-10s +%d/\u2212%d%s\n", where, h.Nature, h.Added, h.Deleted, detail)
+			}
+		}
+		if facts := factsOf(p.Facts, f.Path); len(facts) > 0 {
+			b.WriteString("\n" + styleTitle.Render("Worth knowing") + "\n")
+			for _, fact := range facts {
+				fmt.Fprintf(&b, "  %s\n", fact.Text)
+			}
+		}
 		if len(f.Functions) > 0 {
 			b.WriteString("\n" + styleTitle.Render("Functions touched") + "\n")
 			for _, fn := range f.Functions {
@@ -147,13 +191,18 @@ func (p *Plan) Explain(path string) (string, error) {
 				if fn.New {
 					state = fmt.Sprintf("new, complexity %d", fn.After)
 				}
+				if fn.Glance {
+					state += styleDim.Render(fmt.Sprintf(", %d lines to glance at", fn.ToRead))
+				} else if fn.ToRead > 0 {
+					state += fmt.Sprintf(", %d lines to read", fn.ToRead)
+				}
 				fmt.Fprintf(&b, "  %-40s line %-5d %s\n", fn.Name, fn.Line, state)
 			}
 		}
 		if f.Clone != nil {
 			fmt.Fprintf(&b, "\n%s\n  %s is %d%% similar to %s:%d\n", styleTitle.Render("Possible duplicate"), f.Clone.Function, int(f.Clone.Similarity*100+0.5), f.Clone.Path, f.Clone.Line)
 		}
-		fmt.Fprintf(&b, "\n%s\n", styleDim.Render("Reading time assumes about twenty changed lines a minute. Weights: "+p.weightsLine()))
+		fmt.Fprintf(&b, "\n%s\n", styleDim.Render("Reading time assumes twenty lines read closely a minute, sixty glanced at. Weights: "+p.weightsLine()))
 		return b.String(), nil
 	}
 	for _, s := range p.Skipped {
@@ -170,13 +219,36 @@ func (p *Plan) Markdown() string {
 	if p.Changed == 0 {
 		b.WriteString("## Cribelo: nothing changed\n")
 	} else if p.ReadCount == 0 {
-		fmt.Fprintf(&b, "## Cribelo: nothing to read (%d %s changed, no code)\n\n", p.Changed, plural(p.Changed, "file"))
+		fmt.Fprintf(&b, "## Cribelo: nothing to read (%d %s changed, %s)\n\n", p.Changed, plural(p.Changed, "file"), p.nothingReason(true))
+		if mechanical := p.mechanicalSentence(); mechanical != "" {
+			fmt.Fprintf(&b, "%s\n\n", mechanical)
+		}
 	} else {
 		lead := p.summary()
 		fmt.Fprintf(&b, "## Cribelo: %s\n\n", strings.TrimSuffix(strings.ToLower(lead[:1])+lead[1:], "."))
+		if mechanical := p.mechanicalSentence(); mechanical != "" {
+			fmt.Fprintf(&b, "%s\n\n", mechanical)
+		}
 		fmt.Fprintf(&b, "%s\n\n", p.startSentence("`"))
 		p.markdownTable(&b)
 		b.WriteString("\n")
+		if len(p.Facts) > 0 {
+			b.WriteString("**Worth knowing**\n\n")
+			for _, f := range p.Facts {
+				fmt.Fprintf(&b, "- `%s`: %s\n", f.Path, f.Text)
+			}
+			b.WriteString("\n")
+		}
+		if len(p.Moves) > 0 || len(p.Renames) > 0 {
+			b.WriteString("<details><summary><b>Moves and renames</b></summary>\n\n")
+			for _, m := range p.Moves {
+				fmt.Fprintf(&b, "- %s\n", moveLine(m, "`"))
+			}
+			for _, r := range p.Renames {
+				fmt.Fprintf(&b, "- `%s` in %d %s\n", r.Pair, r.Hunks, plural(r.Hunks, "hunk"))
+			}
+			b.WriteString("\n</details>\n\n")
+		}
 	}
 	if len(p.Skipped) > 0 {
 		fmt.Fprintf(&b, "<details><summary><b>Skip</b> (%d %s): %s</summary>\n\n", len(p.Skipped), plural(len(p.Skipped), "file"), skipSummary(p.Skipped, " · "))
@@ -185,11 +257,53 @@ func (p *Plan) Markdown() string {
 		}
 		b.WriteString("\n</details>\n\n")
 	}
-	if p.Changed > 0 {
-		fmt.Fprintf(&b, "**Gate:** %s · %d high, %d medium\n\n", p.Gate, p.Count(LevelHigh), p.Count(LevelMedium))
+	switch p.Gate {
+	case "failed":
+		fmt.Fprintf(&b, "**Gate:** failed · %s\n\n", strings.Join(p.GateReasons, " · "))
+	case "passed":
+		fmt.Fprintf(&b, "**Gate:** passed · %s\n\n", p.gateTerms())
 	}
 	fmt.Fprintf(&b, "<sub>cribelo %s · methodology %s · %s · powered by AST Metrics</sub>\n", Version, p.Methodology, p.weightsLine())
 	return b.String()
+}
+
+// nothingReason says why the reading list is empty.
+func (p *Plan) nothingReason(markdown bool) string {
+	switch {
+	case len(p.Files) > 0:
+		return "every change is mechanical"
+	case markdown:
+		return "no code"
+	}
+	return "no code file changed"
+}
+
+// maxFactsShown bounds the facts of the terminal plan: the rest is in
+// explain. Facts are sorted by what matters most first.
+const maxFactsShown = 6
+
+func factsToShow(facts []Fact) []Fact {
+	if len(facts) > maxFactsShown {
+		return facts[:maxFactsShown]
+	}
+	return facts
+}
+
+// moveLine words one move for a report.
+func moveLine(m Move, quote string) string {
+	from := fmt.Sprintf("%s%s%s:%s()", quote, m.From, quote, shortName(m.FromName))
+	if m.From == m.To {
+		from = shortName(m.FromName) + "()"
+	}
+	verb := "moved to"
+	if m.Nature == NatureExtracted {
+		verb = "extracted into"
+	}
+	line := fmt.Sprintf("%s %s %s%s%s:%s(), %d lines", from, verb, quote, m.To, quote, shortName(m.ToName), m.Lines)
+	if m.Same < 1 {
+		line += fmt.Sprintf(", %d%% identical", int(m.Same*100+0.5))
+	}
+	return line
 }
 
 // JSON renders the whole plan.

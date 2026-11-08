@@ -17,11 +17,16 @@ func TestLoadConfigMissing(t *testing.T) {
 
 func TestLoadConfigParses(t *testing.T) {
 	dir := t.TempDir()
-	yaml := "base: origin/develop\ntop: 5\nfail_on: medium\nignore:\n  - docs/**\n  - \"*.generated.ts\"\n"
+	yaml := "base: origin/develop\ntop: 5\nfail_on: [cycle, signature]\nfail_over: 1h\nignore:\n  - docs/**\n  - \"*.generated.ts\"\n"
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ConfigFile), []byte(yaml), 0o644))
 	c, err := LoadConfig(dir)
 	require.NoError(t, err)
-	assert.Equal(t, Config{Base: "origin/develop", Top: 5, FailOn: "medium", Ignore: []string{"docs/**", "*.generated.ts"}}, c)
+	assert.Equal(t, Config{Base: "origin/develop", Top: 5, FailOn: FactList{"cycle", "signature"}, FailOver: "1h", Ignore: []string{"docs/**", "*.generated.ts"}}, c)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ConfigFile), []byte("fail_on: cycle, signature\n"), 0o644))
+	c, err = LoadConfig(dir)
+	require.NoError(t, err)
+	assert.Equal(t, FactList{"cycle", "signature"}, c.FailOn)
 }
 
 func TestLoadConfigInvalid(t *testing.T) {

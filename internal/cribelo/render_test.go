@@ -11,7 +11,8 @@ import (
 func samplePlan() *Plan {
 	return &Plan{
 		Methodology: MethodologyVersion, Base: "main", BaseSha: "abcdef0123456", HeadSha: "fedcba",
-		Changed: 3, ReadCount: 1, ReadMinutes: 2, Gate: "failed", FailOn: "high",
+		Changed: 3, ReadCount: 1, ReadMinutes: 2, ChangeMinutes: 3,
+		Gate: "failed", FailOn: []string{FactCycle}, FailOverMinutes: 2, GateReasons: []string{"reading time 3 min, over the 2 min allowed", "a.go: introduces a cycle: a.go → b.go → a.go"},
 		Files: []FileReport{
 			{Path: "a.go", Status: "M", Added: 10, Deleted: 2, Score: 0.81, Level: LevelHigh, Minutes: 2, Read: true, Reasons: []string{"imported by 4 files", "no test touched"},
 				Values:        map[Feature]float64{FeatureMaxComplexity: 5, FeatureUntested: 1, FeatureAfferent: 4, FeatureChurn90d: 7, FeatureFixes90d: 2},
@@ -30,29 +31,33 @@ func TestPlanText(t *testing.T) {
 	assert.Contains(t, text, "3 files changed vs main (merge-base abcdef0)")
 	assert.Contains(t, text, "Read 1 of 3 changed files, about 2 min.")
 	assert.Contains(t, text, "Start with a.go: imported by 4 files, no test touched.")
-	assert.Contains(t, text, "complexity  lines     used by  commits 90d       clone  tests\n")
+	assert.Contains(t, text, "complexity  to read   used by  commits 90d       clone  tests\n")
 	assert.Contains(t, text, "1  a.go  ▮▯▯▯▯ 5     ▮▯▯▯▯ 12  ▮▮▯▯▯ 4  ▮▮▮▯▯ 7, 2 fixes  90%    ✗\n")
 	assert.Contains(t, text, "Skip (2)")
-	assert.Contains(t, text, "Gate: failed")
-	assert.Contains(t, text, "1 high, 0 medium, fail on high")
+	assert.Contains(t, text, "Gate: failed\n  reading time 3 min, over the 2 min allowed\n  a.go: introduces a cycle")
+	assert.NotContains(t, text, "high, 0 medium")
 	assert.Contains(t, text, "generic, not yet calibrated")
 }
 
 func TestPlanTextEmptyAndNoCode(t *testing.T) {
 	SetColor(false)
 	assert.Contains(t, (&Plan{BaseSha: "abc"}).Text(), "Nothing changed.")
-	assert.Contains(t, (&Plan{Changed: 2, BaseSha: "abc", Gate: "passed"}).Text(), "Nothing to read")
+	assert.Contains(t, (&Plan{Changed: 2, BaseSha: "abc"}).Text(), "Nothing to read")
+	assert.NotContains(t, (&Plan{Changed: 2, BaseSha: "abc"}).Text(), "Gate")
+	passed := &Plan{Changed: 2, BaseSha: "abc", Gate: "passed", FailOn: []string{FactCycle}, FailOverMinutes: 60, ChangeMinutes: 48}
+	assert.Contains(t, passed.Text(), "Gate: passed (reading time 48 min of 1 h allowed, no cycle)")
+	assert.Contains(t, passed.Markdown(), "**Gate:** passed · reading time 48 min of 1 h allowed, no cycle")
 }
 
 func TestPlanMarkdown(t *testing.T) {
 	md := samplePlan().Markdown()
 	assert.Contains(t, md, "## Cribelo: read 1 of 3 changed files, about 2 min\n")
 	assert.Contains(t, md, "Start with `a.go`: imported by 4 files, no test touched.")
-	assert.Contains(t, md, "| | File | Complexity | Lines | Used by | Commits 90d | Clone | Tests |\n|--:|:--|:--|:--|:--|:--|:--|:-:|\n")
+	assert.Contains(t, md, "| | File | Complexity | To read | Used by | Commits 90d | Clone | Tests |\n|--:|:--|:--|:--|:--|:--|:--|:-:|\n")
 	assert.Contains(t, md, "| 1 | `a.go` | 🟩⬜⬜⬜⬜ 5 | 🟩⬜⬜⬜⬜ 12 | 🟨🟨⬜⬜⬜ 4 | 🟧🟧🟧⬜⬜ 7, 2 fixes | 90% of `b.go:H()` | ❌ |\n")
 	assert.Contains(t, md, "<details><summary><b>Skip</b> (2 files)")
 	assert.Contains(t, md, "- `README.md`")
-	assert.Contains(t, md, "**Gate:** failed · 1 high, 0 medium")
+	assert.Contains(t, md, "**Gate:** failed · reading time 3 min, over the 2 min allowed · a.go: introduces a cycle")
 	assert.Contains(t, md, "methodology "+MethodologyVersion)
 
 	assert.NotContains(t, md, "—")

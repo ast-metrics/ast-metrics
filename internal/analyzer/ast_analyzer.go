@@ -66,6 +66,39 @@ func AnalyzeFiles(parsedFiles []*pb.File, progressbar *pterm.SpinnerPrinter) []*
 	return allResults
 }
 
+// AnalyzeFilesComplexity computes the cyclomatic complexity of pre-parsed
+// files and nothing else: no volume, cohesion or maintainability metrics.
+// A tool that reads only the complexity of a repository's functions, such
+// as the review plan, skips about a quarter of the analysis this way.
+func AnalyzeFilesComplexity(parsedFiles []*pb.File) []*pb.File {
+	if len(parsedFiles) == 0 {
+		return nil
+	}
+	var wg sync.WaitGroup
+	jobs := make(chan *pb.File, runtime.NumCPU())
+	for i := 0; i < runtime.NumCPU(); i++ {
+		go func() {
+			for file := range jobs {
+				if file != nil {
+					root := &ASTNode{children: file.Stmts}
+					root.Accept(&Complexity.CyclomaticComplexityVisitor{})
+					root.Visit()
+					engine.EnsureNodeTypeIsComplete(file)
+					recomputeFileCyclomatic(file)
+				}
+				wg.Done()
+			}
+		}()
+	}
+	for _, file := range parsedFiles {
+		wg.Add(1)
+		jobs <- file
+	}
+	wg.Wait()
+	close(jobs)
+	return parsedFiles
+}
+
 func AnalyzeFile(file *pb.File) {
 	root := &ASTNode{children: file.Stmts}
 

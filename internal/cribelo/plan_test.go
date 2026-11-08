@@ -254,21 +254,26 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.Error(t, err)
 
 	// gate
-	for _, failOn := range []string{"high", "medium", "never"} {
-		o := opts
-		o.FailOn = failOn
-		p, err := Run(repo, o)
-		require.NoError(t, err)
-		assert.Contains(t, []string{"passed", "failed"}, p.Gate)
-		switch failOn {
-		case "high":
-			assert.Equal(t, p.Count(LevelHigh) > 0, p.Gate == "failed")
-		case "medium":
-			assert.Equal(t, p.Count(LevelHigh)+p.Count(LevelMedium) > 0, p.Gate == "failed")
-		default:
-			assert.Equal(t, "passed", p.Gate)
-		}
+	assert.Equal(t, "", plan.Gate, "no gate by default")
+	assert.Greater(t, plan.ChangeMinutes, 0)
+	o := opts
+	o.FailOver = time.Minute
+	p, err := Run(repo, o)
+	require.NoError(t, err)
+	if p.ChangeMinutes > 1 {
+		assert.Equal(t, "failed", p.Gate)
+		assert.Contains(t, p.GateReasons[0], "over the 1 min allowed")
 	}
+	o = opts
+	o.FailOver = 24 * time.Hour
+	o.FailOn = []string{FactCycle}
+	p, err = Run(repo, o)
+	require.NoError(t, err)
+	hasCycle := false
+	for _, f := range p.Facts {
+		hasCycle = hasCycle || f.Kind == FactCycle
+	}
+	assert.Equal(t, hasCycle, p.Gate == "failed")
 
 	// determinism
 	again, err := Run(repo, opts)
@@ -285,12 +290,18 @@ func TestRunRejectsUnknownFailOn(t *testing.T) {
 	git(t, dir, "", "commit", "-q", "-m", "init")
 	repo, err := OpenRepo(dir)
 	require.NoError(t, err)
-	_, err = Run(repo, Options{Base: "main", FailOn: "bogus"})
-	assert.ErrorContains(t, err, `unknown level "bogus"`)
+	_, err = Run(repo, Options{Base: "main", FailOn: []string{"bogus"}})
+	assert.ErrorContains(t, err, `unknown fact "bogus"`)
+	_, err = Run(repo, Options{Base: "main", FailOn: []string{"high"}})
+	assert.ErrorContains(t, err, "score level")
+
+	put(t, dir, ConfigFile, "fail_over: soon\n")
+	_, err = Run(repo, Options{Base: "main"})
+	assert.ErrorContains(t, err, "fail_over")
 
 	put(t, dir, ConfigFile, "fail_on: hgih\n")
 	_, err = Run(repo, Options{Base: "main"})
-	assert.ErrorContains(t, err, `unknown level "hgih"`)
+	assert.ErrorContains(t, err, `unknown fact "hgih"`)
 }
 
 func TestRunMissingExplicitWeightsIsAnError(t *testing.T) {
@@ -317,7 +328,7 @@ func TestRunNothingChanged(t *testing.T) {
 	plan, err := Run(repo, Options{Base: "main"})
 	require.NoError(t, err)
 	assert.Equal(t, 0, plan.Changed)
-	assert.Equal(t, "passed", plan.Gate)
+	assert.Equal(t, "", plan.Gate)
 	assert.Contains(t, plan.Text(), "Nothing changed")
 }
 
@@ -397,11 +408,11 @@ func TestChangesAgainstRealGit(t *testing.T) {
 	assert.Equal(t, 0, byPath["util/u2.go"].Added)
 	assert.True(t, byPath["scratch.go"].Untracked)
 	assert.Equal(t, 3, byPath["scratch.go"].Added)
-	assert.Equal(t, []Hunk{{1, 3}}, byPath["scratch.go"].Hunks)
+	assert.Equal(t, [][2]int{{1, 3}}, ranges(byPath["scratch.go"].Hunks))
 	assert.Equal(t, byte('M'), byPath["a/a.go"].Status)
 	assert.Equal(t, 1, byPath["a/a.go"].Added)
 	assert.Equal(t, 1, byPath["a/a.go"].Deleted)
-	assert.Equal(t, []Hunk{{5, 5}}, byPath["a/a.go"].Hunks)
+	assert.Equal(t, [][2]int{{5, 5}}, ranges(byPath["a/a.go"].Hunks))
 	assert.Greater(t, byPath["svc/svc.go"].Added, 10)
 	// sorted by path
 	for i := 1; i < len(changes); i++ {

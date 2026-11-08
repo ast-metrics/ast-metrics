@@ -34,6 +34,9 @@ type Parsed struct {
 	Root  string
 	Files map[string]*pb.File
 	All   []*pb.File
+	// Source holds the text of the files parsed from memory, a snapshot of
+	// another revision; files parsed from the tree are read from disk.
+	Source map[string][]byte
 }
 
 // analyzedExtensionList is the list form of analyzedExtensions.
@@ -67,7 +70,8 @@ func parseFiles(root string, relPaths []string) (*Parsed, error) {
 	if err != nil {
 		return nil, err
 	}
-	files = analyzer.AnalyzeFiles(files, nil)
+	// Only the complexity is read from the analysis; the plan does not need the volume metrics.
+	files = analyzer.AnalyzeFilesComplexity(files)
 	parsed := &Parsed{Root: root, Files: make(map[string]*pb.File, len(files)), All: files}
 	for _, f := range files {
 		if f == nil {
@@ -93,7 +97,12 @@ func parseSnapshot(dir string, contents map[string][]byte) (*Parsed, error) {
 		}
 		rels = append(rels, rel)
 	}
-	return parseFiles(dir, rels)
+	parsed, err := parseFiles(dir, rels)
+	if err != nil {
+		return nil, err
+	}
+	parsed.Source = contents
+	return parsed, nil
 }
 
 func relPath(root, path string) string {
@@ -109,11 +118,15 @@ func relPath(root, path string) string {
 // module and lean on each other by construction, which says nothing about
 // how far a change travels.
 func afferentCounts(p *Parsed) map[string]int {
-	counts := map[string]int{}
 	if p == nil {
-		return counts
+		return map[string]int{}
 	}
-	graph := analyzer.FileDependencies(p.All)
+	return afferentFromGraph(p, analyzer.FileDependencies(p.All))
+}
+
+// afferentFromGraph is afferentCounts on a graph already resolved.
+func afferentFromGraph(p *Parsed, graph analyzer.FileDependencyGraph) map[string]int {
+	counts := map[string]int{}
 	for path, dependents := range graph.Afferent {
 		rel := relPath(p.Root, path)
 		n := 0

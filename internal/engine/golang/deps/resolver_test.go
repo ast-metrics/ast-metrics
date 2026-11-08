@@ -56,3 +56,25 @@ func TestFileDependencyResolverTellsTheStandardLibrary(t *testing.T) {
 		}
 	}
 }
+
+func TestFileDependencyResolverLeavesTestFilesOutOfPackages(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "scrape")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code := &pb.File{Path: filepath.Join(dir, "scrape.go"), ProgrammingLanguage: Language, Stmts: &pb.Stmts{}}
+	test := &pb.File{Path: filepath.Join(dir, "scrape_test.go"), ProgrammingLanguage: Language, IsTest: true, Stmts: &pb.Stmts{}}
+	user := &pb.File{Path: filepath.Join(root, "main.go"), ProgrammingLanguage: Language, Stmts: &pb.Stmts{}}
+	resolver := NewFileDependencyResolver().ForFiles([]*pb.File{code, test, user})
+	targets, handled := resolver.Resolve(user, &pb.StmtExternalDependency{Namespace: "example.com/demo/scrape"})
+	if !handled {
+		t.Fatal("expected the import to be handled")
+	}
+	if want := []string{code.Path}; !reflect.DeepEqual(targets, want) {
+		t.Fatalf("expected %v, got %v", want, targets)
+	}
+}

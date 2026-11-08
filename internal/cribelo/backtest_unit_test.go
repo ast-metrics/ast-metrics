@@ -11,7 +11,8 @@ import (
 func handBuiltBacktest() *Backtest {
 	lines := func(n float64) map[Feature]float64 { return map[Feature]float64{FeatureLinesAdded: n} }
 	return &Backtest{
-		Top: 1,
+		Top:   1,
+		Label: LabelFixed,
 		Changes: []ChangeEval{
 			{Files: []Sample{
 				{Path: "a", Added: 10, Values: map[Feature]float64{FeatureLinesAdded: 10, FeatureFixes90d: 3}, Fixed: true},
@@ -39,6 +40,9 @@ func TestEvaluateByHand(t *testing.T) {
 	// baseline reads the largest file: b (50, not fixed) then e (20, fixed)
 	assert.InDelta(t, 0.5, m.BaselineCover, 1e-12)
 	assert.InDelta(t, 70.0/95.0, m.BaselineShare, 1e-12)
+	// path order reads a (10, fixed) then d (10, not fixed)
+	assert.InDelta(t, 0.5, m.PathOrderCover, 1e-12)
+	assert.InDelta(t, 20.0/95.0, m.PathOrderShare, 1e-12)
 }
 
 func TestEvaluateFromIndex(t *testing.T) {

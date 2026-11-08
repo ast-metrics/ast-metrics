@@ -89,41 +89,62 @@ func applyNumstat(changes []Change, stats map[string]numstat) {
 	}
 }
 
-// parseHunks reads a unified diff and returns, per new path, the ranges of
-// changed lines in the new file. A pure deletion yields no range.
+// parseHunks reads a unified diff (made with -U0, so that a hunk holds
+// changed lines only) and returns, per new path, its hunks: the ranges of
+// changed lines in the new file, the ranges they replace in the old one, and
+// the lines themselves. A pure deletion yields a range of zero lines,
+// anchored on the line that follows. A deleted file has no new path and is
+// recorded under its old path.
 func parseHunks(out string) map[string][]Hunk {
 	hunks := map[string][]Hunk{}
-	current := ""
+	current, oldPath := "", ""
 	scanner := bufio.NewScanner(strings.NewReader(out))
 	scanner.Buffer(make([]byte, 1024*1024), 64*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
 		switch {
+		case strings.HasPrefix(line, "--- "):
+			oldPath = diffPath(strings.TrimPrefix(line, "--- "), "a/")
 		case strings.HasPrefix(line, "+++ "):
-			target := strings.TrimPrefix(line, "+++ ")
-			if target == "/dev/null" {
-				current = ""
-				continue
+			current = diffPath(strings.TrimPrefix(line, "+++ "), "b/")
+			if current == "" {
+				current = oldPath
 			}
-			target = strings.TrimPrefix(target, "b/")
-			if tab := strings.IndexByte(target, '\t'); tab >= 0 {
-				target = target[:tab]
-			}
-			current = target
-			if _, ok := hunks[current]; !ok {
-				hunks[current] = nil
+			if current != "" {
+				if _, ok := hunks[current]; !ok {
+					hunks[current] = nil
+				}
 			}
 		case strings.HasPrefix(line, "@@ ") && current != "":
 			if h, ok := parseHunkHeader(line); ok {
 				hunks[current] = append(hunks[current], h)
 			}
+		case current != "" && len(hunks[current]) > 0 && strings.HasPrefix(line, "+"):
+			last := &hunks[current][len(hunks[current])-1]
+			last.Added = append(last.Added, line[1:])
+		case current != "" && len(hunks[current]) > 0 && strings.HasPrefix(line, "-"):
+			last := &hunks[current][len(hunks[current])-1]
+			last.Removed = append(last.Removed, line[1:])
 		}
 	}
 	return hunks
 }
 
-// parseHunkHeader reads "@@ -a,b +c,d @@" and returns the new range [c, c+d-1].
-// A range of zero lines (pure deletion) is anchored on the line that follows.
+// diffPath reads the path of a "---" or "+++" line; "" for /dev/null.
+func diffPath(target, prefix string) string {
+	if target == "/dev/null" {
+		return ""
+	}
+	target = strings.TrimPrefix(target, prefix)
+	if tab := strings.IndexByte(target, '\t'); tab >= 0 {
+		target = target[:tab]
+	}
+	return target
+}
+
+// parseHunkHeader reads "@@ -a,b +c,d @@" and returns the new range [c, c+d-1]
+// and the old range [a, a+b-1]. A range of zero lines is anchored on the
+// line that follows (Start == End, with the matching count at zero).
 func parseHunkHeader(line string) (Hunk, bool) {
 	rest := strings.TrimPrefix(line, "@@ ")
 	end := strings.Index(rest, " @@")
@@ -131,10 +152,18 @@ func parseHunkHeader(line string) (Hunk, bool) {
 		return Hunk{}, false
 	}
 	parts := strings.Fields(rest[:end])
-	if len(parts) != 2 || !strings.HasPrefix(parts[1], "+") {
+	if len(parts) != 2 || !strings.HasPrefix(parts[0], "-") || !strings.HasPrefix(parts[1], "+") {
 		return Hunk{}, false
 	}
-	spec := strings.TrimPrefix(parts[1], "+")
+	var h Hunk
+	h.OldStart, h.OldEnd = parseRange(parts[0][1:])
+	h.Start, h.End = parseRange(parts[1][1:])
+	return h, true
+}
+
+// parseRange reads "start,count" or "start" and returns the inclusive range;
+// a count of zero gives start == end.
+func parseRange(spec string) (int, int) {
 	start, count := 0, 1
 	if comma := strings.IndexByte(spec, ','); comma >= 0 {
 		start, _ = strconv.Atoi(spec[:comma])
@@ -143,9 +172,9 @@ func parseHunkHeader(line string) (Hunk, bool) {
 		start, _ = strconv.Atoi(spec)
 	}
 	if count == 0 {
-		return Hunk{Start: start, End: start}, true
+		return start, start
 	}
-	return Hunk{Start: start, End: start + count - 1}, true
+	return start, start + count - 1
 }
 
 func applyHunks(changes []Change, hunks map[string][]Hunk) {

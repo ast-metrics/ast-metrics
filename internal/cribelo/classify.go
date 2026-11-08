@@ -64,7 +64,7 @@ var analyzedExtensions = map[string]bool{
 }
 
 var generatedPathPatterns = []string{
-	"vendor/", "node_modules/", "/dist/", "/build/", "__snapshots__/",
+	"vendor/", "third-party/", "third_party/", "node_modules/", "/dist/", "/build/", "__snapshots__/",
 	".pb.go", "_generated.", ".generated.", ".gen.go", ".min.js", ".min.css", ".d.ts",
 	"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "poetry.lock",
 }

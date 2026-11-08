@@ -63,7 +63,7 @@ func absF(x float64) float64 {
 // syntheticBacktest has n changes of four files each; the two files with the
 // most past fixes and complexity are the ones fixed later.
 func syntheticBacktest(n int) *Backtest {
-	b := &Backtest{Methodology: MethodologyVersion, Ref: "main", Top: 3, LeftOut: map[string]int{}}
+	b := &Backtest{Methodology: MethodologyVersion, Label: LabelFixed, Ref: "main", Top: 3, LeftOut: map[string]int{}}
 	for i := 0; i < n; i++ {
 		change := ChangeEval{Sha: "sha", Time: int64(1000 + i), Subject: "s"}
 		for j := 0; j < 4; j++ {

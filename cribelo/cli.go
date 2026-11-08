@@ -39,8 +39,8 @@ func Run(args []string, version string) int {
 	}
 	app := &cli.App{
 		Name:      "cribelo",
-		Usage:     "which files of this change are worth a human reader",
-		UsageText: "cribelo [options]            plan for the working tree against the base branch\n   cribelo skip|explain|backtest|calibrate",
+		Usage:     "the reading map of a change: what to read, in which order, and what the diff does not show",
+		UsageText: "cribelo [options]            plan for the working tree against the base branch\n   cribelo skip|explain|describe|backtest|calibrate",
 		Version:   core.Version,
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "dir", Aliases: []string{"C"}, Value: ".", Usage: "repository or directory inside it"},
@@ -48,9 +48,11 @@ func Run(args []string, version string) int {
 			&cli.StringFlag{Name: "format", Value: "text", Usage: "text, markdown or json"},
 			&cli.IntFlag{Name: "top", Value: 0, Usage: "read exactly this many files (default: every high file, at least 3)"},
 			&cli.DurationFlag{Name: "budget", Usage: "reading time available, e.g. 10m; overrides --top"},
-			&cli.StringFlag{Name: "fail-on", Usage: "fail when a file reaches this level: high, medium or never (default never)"},
+			&cli.StringFlag{Name: "fail-on", Usage: "fail when the change states one of these facts, comma separated: cycle, signature, history, dependency, library, clone, api, coverage"},
+			&cli.DurationFlag{Name: "fail-over", Usage: "fail when the reading time of the whole change is over this, e.g. 1h"},
 			&cli.StringFlag{Name: "weights", Usage: "weights file (default .cribelo/weights.json)"},
 			&cli.BoolFlag{Name: "no-clones", Usage: "skip duplicate detection"},
+			&cli.StringFlag{Name: "coverage", Usage: "coverage report to read the untested changed lines from (lcov, Cobertura, Clover or Go profile; default: the usual places; none to skip)"},
 			&cli.BoolFlag{Name: "no-color", Usage: "plain output"},
 		},
 		Before: func(c *cli.Context) error {
@@ -86,6 +88,18 @@ func Run(args []string, version string) int {
 				},
 			},
 			{
+				Name:  "describe",
+				Usage: "write the structural summary of the change, in Markdown, for the pull request description",
+				Action: func(c *cli.Context) error {
+					plan, err := runPlan(c)
+					if err != nil {
+						return err
+					}
+					fmt.Print(plan.Describe())
+					return nil
+				},
+			},
+			{
 				Name:      "explain",
 				Usage:     "show every signal behind one file's position",
 				ArgsUsage: "<file>",
@@ -116,6 +130,8 @@ func Run(args []string, version string) int {
 					&cli.StringFlag{Name: "ref", Usage: "main line to replay (default: the default branch)"},
 					&cli.IntFlag{Name: "max", Value: 300, Usage: "landings to replay"},
 					&cli.IntFlag{Name: "top", Value: 3, Usage: "size of the reading list measured"},
+					&cli.StringFlag{Name: "label", Value: "induced", Usage: "what counts as a file that needed a reader: induced (a later fix repaired lines this change wrote, SZZ) or fixed (a later fix touched the file)"},
+					&cli.IntFlag{Name: "workers", Usage: "landings replayed at once (default: half the CPUs, at most 8); lower it on a large repository to bound memory"},
 					&cli.StringFlag{Name: "format", Value: "text", Usage: "text or json"},
 				},
 				Action: func(c *cli.Context) error {
@@ -142,6 +158,7 @@ func Run(args []string, version string) int {
 					&cli.StringFlag{Name: "ref", Usage: "main line to replay (default: the default branch)"},
 					&cli.IntFlag{Name: "max", Value: 300, Usage: "landings to replay"},
 					&cli.IntFlag{Name: "top", Value: 3, Usage: "size of the reading list optimized"},
+					&cli.StringFlag{Name: "label", Value: "induced", Usage: "what counts as a file that needed a reader: induced (a later fix repaired lines this change wrote, SZZ) or fixed (a later fix touched the file)"},
 					&cli.BoolFlag{Name: "dry-run", Usage: "show the outcome without writing the weights"},
 				},
 				Action: func(c *cli.Context) error {
@@ -211,9 +228,11 @@ func runPlan(c *cli.Context) (*core.Plan, error) {
 		Top:         c.Int("top"),
 		Exact:       c.IsSet("top"),
 		Budget:      c.Duration("budget"),
-		FailOn:      c.String("fail-on"),
+		FailOn:      core.SplitList(c.String("fail-on")),
+		FailOver:    c.Duration("fail-over"),
 		WeightsPath: c.String("weights"),
 		Clones:      !c.Bool("no-clones"),
+		Coverage:    c.String("coverage"),
 	})
 }
 
@@ -231,7 +250,7 @@ func runBacktest(c *cli.Context) (*core.Backtest, error) {
 		}
 	}
 	return core.RunBacktest(repo, core.BacktestOptions{
-		Ref: c.String("ref"), Max: c.Int("max"), Top: c.Int("top"), Progress: progress,
+		Ref: c.String("ref"), Max: c.Int("max"), Top: c.Int("top"), Label: c.String("label"), Progress: progress, Workers: c.Int("workers"),
 	})
 }
 

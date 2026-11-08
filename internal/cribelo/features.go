@@ -1,6 +1,7 @@
 package cribelo
 
 import (
+	"os"
 	"path"
 	"sort"
 	"strings"
@@ -17,10 +18,22 @@ const Window int64 = 90 * 24 * 3600
 type TouchedFunction struct {
 	Name   string `json:"name"`
 	Line   int    `json:"line"`
+	End    int    `json:"end,omitempty"`
 	Before int    `json:"before"`
 	After  int    `json:"after"`
 	New    bool   `json:"new"`
+	// ToRead is the reading cost of the hunk lines inside the function.
+	ToRead int `json:"to_read,omitempty"`
+	// Glance marks a function that gained no decision and stays simple
+	// (cyclomatic complexity at most glanceComplexity): its lines are glanced
+	// at rather than read.
+	Glance bool `json:"glance,omitempty"`
 }
+
+// glanceComplexity is the cyclomatic complexity up to which a function that
+// gained no decision is glanced at rather than read. Measured on the bench:
+// such functions are repaired half as often as the others.
+const glanceComplexity = 3
 
 // FileReport is everything known about one ranked file.
 type FileReport struct {
@@ -37,6 +50,18 @@ type FileReport struct {
 	Contributions []Contribution      `json:"contributions"`
 	Functions     []TouchedFunction   `json:"functions,omitempty"`
 	Clone         *CloneMatch         `json:"clone,omitempty"`
+	// Hunks are the blocks of the diff with their nature; ToRead is the
+	// lines a reader spends on them once moves, renames, formatting and
+	// imports are set aside.
+	Hunks []HunkReport `json:"hunks,omitempty"`
+	// ToRead counts the lines to read closely; ToGlance the lines to glance
+	// at: in a function that gained no decision and stays simple, or outside
+	// every function (declarations, fields, data) with no decision.
+	ToRead   int                    `json:"to_read"`
+	ToGlance int                    `json:"to_glance"`
+	Natures  map[Nature]natureCount `json:"natures,omitempty"`
+	// Test marks a test file read along with the file it exercises.
+	Test bool `json:"test,omitempty"`
 }
 
 // Measure holds what the features are computed from.
@@ -52,6 +77,9 @@ type Measure struct {
 	Clones    *CloneIndex
 	// HeadSource reads the head content of a file for clone detection.
 	HeadSource func(rel string) []byte
+	// Moves knows the functions that moved within the change; nil when
+	// move detection is off.
+	Moves *MoveIndex
 }
 
 // features computes the raw feature values of one code change.
@@ -86,7 +114,7 @@ func (m *Measure) features(c Change) FileReport {
 			continue
 		}
 		after := cyclomatic(fn)
-		touched := TouchedFunction{Name: name, Line: start, After: after}
+		touched := TouchedFunction{Name: name, Line: start, End: end, After: after}
 		if baseFn, existed := baseFunctions[name]; existed {
 			touched.Before = cyclomatic(baseFn)
 			if after > touched.Before {
@@ -141,8 +169,132 @@ func (m *Measure) features(c Change) FileReport {
 		}
 	}
 
-	report.Minutes = readingMinutes(c.Added, c.Deleted)
+	language := languageOf(head, c.Path)
+	var idents identifierSets
+	if head != nil {
+		if source, err := os.ReadFile(head.Path); err == nil {
+			idents.head = identifiers(source)
+		}
+	}
+	if base != nil {
+		if source, err := os.ReadFile(base.Path); err == nil {
+			idents.base = identifiers(source)
+		}
+	}
+	report.Hunks = classifyHunks(c, language, m.Moves, idents)
+	report.Natures = countNatures(report.Hunks)
+	report.tally()
 	return report
+}
+
+// tally counts, from the hunks and the touched functions, the lines to read
+// closely and the lines to glance at, and the reading time.
+func (f *FileReport) tally() {
+	for i := range f.Functions {
+		fn := &f.Functions[i]
+		fn.ToRead = 0
+		fn.Glance = fn.growth() <= 0 && fn.After <= glanceComplexity
+	}
+	for j := range f.Hunks {
+		f.Hunks[j].Glance = 0
+	}
+	attributeReads(f.Functions, f.Hunks)
+	f.ToRead, f.ToGlance = 0, 0
+	for _, h := range f.Hunks {
+		f.ToRead += h.ReadCost() - h.Glance
+		f.ToGlance += h.Glance
+	}
+	f.Minutes = readingMinutes(f.ToRead, f.ToGlance)
+}
+
+// attributeReads charges each hunk's reading cost to the touched functions
+// it spans, line by line, the innermost function taking a nested line, and
+// counts the lines of the hunk that are glanced at: those in a glance
+// function, and those outside every function that hold no decision
+// (declarations, fields, constants, data). A hunk with no new-side span (a
+// pure deletion) goes to the function that holds its position.
+func attributeReads(functions []TouchedFunction, hunks []HunkReport) {
+	innermost := func(line int) int {
+		best := -1
+		for i, fn := range functions {
+			if line < fn.Line || line > fn.End {
+				continue
+			}
+			if best < 0 || fn.End-fn.Line < functions[best].End-functions[best].Line {
+				best = i
+			}
+		}
+		return best
+	}
+	for j := range hunks {
+		h := &hunks[j]
+		cost := h.ReadCost()
+		if cost == 0 {
+			continue
+		}
+		// The check of a rename and the look at where a block went are
+		// glances by construction; the lines a move edited on the way
+		// follow the rule of the function that holds them.
+		base := 0
+		switch h.Nature {
+		case NatureRename:
+			base = cost
+		case NatureMoved, NatureExtracted:
+			base = cost - h.New
+		}
+		h.Glance = base
+		cost -= base
+		if cost == 0 {
+			continue
+		}
+		span := h.End - h.Start + 1
+		if span < 1 {
+			span = 1
+		}
+		counts := map[int]int{}
+		glanced := 0
+		for line := h.Start; line < h.Start+span; line++ {
+			i := innermost(line)
+			switch {
+			case i >= 0:
+				counts[i]++
+				if functions[i].Glance {
+					glanced++
+				}
+			case !h.decides(line):
+				glanced++
+			}
+		}
+		for i, n := range counts {
+			functions[i].ToRead += cost * n / span
+		}
+		h.Glance += cost * glanced / span
+	}
+}
+
+// languageOf names the language of a file, from the parser when it saw the
+// file, from the extension otherwise.
+func languageOf(file *pb.File, rel string) string {
+	if file != nil && file.ProgrammingLanguage != "" {
+		return file.ProgrammingLanguage
+	}
+	switch strings.ToLower(path.Ext(rel)) {
+	case ".go":
+		return "Golang"
+	case ".php":
+		return "PHP"
+	case ".py":
+		return "Python"
+	case ".rs":
+		return "Rust"
+	case ".ts", ".tsx":
+		return "TypeScript"
+	case ".java":
+		return "Java"
+	case ".cs":
+		return "C#"
+	}
+	return ""
 }
 
 func (f TouchedFunction) growth() int {
@@ -159,11 +311,10 @@ func cyclomatic(fn *pb.StmtFunction) int {
 	return int(*fn.Stmts.Analyze.Complexity.Cyclomatic)
 }
 
-// readingMinutes estimates careful reading at about twenty changed lines a
-// minute, never less than a minute per file.
-func readingMinutes(added, deleted int) int {
-	lines := added + deleted
-	minutes := (lines + 19) / 20
+// readingMinutes estimates careful reading at about twenty lines a minute,
+// never less than a minute per file.
+func readingMinutes(read, glance int) int {
+	minutes := (read*3 + glance + 59) / 60
 	if minutes < 1 {
 		minutes = 1
 	}

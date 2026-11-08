@@ -42,6 +42,11 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 		if file == nil || path == "" || file.GetProgrammingLanguage() != Language {
 			continue
 		}
+		// A test file is part of its package for the compiler, but nothing
+		// that imports the package depends on it.
+		if file.GetIsTest() || strings.HasSuffix(path, "_test.go") {
+			continue
+		}
 		directory := filepath.Dir(path)
 		if importPath := modules.ImportPathOf(directory); importPath != "" {
 			packages.Add(importPath, path)

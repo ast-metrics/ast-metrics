@@ -83,8 +83,28 @@ var columns = []column{
 		cell:   func(f *FileReport) cell { return barCell(int(f.Values[FeatureMaxComplexity]), complexitySteps) },
 	},
 	{
-		header: "lines",
-		cell:   func(f *FileReport) cell { return barCell(f.Added+f.Deleted, lineSteps) },
+		// The bar measures what is left to read; the total follows when
+		// mechanical hunks were set aside.
+		header: "to read",
+		cell: func(f *FileReport) cell {
+			total, toRead := f.Added+f.Deleted, f.ToRead
+			if f.Hunks == nil {
+				toRead = total // no classification: everything is read
+			}
+			c := barCell(toRead, lineSteps)
+			if total != toRead+f.ToGlance {
+				suffix := fmt.Sprintf(" of %d", total)
+				c.text += styleDim.Render(suffix)
+				c.plain += suffix
+				c.markdown += suffix
+			}
+			return c
+		},
+	},
+	{
+		header: "glance",
+		cell:   func(f *FileReport) cell { return barCell(f.ToGlance, lineSteps) },
+		shown:  func(f *FileReport) bool { return f.ToGlance > 0 },
 	},
 	{
 		header: "used by",
@@ -130,6 +150,9 @@ var columns = []column{
 	{
 		header: "tests",
 		cell: func(f *FileReport) cell {
+			if f.Test {
+				return plainCell("")
+			}
 			if f.Values[FeatureUntested] > 0 {
 				return cell{styleBad.Render("✗"), "✗", "❌"}
 			}
@@ -169,9 +192,69 @@ func visibleColumns(files []*FileReport) []column {
 
 func isNew(f *FileReport) bool { return f.Status == "A" || f.Values[FeatureNewFile] > 0 }
 
+// tag is the word after a path in the table: new, test, or nothing.
+func tag(f *FileReport) string {
+	switch {
+	case f.Test:
+		return "test"
+	case isNew(f):
+		return "new"
+	}
+	return ""
+}
+
+// groupOf maps every path of the reading list to its group.
+func (p *Plan) groupOf() (map[string]int, bool) {
+	index := map[string]int{}
+	headers := false
+	for i, g := range p.Groups {
+		headers = headers || len(g.Files) > 1
+		for _, path := range g.Files {
+			index[path] = i
+		}
+	}
+	return index, headers
+}
+
 // summary is the first sentence of a plan: how much there is to read.
 func (p *Plan) summary() string {
 	return fmt.Sprintf("Read %d of %d changed %s, about %s.", p.ReadCount, p.Changed, plural(p.Changed, "file"), duration(p.ReadMinutes))
+}
+
+// mechanicalSentence says how many of the changed lines are to read closely,
+// how many to glance at, and what was set aside: moves, renames, formatting,
+// comments, imports. Empty when every line is to be read.
+func (p *Plan) mechanicalSentence() string {
+	if p.LinesChanged == 0 || (p.LinesToGlance == 0 && p.LinesToRead >= p.LinesChanged) {
+		return ""
+	}
+	head := fmt.Sprintf("%d of %d changed lines to read", p.LinesToRead, p.LinesChanged)
+	if p.LinesToGlance > 0 {
+		head = fmt.Sprintf("%d of %d changed lines to read closely, %d to glance at", p.LinesToRead, p.LinesChanged, p.LinesToGlance)
+	}
+	parts := p.mechanicalParts()
+	if len(parts) == 0 {
+		return head + "."
+	}
+	return fmt.Sprintf("%s: %s.", head, strings.Join(parts, ", "))
+}
+
+// mechanicalParts names what was set aside: the mechanical natures with
+// their hunk counts and the first renames.
+func (p *Plan) mechanicalParts() []string {
+	var parts []string
+	for _, n := range []Nature{NatureMoved, NatureExtracted, NatureRename, NatureFormat, NatureComment, NatureImports} {
+		if c, ok := p.Natures[n]; ok && c.Hunks > 0 {
+			parts = append(parts, natureLabel(n, c.Hunks))
+		}
+	}
+	for i, r := range p.Renames {
+		if i == 2 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s ×%d", r.Pair, r.Hunks))
+	}
+	return parts
 }
 
 // startSentence names the first file and why it comes first.
@@ -204,20 +287,18 @@ func (p *Plan) textTable(b *strings.Builder) {
 	for j, c := range cols {
 		widths[j] = width(c.header)
 	}
-	pathWidth, anyNew := 0, false
+	pathWidth, tagWidth := 0, 0
 	for i, f := range files {
 		pathWidth = max(pathWidth, len(f.Path))
-		anyNew = anyNew || isNew(f)
+		if t := tag(f); t != "" {
+			tagWidth = max(tagWidth, 2+len(t))
+		}
 		for j, c := range cols {
 			grid[i] = append(grid[i], c.cell(f))
 			widths[j] = max(widths[j], width(grid[i][j].plain))
 		}
 	}
 	indexWidth := len(fmt.Sprintf("%d", len(files)))
-	tagWidth := 0
-	if anyNew {
-		tagWidth = len("  new")
-	}
 
 	header := strings.Repeat(" ", 2+indexWidth+2+pathWidth+tagWidth)
 	for j, c := range cols {
@@ -225,12 +306,30 @@ func (p *Plan) textTable(b *strings.Builder) {
 	}
 	b.WriteString(styleDim.Render(strings.TrimRight(header, " ")) + "\n")
 
+	groupIndex, headers := p.groupOf()
+	lastGroup := -1
 	for i, f := range files {
-		tag := strings.Repeat(" ", tagWidth)
-		if isNew(f) {
-			tag = "  " + styleNew.Render("new")
+		if g, ok := groupIndex[f.Path]; ok && headers && g != lastGroup {
+			lastGroup = g
+			if title := groupTitle(p.Groups[g]); title != "" {
+				fmt.Fprintf(b, "%s%s\n", strings.Repeat(" ", 2+indexWidth+2), styleDim.Render("↳ "+title))
+			} else if i > 0 {
+				b.WriteString("\n")
+			}
 		}
-		line := fmt.Sprintf("  %s  %s%s%s", levelStyle(f.Level).Render(fmt.Sprintf("%*d", indexWidth, i+1)), stylePath.Render(f.Path), strings.Repeat(" ", pathWidth-len(f.Path)), tag)
+		word := strings.Repeat(" ", tagWidth)
+		if t := tag(f); t != "" {
+			style := styleDim
+			if t == "new" {
+				style = styleNew
+			}
+			word = "  " + style.Render(t) + strings.Repeat(" ", tagWidth-2-len(t))
+		}
+		index := levelStyle(f.Level).Render(fmt.Sprintf("%*d", indexWidth, i+1))
+		if f.Test {
+			index = styleDim.Render(fmt.Sprintf("%*d", indexWidth, i+1))
+		}
+		line := fmt.Sprintf("  %s  %s%s%s", index, stylePath.Render(f.Path), strings.Repeat(" ", pathWidth-len(f.Path)), word)
 		for j := range cols {
 			c := grid[i][j]
 			line += "  " + c.text
@@ -258,10 +357,21 @@ func (p *Plan) markdownTable(b *strings.Builder) {
 		}
 	}
 	b.WriteString("\n")
+	groupIndex, headers := p.groupOf()
+	lastGroup := -1
 	for i, f := range files {
+		if g, ok := groupIndex[f.Path]; ok && headers && g != lastGroup {
+			lastGroup = g
+			if title := groupTitle(p.Groups[g]); title != "" {
+				fmt.Fprintf(b, "| | *%s* |%s\n", title, strings.Repeat(" |", len(cols)))
+			}
+		}
 		path := "`" + f.Path + "`"
-		if isNew(f) {
+		switch tag(f) {
+		case "new":
 			path += " 🆕"
+		case "test":
+			path += " _test_"
 		}
 		fmt.Fprintf(b, "| %d | %s |", i+1, path)
 		for _, c := range cols {

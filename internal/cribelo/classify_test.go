@@ -75,7 +75,7 @@ func TestIsTestPath(t *testing.T) {
 }
 
 func TestIsGeneratedPath(t *testing.T) {
-	for _, p := range []string{"vendor/a.go", "pkg/vendor/a.go", "node_modules/x/y.ts", "web/dist/a.ts", "x/build/y.go",
+	for _, p := range []string{"vendor/a.go", "pkg/vendor/a.go", "third-party/github.com/x/y.go", "node_modules/x/y.ts", "web/dist/a.ts", "x/build/y.go",
 		"a/__snapshots__/b.ts", "api/x.pb.go", "x_generated.go", "x.generated.ts", "x.gen.go", "a.min.js", "go.sum", "sub/Cargo.lock"} {
 		assert.True(t, IsGeneratedPath(p), p)
 	}
