@@ -92,7 +92,7 @@ var columns = []column{
 				toRead = total // no classification: everything is read
 			}
 			c := barCell(toRead, lineSteps)
-			if total != toRead {
+			if total != toRead+f.ToGlance {
 				suffix := fmt.Sprintf(" of %d", total)
 				c.text += styleDim.Render(suffix)
 				c.plain += suffix
@@ -100,6 +100,11 @@ var columns = []column{
 			}
 			return c
 		},
+	},
+	{
+		header: "glance",
+		cell:   func(f *FileReport) cell { return barCell(f.ToGlance, lineSteps) },
+		shown:  func(f *FileReport) bool { return f.ToGlance > 0 },
 	},
 	{
 		header: "used by",
@@ -216,13 +221,27 @@ func (p *Plan) summary() string {
 	return fmt.Sprintf("Read %d of %d changed %s, about %s.", p.ReadCount, p.Changed, plural(p.Changed, "file"), duration(p.ReadMinutes))
 }
 
-// mechanicalSentence says how many of the changed lines are moves, renames,
-// formatting, comments or imports, and so need a glance rather than a
-// reading. Empty when every line is to be read.
+// mechanicalSentence says how many of the changed lines are to read closely,
+// how many to glance at, and what was set aside: moves, renames, formatting,
+// comments, imports. Empty when every line is to be read.
 func (p *Plan) mechanicalSentence() string {
-	if p.LinesChanged == 0 || p.LinesToRead >= p.LinesChanged {
+	if p.LinesChanged == 0 || (p.LinesToGlance == 0 && p.LinesToRead >= p.LinesChanged) {
 		return ""
 	}
+	head := fmt.Sprintf("%d of %d changed lines to read", p.LinesToRead, p.LinesChanged)
+	if p.LinesToGlance > 0 {
+		head = fmt.Sprintf("%d of %d changed lines to read closely, %d to glance at", p.LinesToRead, p.LinesChanged, p.LinesToGlance)
+	}
+	parts := p.mechanicalParts()
+	if len(parts) == 0 {
+		return head + "."
+	}
+	return fmt.Sprintf("%s: %s.", head, strings.Join(parts, ", "))
+}
+
+// mechanicalParts names what was set aside: the mechanical natures with
+// their hunk counts and the first renames.
+func (p *Plan) mechanicalParts() []string {
 	var parts []string
 	for _, n := range []Nature{NatureMoved, NatureExtracted, NatureRename, NatureFormat, NatureComment, NatureImports} {
 		if c, ok := p.Natures[n]; ok && c.Hunks > 0 {
@@ -235,7 +254,7 @@ func (p *Plan) mechanicalSentence() string {
 		}
 		parts = append(parts, fmt.Sprintf("%s ×%d", r.Pair, r.Hunks))
 	}
-	return fmt.Sprintf("%d of %d changed lines to read: %s.", p.LinesToRead, p.LinesChanged, strings.Join(parts, ", "))
+	return parts
 }
 
 // startSentence names the first file and why it comes first.

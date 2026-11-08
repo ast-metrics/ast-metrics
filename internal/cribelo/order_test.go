@@ -171,7 +171,7 @@ func TestDescribe(t *testing.T) {
 		Skipped: []Skipped{{Path: "README.md", Kind: "not analyzed", Reason: "not analyzed (docs, config, other languages)"}}}
 	orderReads(plan, map[string][]string{"app/handler.go": {"app/store.go"}}, nil, nil, 0)
 	out := plan.Describe()
-	assert.Contains(t, out, "5 files changed, 200 lines, 150 to read once the mechanical hunks are set aside.")
+	assert.Contains(t, out, "5 files changed, 200 lines, 150 to read closely.\nSet aside: 4 renames")
 	assert.Contains(t, out, "**Signatures and API**")
 	assert.Contains(t, out, "- `app/store.go`: Load() changed its parameters")
 	assert.Contains(t, out, "**Structure**")

@@ -34,18 +34,29 @@ const (
 // HunkReport is one hunk of a changed file, with its nature and the detail
 // that lets a reader check it in a glance.
 type HunkReport struct {
-	Start    int    `json:"start"`
-	End      int    `json:"end"`
-	OldStart int    `json:"old_start,omitempty"`
-	OldEnd   int    `json:"old_end,omitempty"`
-	Added    int    `json:"added"`
-	Deleted  int    `json:"deleted"`
-	Nature   Nature `json:"nature"`
-	Detail   string `json:"detail,omitempty"`
+	Start    int `json:"start"`
+	End      int `json:"end"`
+	OldStart int `json:"old_start,omitempty"`
+	OldEnd   int `json:"old_end,omitempty"`
+	Added    int `json:"added"`
+	Deleted  int `json:"deleted"`
+	// Code counts the added and deleted lines that hold code: neither blank,
+	// nor a comment, nor an import statement.
+	Code   int    `json:"code,omitempty"`
+	Nature Nature `json:"nature"`
+	Detail string `json:"detail,omitempty"`
 	// New counts the lines of a moved or extracted hunk that did not come
 	// along: edits made on the way, code around the moved functions. They
 	// are read.
 	New int `json:"new,omitempty"`
+	// Glance counts the lines of the reading cost that a reader glances at
+	// rather than reads: lines in a function that gained no decision and
+	// stays simple, or outside every function and holding no decision.
+	Glance int `json:"glance,omitempty"`
+	// counted says Code was measured; decided marks, per added line, whether
+	// it holds a decision token (a branch, a loop, a boolean operator).
+	counted bool
+	decided []bool
 	// renames are the "old → new" pairs of a hunk whose two sides have the
 	// same shape; the hunk becomes a rename once the change as a whole
 	// vouches for them (see resolveRenames).
@@ -62,15 +73,19 @@ type HunkReport struct {
 // Lines is the size of the hunk.
 func (h HunkReport) Lines() int { return h.Added + h.Deleted }
 
-// ReadCost is how many lines a reader spends on the hunk: every line of a
-// behavior hunk, a line per rename to check the new name, two lines per move
-// or extraction to see where the code went plus the lines that did not come
-// along, nothing for formatting and imports. Moves are counted after RAID
-// (Brito and Valente, 2021), which measured a moved block at two lines of
-// reading instead of fifteen.
+// ReadCost is how many lines a reader spends on the hunk: every code line of
+// a behavior hunk (blank, comment and import lines left out), a line per
+// rename to check the new name, two lines per move or extraction to see where
+// the code went plus the lines that did not come along, nothing for
+// formatting and imports. Moves are counted after RAID (Brito and Valente,
+// 2021), which measured a moved block at two lines of reading instead of
+// fifteen.
 func (h HunkReport) ReadCost() int {
 	switch h.Nature {
 	case NatureBehavior:
+		if h.counted {
+			return h.Code
+		}
 		return h.Lines()
 	case NatureRename:
 		return minInt(1, h.Lines())
@@ -270,6 +285,9 @@ func classifyHunks(c Change, language string, moves *MoveIndex, idents identifie
 			out = append(out, r)
 			continue
 		}
+		r.Code = codeLines(language, h.Added) + codeLines(language, h.Removed)
+		r.decided = decided(h.Added)
+		r.counted = true
 		added, removed := strings.Join(h.Added, "\n"), strings.Join(h.Removed, "\n")
 		rawAdded, rawRemoved := rawTokens(added), rawTokens(removed)
 		switch {
@@ -307,6 +325,49 @@ func classifyHunks(c Change, language string, moves *MoveIndex, idents identifie
 		out = append(out, r)
 	}
 	return out
+}
+
+// codeLines counts the lines that hold code: neither blank, nor a comment
+// (a line starting with a comment marker), nor an import statement of the
+// language.
+func codeLines(language string, lines []string) int {
+	shapes := importLines[language]
+	n := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || isCommentLine(trimmed) || matchesAny(line, shapes.statements) {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// decisionTokens are the tokens that open a branch or a loop in the
+// supported languages, and the boolean operators.
+var decisionTokens = regexp.MustCompile(`\b(if|elif|else|for|foreach|while|do|switch|select|match|case|when|catch|except|rescue)\b|&&|\|\||\?\?`)
+
+// decided marks the lines that hold a decision token, comments left out.
+func decided(lines []string) []bool {
+	out := make([]bool, len(lines))
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || isCommentLine(trimmed) {
+			continue
+		}
+		out[i] = decisionTokens.MatchString(line)
+	}
+	return out
+}
+
+// decides reports whether the added line at the given new-side position
+// holds a decision. A hunk that was not measured decides everywhere.
+func (h HunkReport) decides(line int) bool {
+	if !h.counted {
+		return true
+	}
+	i := line - h.Start
+	return i >= 0 && i < len(h.decided) && h.decided[i]
 }
 
 // moveDetail words a move: where the code came from, how many of its lines
@@ -390,11 +451,7 @@ func resolveRenames(files []FileReport) {
 		}
 		if changed {
 			f.Natures = countNatures(f.Hunks)
-			f.ToRead = 0
-			for _, h := range f.Hunks {
-				f.ToRead += h.ReadCost()
-			}
-			f.Minutes = readingMinutes(f.ToRead, 0)
+			f.tally()
 		}
 	}
 }

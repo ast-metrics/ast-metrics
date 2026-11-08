@@ -69,10 +69,11 @@ type Plan struct {
 	// LinesChanged counts the changed lines of the code and test files that
 	// were analyzed; LinesToRead what is left once the mechanical hunks are
 	// set aside. Tests count: a test placed after its file is read too.
-	LinesChanged int                    `json:"lines_changed"`
-	LinesToRead  int                    `json:"lines_to_read"`
-	Natures      map[Nature]natureCount `json:"natures,omitempty"`
-	Moves        []Move                 `json:"moves,omitempty"`
+	LinesChanged  int                    `json:"lines_changed"`
+	LinesToRead   int                    `json:"lines_to_read"`
+	LinesToGlance int                    `json:"lines_to_glance"`
+	Natures       map[Nature]natureCount `json:"natures,omitempty"`
+	Moves         []Move                 `json:"moves,omitempty"`
 	// Renames are the "old → new" pairs of the change with the number of
 	// hunks each one touches, most frequent first.
 	Renames []Rename `json:"renames,omitempty"`
@@ -265,6 +266,7 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	for _, report := range append(append([]FileReport{}, plan.Files...), tests...) {
 		plan.LinesChanged += report.Added + report.Deleted
 		plan.LinesToRead += report.ToRead
+		plan.LinesToGlance += report.ToGlance
 		for n, count := range report.Natures {
 			total := plan.Natures[n]
 			total.Hunks += count.Hunks

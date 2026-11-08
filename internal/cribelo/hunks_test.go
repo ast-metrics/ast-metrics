@@ -100,7 +100,8 @@ func TestClassifyHunksRename(t *testing.T) {
 	resolveRenames(other)
 	assert.Equal(t, NatureRename, other[0].Hunks[0].Nature)
 	assert.Equal(t, NatureRename, other[1].Hunks[0].Nature)
-	assert.Equal(t, 1, other[1].ToRead)
+	assert.Equal(t, 0, other[1].ToRead, "a rename is checked, not read")
+	assert.Equal(t, 1, other[1].ToGlance)
 
 	// Inconsistent mapping inside the hunk.
 	r = natureOf(t, "Golang", hunk([]string{`x := f(a, b)`}, []string{`y := f(a, a)`}))
@@ -366,7 +367,8 @@ func TestMovedHunkWithNewNameIsRead(t *testing.T) {
 	assert.Equal(t, NatureMoved, files[0].Hunks[0].Nature)
 	assert.Equal(t, 1, files[0].Hunks[0].New)
 	assert.Equal(t, "moved from old/cart.go:Total(), 1 line new (discount)", files[0].Hunks[0].Detail)
-	assert.Equal(t, 3, files[0].ToRead)
+	assert.Equal(t, 1, files[0].ToRead, "the line that did not come along is read")
+	assert.Equal(t, 2, files[0].ToGlance, "a look at where the block went")
 
 	// The line is carried when the change renamed rebate to discount.
 	files = append(report(), FileReport{Path: "a.go", Hunks: []HunkReport{{Added: 1, Deleted: 1, renames: []string{"rebate → discount"}}, {Added: 1, Deleted: 1, renames: []string{"rebate → discount"}}}})
@@ -374,7 +376,8 @@ func TestMovedHunkWithNewNameIsRead(t *testing.T) {
 	assert.Equal(t, NatureMoved, files[0].Hunks[0].Nature)
 	assert.Equal(t, 0, files[0].Hunks[0].New)
 	assert.Equal(t, "moved from old/cart.go:Total()", files[0].Hunks[0].Detail)
-	assert.Equal(t, 2, files[0].ToRead)
+	assert.Equal(t, 0, files[0].ToRead)
+	assert.Equal(t, 2, files[0].ToGlance)
 	assert.Equal(t, NatureRename, files[1].Hunks[0].Nature)
 }
 

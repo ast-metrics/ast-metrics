@@ -18,13 +18,16 @@ func (p *Plan) Describe() string {
 	fmt.Fprintf(&b, "%d %s changed", p.Changed, plural(p.Changed, "file"))
 	if p.LinesChanged > 0 {
 		fmt.Fprintf(&b, ", %d lines", p.LinesChanged)
-		if p.LinesToRead < p.LinesChanged {
-			fmt.Fprintf(&b, ", %d to read once the mechanical hunks are set aside", p.LinesToRead)
+		if p.LinesToRead+p.LinesToGlance < p.LinesChanged || p.LinesToGlance > 0 {
+			fmt.Fprintf(&b, ", %d to read closely", p.LinesToRead)
+			if p.LinesToGlance > 0 {
+				fmt.Fprintf(&b, " and %d to glance at", p.LinesToGlance)
+			}
 		}
 	}
 	b.WriteString(".\n")
-	if mechanical := p.mechanicalSentence(); mechanical != "" {
-		fmt.Fprintf(&b, "%s\n", strings.TrimPrefix(mechanical, fmt.Sprintf("%d of %d changed lines to read: ", p.LinesToRead, p.LinesChanged)))
+	if parts := p.mechanicalParts(); len(parts) > 0 {
+		fmt.Fprintf(&b, "Set aside: %s.\n", strings.Join(parts, ", "))
 	}
 
 	sections := []struct {
@@ -67,8 +70,13 @@ func (p *Plan) Describe() string {
 				if i == 0 && len(g.Files) > 1 && g.Linked {
 					note = ": the others use it"
 				}
-				if f := p.file(path); f != nil && f.Test {
-					note = " (test)"
+				if f := p.file(path); f != nil {
+					if f.Test {
+						note = " (test)"
+					}
+					if ranges := readRanges(f); ranges != "" {
+						note += ": " + ranges
+					}
 				}
 				fmt.Fprintf(&b, "%d. `%s`%s\n", n, path, note)
 			}
@@ -78,6 +86,59 @@ func (p *Plan) Describe() string {
 		fmt.Fprintf(&b, "\nLeft out: %s.\n", skipSummary(p.Skipped, ", "))
 	}
 	return b.String()
+}
+
+// readRanges words where the lines to read closely sit in a file: the
+// functions that hold some, or the line spans of the hunks that do, four at
+// most, and whether the rest is glanced at. Empty when the whole change is
+// read.
+func readRanges(f *FileReport) string {
+	if f.ToGlance == 0 {
+		return ""
+	}
+	var spans []string
+	more := 0
+	for _, fn := range f.Functions {
+		if fn.Glance || fn.ToRead == 0 {
+			continue
+		}
+		if len(spans) == 4 {
+			more++
+			continue
+		}
+		spans = append(spans, fmt.Sprintf("%s() l.%d", shortName(fn.Name), fn.Line))
+	}
+	if len(spans) > 0 {
+		text := "read " + strings.Join(spans, ", ")
+		if more > 0 {
+			text += fmt.Sprintf(" and %d more %s", more, plural(more, "function"))
+		}
+		return text + ", glance at the rest"
+	}
+	for _, h := range f.Hunks {
+		if h.ReadCost()-h.Glance <= 0 {
+			continue
+		}
+		if len(spans) == 4 {
+			more++
+			continue
+		}
+		if h.Added == 0 {
+			spans = append(spans, fmt.Sprintf("before line %d", h.Start))
+		} else if h.Start == h.End {
+			spans = append(spans, fmt.Sprintf("line %d", h.Start))
+		} else {
+			spans = append(spans, fmt.Sprintf("lines %d-%d", h.Start, h.End))
+		}
+	}
+	if len(spans) == 0 {
+		return "a glance is enough"
+	}
+	text := "read " + strings.Join(spans, ", ")
+	if more > 0 {
+		text += fmt.Sprintf(" and %d more %s", more, plural(more, "hunk"))
+	}
+	return text + ", glance at the rest"
 }
 
 // file finds a report by path.

@@ -60,9 +60,10 @@ type Sample struct {
 	Deleted int    `json:"deleted"`
 	// ToRead is what is left of the lines once the mechanical hunks are set
 	// aside; Natures counts those hunks.
-	ToRead  int                    `json:"to_read"`
-	Natures map[Nature]natureCount `json:"natures,omitempty"`
-	Values  map[Feature]float64    `json:"features"`
+	ToRead   int                    `json:"to_read"`
+	ToGlance int                    `json:"to_glance"`
+	Natures  map[Nature]natureCount `json:"natures,omitempty"`
+	Values   map[Feature]float64    `json:"features"`
 	// Fixed: a fix commit touched the file within the window.
 	Fixed bool `json:"fixed"`
 	// Induced: a fix within the window repaired lines this change wrote in
@@ -82,6 +83,7 @@ type FunctionSample struct {
 	After   int    `json:"after"`
 	New     bool   `json:"new,omitempty"`
 	ToRead  int    `json:"to_read"`
+	Glance  bool   `json:"glance,omitempty"`
 	Induced bool   `json:"induced,omitempty"`
 }
 
@@ -425,11 +427,11 @@ func replay(repo *Repo, landing Landing, config Config, history *History, affere
 	for i, c := range codeChanges {
 		report := reports[i]
 		sample := Sample{
-			Path: c.Path, Added: c.Added, Deleted: c.Deleted, ToRead: report.ToRead, Natures: report.Natures, Values: report.Values,
+			Path: c.Path, Added: c.Added, Deleted: c.Deleted, ToRead: report.ToRead, ToGlance: report.ToGlance, Natures: report.Natures, Values: report.Values,
 			Fixed: history.FixedAfter(c.Path, landing.Time, Window),
 		}
 		for _, fn := range report.Functions {
-			sample.Functions = append(sample.Functions, FunctionSample{Name: fn.Name, Line: fn.Line, End: fn.End, Before: fn.Before, After: fn.After, New: fn.New, ToRead: fn.ToRead})
+			sample.Functions = append(sample.Functions, FunctionSample{Name: fn.Name, Line: fn.Line, End: fn.End, Before: fn.Before, After: fn.After, New: fn.New, ToRead: fn.ToRead, Glance: fn.Glance})
 		}
 		eval.Files = append(eval.Files, sample)
 	}

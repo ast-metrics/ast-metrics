@@ -156,7 +156,7 @@ func (p *Plan) Explain(path string) (string, error) {
 			fmt.Fprintf(&b, "  %-56s %8s  %+.2f\n", c.Feature.Describe(), value, c.Logit)
 		}
 		if len(f.Hunks) > 0 {
-			fmt.Fprintf(&b, "\n%s%s\n", styleTitle.Render("Hunks"), styleDim.Render(fmt.Sprintf("  %d changed lines, %d to read", f.Added+f.Deleted, f.ToRead)))
+			fmt.Fprintf(&b, "\n%s%s\n", styleTitle.Render("Hunks"), styleDim.Render(fmt.Sprintf("  %d changed lines, %d to read closely, %d to glance at", f.Added+f.Deleted, f.ToRead, f.ToGlance)))
 			for _, h := range f.Hunks {
 				where := fmt.Sprintf("lines %d-%d", h.Start, h.End)
 				if h.Added == 0 {
@@ -167,6 +167,9 @@ func (p *Plan) Explain(path string) (string, error) {
 				detail := ""
 				if h.Detail != "" {
 					detail = "  " + styleDim.Render(h.Detail)
+				}
+				if h.Glance > 0 {
+					detail += "  " + styleDim.Render(fmt.Sprintf("read %d, glance at %d", h.ReadCost()-h.Glance, h.Glance))
 				}
 				fmt.Fprintf(&b, "  %-22s %-10s +%d/\u2212%d%s\n", where, h.Nature, h.Added, h.Deleted, detail)
 			}
@@ -184,13 +187,18 @@ func (p *Plan) Explain(path string) (string, error) {
 				if fn.New {
 					state = fmt.Sprintf("new, complexity %d", fn.After)
 				}
+				if fn.Glance {
+					state += styleDim.Render(fmt.Sprintf(", %d lines to glance at", fn.ToRead))
+				} else if fn.ToRead > 0 {
+					state += fmt.Sprintf(", %d lines to read", fn.ToRead)
+				}
 				fmt.Fprintf(&b, "  %-40s line %-5d %s\n", fn.Name, fn.Line, state)
 			}
 		}
 		if f.Clone != nil {
 			fmt.Fprintf(&b, "\n%s\n  %s is %d%% similar to %s:%d\n", styleTitle.Render("Possible duplicate"), f.Clone.Function, int(f.Clone.Similarity*100+0.5), f.Clone.Path, f.Clone.Line)
 		}
-		fmt.Fprintf(&b, "\n%s\n", styleDim.Render("Reading time assumes about twenty changed lines a minute. Weights: "+p.weightsLine()))
+		fmt.Fprintf(&b, "\n%s\n", styleDim.Render("Reading time assumes twenty lines read closely a minute, sixty glanced at. Weights: "+p.weightsLine()))
 		return b.String(), nil
 	}
 	for _, s := range p.Skipped {
