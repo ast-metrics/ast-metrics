@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRankOrdering(t *testing.T) {
@@ -139,23 +140,47 @@ func TestSkipReason(t *testing.T) {
 }
 
 func TestGate(t *testing.T) {
-	high := []FileReport{{Level: LevelLow}, {Level: LevelHigh}}
-	medium := []FileReport{{Level: LevelMedium}, {Level: LevelLow}}
-	low := []FileReport{{Level: LevelLow}}
+	facts := []Fact{{Kind: FactCycle, Path: "a.go", Text: "introduces a cycle: a.go → b.go → a.go"}, {Kind: FactSignature, Path: "c.go", Text: "F() changed, called by 2 files"}}
 
-	assert.Equal(t, "failed", gate(high, "high"))
-	assert.Equal(t, "passed", gate(medium, "high"))
-	assert.Equal(t, "passed", gate(low, "high"))
+	p := &Plan{ChangeMinutes: 71, Facts: facts}
+	p.gate(Options{})
+	assert.Equal(t, "", p.Gate, "no gate set, no verdict")
+	assert.Empty(t, p.GateReasons)
 
-	assert.Equal(t, "failed", gate(high, "medium"))
-	assert.Equal(t, "failed", gate(medium, "medium"))
-	assert.Equal(t, "failed", gate(medium, "any"))
-	assert.Equal(t, "passed", gate(low, "medium"))
+	p = &Plan{ChangeMinutes: 71, Facts: facts}
+	p.gate(Options{FailOver: time.Hour})
+	assert.Equal(t, "failed", p.Gate)
+	assert.Equal(t, []string{"reading time 1 h 11, over the 1 h allowed"}, p.GateReasons)
 
-	assert.Equal(t, "passed", gate(high, "never"))
-	assert.Equal(t, "passed", gate(high, ""))
-	assert.Equal(t, "passed", gate(high, "bogus"))
-	assert.Equal(t, "passed", gate(nil, "high"))
+	p = &Plan{ChangeMinutes: 48, Facts: facts}
+	p.gate(Options{FailOver: time.Hour, FailOn: []string{FactCycle}})
+	assert.Equal(t, "failed", p.Gate)
+	assert.Equal(t, []string{"a.go: introduces a cycle: a.go → b.go → a.go"}, p.GateReasons)
+
+	p = &Plan{ChangeMinutes: 48, Facts: facts}
+	p.gate(Options{FailOver: time.Hour, FailOn: []string{FactDependency}})
+	assert.Equal(t, "passed", p.Gate)
+	assert.Equal(t, "reading time 48 min of 1 h allowed, no dependency", p.gateTerms())
+
+	p = &Plan{}
+	p.gate(Options{FailOn: []string{FactCycle, FactSignature}})
+	assert.Equal(t, "passed", p.Gate, "nothing changed passes a gate that is set")
+	assert.Equal(t, "no cycle, no signature", p.gateTerms())
+}
+
+func TestGateFacts(t *testing.T) {
+	kinds, err := gateFacts([]string{"cycle", "never", "signature"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"cycle", "signature"}, kinds)
+
+	kinds, err = gateFacts([]string{"never"})
+	require.NoError(t, err)
+	assert.Empty(t, kinds)
+
+	_, err = gateFacts([]string{"high"})
+	assert.ErrorContains(t, err, "score level")
+	_, err = gateFacts([]string{"bogus"})
+	assert.ErrorContains(t, err, `unknown fact "bogus"`)
 }
 
 func TestPlanCountHighest(t *testing.T) {

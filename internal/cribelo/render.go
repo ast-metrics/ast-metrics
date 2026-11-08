@@ -78,11 +78,15 @@ func (p *Plan) Text() string {
 	}
 
 	b.WriteString("\n")
-	gateStyle := styleLow
-	if p.Gate == "failed" {
-		gateStyle = styleHigh
+	switch p.Gate {
+	case "failed":
+		fmt.Fprintf(&b, "Gate: %s\n", styleHigh.Render("failed"))
+		for _, reason := range p.GateReasons {
+			fmt.Fprintf(&b, "  %s\n", reason)
+		}
+	case "passed":
+		fmt.Fprintf(&b, "Gate: %s %s\n", styleLow.Render("passed"), styleDim.Render("("+p.gateTerms()+")"))
 	}
-	fmt.Fprintf(&b, "Gate: %s %s\n", gateStyle.Render(p.Gate), styleDim.Render(fmt.Sprintf("(%d high, %d medium, fail on %s)", p.Count(LevelHigh), p.Count(LevelMedium), p.FailOn)))
 	fmt.Fprintf(&b, "%s\n", styleDim.Render("Weights: "+p.weightsLine()))
 	return b.String()
 }
@@ -253,8 +257,11 @@ func (p *Plan) Markdown() string {
 		}
 		b.WriteString("\n</details>\n\n")
 	}
-	if p.Changed > 0 {
-		fmt.Fprintf(&b, "**Gate:** %s · %d high, %d medium\n\n", p.Gate, p.Count(LevelHigh), p.Count(LevelMedium))
+	switch p.Gate {
+	case "failed":
+		fmt.Fprintf(&b, "**Gate:** failed · %s\n\n", strings.Join(p.GateReasons, " · "))
+	case "passed":
+		fmt.Fprintf(&b, "**Gate:** passed · %s\n\n", p.gateTerms())
 	}
 	fmt.Fprintf(&b, "<sub>cribelo %s · methodology %s · %s · powered by AST Metrics</sub>\n", Version, p.Methodology, p.weightsLine())
 	return b.String()

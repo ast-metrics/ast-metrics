@@ -25,8 +25,12 @@ type Options struct {
 	Exact bool
 	// Budget is the reading time available; it overrides Top when set.
 	Budget time.Duration
-	// FailOn fails the gate when a file reaches this level: high, medium, never.
-	FailOn string
+	// FailOn lists the kinds of fact that fail the gate when the change
+	// states one (cycle, signature...). Empty sets no gate on facts.
+	FailOn []string
+	// FailOver fails the gate when the reading time of the whole change,
+	// every file with something to read, is above it. Zero sets no gate.
+	FailOver time.Duration
 	// WeightsPath overrides the repository's weights file.
 	WeightsPath string
 	// Clones enables clone detection against the whole project.
@@ -82,14 +86,21 @@ type Plan struct {
 	// signature that callers rely on.
 	Facts []Fact `json:"facts,omitempty"`
 	// Coverage is the report the coverage facts come from, when one was read.
-	Coverage     string `json:"coverage,omitempty"`
-	TestFiles    int    `json:"test_files"`
-	Gate         string `json:"gate"`
-	FailOn       string `json:"fail_on"`
-	Calibrated   bool   `json:"calibrated"`
-	TrainedOn    int    `json:"trained_on,omitempty"`
-	TrainedAt    string `json:"trained_at,omitempty"`
-	CloneIndexed int    `json:"clone_indexed"`
+	Coverage  string `json:"coverage,omitempty"`
+	TestFiles int    `json:"test_files"`
+	// ChangeMinutes is the reading time of the whole change, every file
+	// with something to read or glance at, budget or not.
+	ChangeMinutes int `json:"change_minutes"`
+	// Gate is empty when no gate is set, else "passed" or "failed";
+	// GateReasons says why it failed, one line per breach.
+	Gate            string   `json:"gate,omitempty"`
+	GateReasons     []string `json:"gate_reasons,omitempty"`
+	FailOn          []string `json:"fail_on,omitempty"`
+	FailOverMinutes int      `json:"fail_over_minutes,omitempty"`
+	Calibrated      bool     `json:"calibrated"`
+	TrainedOn       int      `json:"trained_on,omitempty"`
+	TrainedAt       string   `json:"trained_at,omitempty"`
+	CloneIndexed    int      `json:"clone_indexed"`
 }
 
 // Run builds the plan of the working tree against the base branch.
@@ -110,19 +121,19 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	if opts.Top == 0 {
 		opts.Top = 3
 	}
-	if opts.FailOn == "" {
+	if len(opts.FailOn) == 0 {
 		opts.FailOn = config.FailOn
 	}
-	if opts.FailOn == "" {
-		opts.FailOn = "never"
+	if opts.FailOn, err = gateFacts(opts.FailOn); err != nil {
+		return nil, err
+	}
+	if opts.FailOver == 0 && config.FailOver != "" {
+		if opts.FailOver, err = time.ParseDuration(config.FailOver); err != nil {
+			return nil, fmt.Errorf("%s: fail_over: %w", ConfigFile, err)
+		}
 	}
 	if opts.Coverage == "" {
 		opts.Coverage = config.Coverage
-	}
-	switch opts.FailOn {
-	case "high", "medium", "any", "never":
-	default:
-		return nil, fmt.Errorf("fail-on: unknown level %q (high, medium or never)", opts.FailOn)
 	}
 	if opts.Now.IsZero() {
 		opts.Now = time.Now()
@@ -165,11 +176,11 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 
 	plan := &Plan{
 		Methodology: MethodologyVersion, Base: baseRef, BaseSha: mergeBase, HeadSha: headSha,
-		Changed: len(changes), FailOn: opts.FailOn,
+		Changed:    len(changes),
 		Calibrated: weights.Calibrated, TrainedOn: weights.TrainedOn, TrainedAt: weights.TrainedAt,
 	}
 	if len(changes) == 0 {
-		plan.Gate = "passed"
+		plan.gate(opts)
 		return plan, nil
 	}
 
@@ -267,6 +278,9 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 		plan.LinesChanged += report.Added + report.Deleted
 		plan.LinesToRead += report.ToRead
 		plan.LinesToGlance += report.ToGlance
+		if report.ToRead+report.ToGlance > 0 {
+			plan.ChangeMinutes += report.Minutes
+		}
 		for n, count := range report.Natures {
 			total := plan.Natures[n]
 			total.Hunks += count.Hunks
@@ -317,7 +331,7 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 		return plan.Skipped[i].Path < plan.Skipped[j].Path
 	})
 
-	plan.Gate = gate(plan.Files, opts.FailOn)
+	plan.gate(opts)
 	return plan, nil
 }
 
@@ -463,23 +477,65 @@ func mechanicalReason(f FileReport) string {
 	return "mechanical changes only"
 }
 
-// gate is "failed" when a ranked file reaches the fail-on level.
-func gate(files []FileReport, failOn string) string {
-	var threshold Level
-	switch failOn {
-	case "high":
-		threshold = LevelHigh
-	case "medium", "any":
-		threshold = LevelMedium
-	default:
-		return "passed"
-	}
-	for _, f := range files {
-		if f.Level == LevelHigh || (threshold == LevelMedium && f.Level == LevelMedium) {
-			return "failed"
+// gateFacts checks the kinds of fact a gate may be set on. The levels of
+// the old gate are refused with a hint; "never" sets no gate.
+func gateFacts(kinds []string) ([]string, error) {
+	var out []string
+	for _, kind := range kinds {
+		switch kind {
+		case "never", "":
+		case "high", "medium", "any", "low":
+			return nil, fmt.Errorf("fail-on: %q is a score level, not a gate any more; name a fact (%s) or set --fail-over 1h", kind, strings.Join(factKinds, ", "))
+		default:
+			if _, ok := factOrder[kind]; !ok {
+				return nil, fmt.Errorf("fail-on: unknown fact %q (%s)", kind, strings.Join(factKinds, ", "))
+			}
+			out = append(out, kind)
 		}
 	}
-	return "passed"
+	return out, nil
+}
+
+// factKinds lists the kinds a gate may be set on, in display order.
+var factKinds = []string{FactCycle, FactSignature, FactHistory, FactDependency, FactLibrary, FactClone, FactAPI, FactCoverage}
+
+// gate applies the gate the options set: nothing when none is set, else
+// "failed" with one reason per breach, or "passed". The reading time is
+// the one of the whole change, not of the files that fit the budget: the
+// gate says whether the change is readable, not whether the plan is.
+func (p *Plan) gate(opts Options) {
+	p.FailOn = opts.FailOn
+	p.FailOverMinutes = budgetMinutes(Options{Budget: opts.FailOver})
+	if len(p.FailOn) == 0 && p.FailOverMinutes == 0 {
+		return
+	}
+	p.Gate = "passed"
+	if p.FailOverMinutes > 0 && p.ChangeMinutes > p.FailOverMinutes {
+		p.GateReasons = append(p.GateReasons, fmt.Sprintf("reading time %s, over the %s allowed", duration(p.ChangeMinutes), duration(p.FailOverMinutes)))
+	}
+	for _, kind := range p.FailOn {
+		for _, f := range p.Facts {
+			if f.Kind == kind {
+				p.GateReasons = append(p.GateReasons, fmt.Sprintf("%s: %s", f.Path, f.Text))
+			}
+		}
+	}
+	if len(p.GateReasons) > 0 {
+		p.Gate = "failed"
+	}
+}
+
+// gateTerms says what the gate checks, for a passed gate: "reading time
+// 48 min of 1 h allowed, no cycle".
+func (p *Plan) gateTerms() string {
+	var terms []string
+	if p.FailOverMinutes > 0 {
+		terms = append(terms, fmt.Sprintf("reading time %s of %s allowed", duration(p.ChangeMinutes), duration(p.FailOverMinutes)))
+	}
+	if len(p.FailOn) > 0 {
+		terms = append(terms, "no "+strings.Join(p.FailOn, ", no "))
+	}
+	return strings.Join(terms, ", ")
 }
 
 // Highest returns the level of the top ranked file, low when none.
