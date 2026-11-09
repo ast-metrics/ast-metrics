@@ -32,6 +32,23 @@ type Fact struct {
 	Text string `json:"text"`
 	// Files are the other files involved, when any.
 	Files []string `json:"files,omitempty"`
+	// marked is the sentence with its identifiers and paths between
+	// backticks, for Markdown.
+	marked string
+}
+
+// newFact builds a fact from a sentence whose identifiers and paths are set
+// between backticks: Text is the plain sentence, Markdown the marked one.
+func newFact(kind, path string, files []string, marked string) Fact {
+	return Fact{Kind: kind, Path: path, Files: files, Text: plain(marked), marked: marked}
+}
+
+// Markdown is the fact with its identifiers and paths as code.
+func (f Fact) Markdown() string {
+	if f.marked != "" {
+		return f.marked
+	}
+	return f.Text
 }
 
 const (
@@ -343,8 +360,8 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 			sort.Strings(members)
 			if key := strings.Join(members, "\x00"); !seenCycle[key] {
 				seenCycle[key] = true
-				cycles = append(cycles, Fact{Kind: FactCycle, Path: c.Path, Files: cycle,
-					Text: fmt.Sprintf("introduces a cycle: %s", strings.Join(shortChain(chain), " → "))})
+				cycles = append(cycles, newFact(FactCycle, c.Path, cycle,
+					fmt.Sprintf("introduces a cycle: %s", strings.Join(codeAll(shortChain(chain)), " → "))))
 			}
 		}
 		if len(newModules) > 0 {
@@ -373,8 +390,8 @@ func graphFacts(gs graphs, codeChanges []Change) []Fact {
 			}
 		}
 		if len(newLibs) > 0 {
-			facts = append(facts, Fact{Kind: FactLibrary, Path: c.Path, Files: newLibs,
-				Text: fmt.Sprintf("first use of %s in the repository", joinWords(newLibs, 3))})
+			facts = append(facts, newFact(FactLibrary, c.Path, newLibs,
+				fmt.Sprintf("first use of %s in the repository", joinWords(codeAll(newLibs), 3))))
 		}
 	}
 	sort.SliceStable(cycles, func(i, j int) bool { return len(cycles[i].Files) < len(cycles[j].Files) })
@@ -426,16 +443,16 @@ func dependencyFacts(perFile []Fact) []Fact {
 			if len(users[to]) >= 3 {
 				if !told[to] {
 					told[to] = true
-					facts = append(facts, Fact{Kind: FactDependency, Path: g.path, Files: users[to],
-						Text: fmt.Sprintf("%s is depended on by %s for the first time", to, joinWords(users[to], 3))})
+					facts = append(facts, newFact(FactDependency, g.path, users[to],
+						fmt.Sprintf("%s is depended on by %s for the first time", code(to), joinWords(codeAll(users[to]), 3))))
 				}
 				continue
 			}
 			targets = append(targets, to)
 		}
 		if len(targets) > 0 {
-			facts = append(facts, Fact{Kind: FactDependency, Path: g.path, Files: targets,
-				Text: fmt.Sprintf("%s depends on %s for the first time", m, joinWords(targets, 3))})
+			facts = append(facts, newFact(FactDependency, g.path, targets,
+				fmt.Sprintf("%s depends on %s for the first time", code(m), joinWords(codeAll(targets), 3))))
 		}
 	}
 	return facts
@@ -681,8 +698,8 @@ func cloneFacts(files []FileReport, changed map[string]bool) []Fact {
 		}
 		names := strings.SplitN(f.Clone.Function, " ~ ", 2)
 		from, to := names[0], names[len(names)-1]
-		facts = append(facts, Fact{Kind: FactClone, Path: f.Path, Files: []string{f.Clone.Path},
-			Text: fmt.Sprintf("%s() is %d%% similar to %s:%s(), which this change does not touch", shortName(from), int(f.Clone.Similarity*100+0.5), f.Clone.Path, shortName(to))})
+		facts = append(facts, newFact(FactClone, f.Path, []string{f.Clone.Path},
+			fmt.Sprintf("%s is %d%% similar to %s, which this change does not touch", code(shortName(from)+"()"), int(f.Clone.Similarity*100+0.5), code(f.Clone.Path+":"+shortName(to)+"()"))))
 	}
 	return facts
 }
@@ -821,11 +838,11 @@ func signatureFacts(gs graphs, head, base *Parsed, codeChanges []Change, names f
 					continue
 				}
 				if len(names().callersOf(name, c.Path)) == 0 {
-					unused = append(unused, shortName(name)+"()")
+					unused = append(unused, code(shortName(name)+"()"))
 				}
 			case !sameParameters(before, fn):
 				files, resolved := callers(name)
-				text := fmt.Sprintf("%s() %s", shortName(name), parameterChange(before, fn))
+				text := fmt.Sprintf("%s %s", code(shortName(name)+"()"), parameterChange(before, fn))
 				switch {
 				case len(files) > 0 && resolved:
 					text += fmt.Sprintf(", called from %d %s", len(files), plural(len(files), "file"))
@@ -834,7 +851,7 @@ func signatureFacts(gs graphs, head, base *Parsed, codeChanges []Change, names f
 				default:
 					text += ", no caller in the repository"
 				}
-				facts = append(facts, Fact{Kind: FactSignature, Path: c.Path, Files: files, Text: text})
+				facts = append(facts, newFact(FactSignature, c.Path, files, text))
 			}
 		}
 		if len(unused) > 0 && !isConfigFile(c.Path) {
@@ -842,7 +859,7 @@ func signatureFacts(gs graphs, head, base *Parsed, codeChanges []Change, names f
 			if len(shown) > 3 {
 				shown = append(append([]string{}, shown[:3]...), fmt.Sprintf("+%d more", len(unused)-3))
 			}
-			facts = append(facts, Fact{Kind: FactAPI, Path: c.Path, Text: fmt.Sprintf("%d new exported %s called nowhere yet: %s", len(unused), plural(len(unused), "function"), strings.Join(shown, ", "))})
+			facts = append(facts, newFact(FactAPI, c.Path, nil, fmt.Sprintf("%d new exported %s called nowhere yet: %s", len(unused), plural(len(unused), "function"), strings.Join(shown, ", "))))
 		}
 	}
 	return facts
@@ -917,10 +934,10 @@ func parameterChange(before, after *pb.StmtFunction) string {
 	}
 	var notes []string
 	if len(added) > 0 {
-		notes = append(notes, "adds "+joinWords(added, 3))
+		notes = append(notes, "adds "+joinWords(codeAll(added), 3))
 	}
 	if len(dropped) > 0 {
-		notes = append(notes, "drops "+joinWords(dropped, 3))
+		notes = append(notes, "drops "+joinWords(codeAll(dropped), 3))
 	}
 	if len(notes) == 0 && len(before.Parameters) == len(after.Parameters) {
 		notes = append(notes, "types changed")

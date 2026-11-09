@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime/pprof"
 	"time"
 
@@ -53,6 +54,7 @@ func Run(args []string, version string) int {
 			&cli.StringFlag{Name: "weights", Usage: "weights file (default .cribelo/weights.json)"},
 			&cli.BoolFlag{Name: "no-clones", Usage: "skip duplicate detection"},
 			&cli.StringFlag{Name: "coverage", Usage: "coverage report to read the untested changed lines from (lcov, Cobertura, Clover or Go profile; default: the usual places; none to skip)"},
+			&cli.StringFlag{Name: "pull-request", Usage: "address of the pull or merge request, to link the Markdown plan to its diff (default: read from GitHub Actions or GitLab CI; none for no link)"},
 			&cli.BoolFlag{Name: "no-color", Usage: "plain output"},
 		},
 		Before: func(c *cli.Context) error {
@@ -223,7 +225,7 @@ func runPlan(c *cli.Context) (*core.Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	return core.Run(repo, core.Options{
+	plan, err := core.Run(repo, core.Options{
 		Base:        c.String("base"),
 		Top:         c.Int("top"),
 		Exact:       c.IsSet("top"),
@@ -234,6 +236,42 @@ func runPlan(c *cli.Context) (*core.Plan, error) {
 		Clones:      !c.Bool("no-clones"),
 		Coverage:    c.String("coverage"),
 	})
+	if err != nil {
+		return nil, err
+	}
+	// An address given on the command line has to be one; what the CI says
+	// is used when it makes sense and left alone otherwise.
+	given := c.String("pull-request")
+	if address := pullRequestAddress(given, os.Getenv); address != "" {
+		links, err := core.PullRequestLinks(address, plan.HeadSha)
+		if err != nil && given != "" {
+			return nil, err
+		}
+		plan.Links = links
+	}
+	return plan, nil
+}
+
+var pullRef = regexp.MustCompile(`^refs/pull/(\d+)/`)
+
+// pullRequestAddress is the address of the pull request under review: the
+// one given, or the one the CI job runs for. Empty when there is none.
+func pullRequestAddress(given string, env func(string) string) string {
+	switch {
+	case given == "none":
+		return ""
+	case given != "":
+		return given
+	}
+	if server, repository := env("GITHUB_SERVER_URL"), env("GITHUB_REPOSITORY"); env("GITHUB_ACTIONS") == "true" && server != "" && repository != "" {
+		if m := pullRef.FindStringSubmatch(env("GITHUB_REF")); m != nil {
+			return server + "/" + repository + "/pull/" + m[1]
+		}
+	}
+	if project, iid := env("CI_MERGE_REQUEST_PROJECT_URL"), env("CI_MERGE_REQUEST_IID"); project != "" && iid != "" {
+		return project + "/-/merge_requests/" + iid
+	}
+	return ""
 }
 
 func runBacktest(c *cli.Context) (*core.Backtest, error) {

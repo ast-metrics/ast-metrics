@@ -58,7 +58,9 @@ func TestAttributeReadsSplitsAHunkOverTheFunctionsItSpans(t *testing.T) {
 		{Start: 60, End: 60, Added: 0, Deleted: 4, Code: 4, counted: true, Nature: NatureBehavior},
 		{Start: 12, End: 12, Added: 1, Nature: NatureFormat},
 	}
-	attributeReads(functions, hunks)
+	read, glanced := spansOf(attributeReads(functions, hunks))
+	assert.Equal(t, []LineRange{{4, 5}, {10, 19}}, read, "the two branching lines of the header, and the function that is not glanced at")
+	assert.Equal(t, []LineRange{{1, 3}, {6, 9}, {20, 50}, {60, 60}}, glanced, "everything else, never across a span to read closely")
 	assert.Equal(t, 10, functions[0].ToRead, "lines 10-19")
 	assert.Equal(t, 15, functions[1].ToRead, "lines 30-49 minus the inner function")
 	assert.Equal(t, 5, functions[2].ToRead, "lines 35-39 go to the innermost function")
@@ -92,6 +94,8 @@ func TestTallySplitsReadAndGlance(t *testing.T) {
 	assert.True(t, f.Functions[3].Glance)
 	assert.False(t, f.Functions[4].Glance)
 	assert.Equal(t, 2, f.Minutes, "36 lines read at 20 a minute, 9 glanced at 60")
+	assert.Equal(t, []LineRange{{12, 21}, {60, 64}, {100, 119}, {140, 140}}, f.Ranges, "the spans to read closely are the hunk lines of the functions that are read, and the top-level conditional")
+	assert.Equal(t, []LineRange{{41, 41}, {90, 92}, {130, 133}, {141, 141}}, f.GlanceRanges)
 }
 
 func TestCodeLinesLeaveOutBlankCommentAndImportLines(t *testing.T) {

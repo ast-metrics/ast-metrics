@@ -213,9 +213,9 @@ func TestParameterChange(t *testing.T) {
 	}
 	assert.True(t, sameParameters(params("a", "b"), params("x", "y")), "a rename is not a signature change")
 	assert.False(t, sameParameters(params("a"), params("a", "b")))
-	assert.Equal(t, "went from 1 to 2 parameters (adds b)", parameterChange(params("a"), params("a", "b")))
-	assert.Equal(t, "went from 2 to 1 parameter (drops b)", parameterChange(params("a", "b"), params("a")))
-	assert.Equal(t, "went from 0 to 1 parameter (adds ctx)", parameterChange(params(), params("ctx")))
+	assert.Equal(t, "went from 1 to 2 parameters (adds `b`)", parameterChange(params("a"), params("a", "b")))
+	assert.Equal(t, "went from 2 to 1 parameter (drops `b`)", parameterChange(params("a", "b"), params("a")))
+	assert.Equal(t, "went from 0 to 1 parameter (adds `ctx`)", parameterChange(params(), params("ctx")))
 	assert.Equal(t, "a, b and c", joinWords([]string{"a", "b", "c"}, 3))
 	assert.Equal(t, "a, b, c and 2 more", joinWords([]string{"a", "b", "c", "d", "e"}, 3))
 }
@@ -273,6 +273,7 @@ func TestHistoryFactsCountFixesOfAFunction(t *testing.T) {
 	require.Len(t, facts, 1)
 	assert.Equal(t, FactHistory, facts[0].Kind)
 	assert.Equal(t, "Parse() was fixed 2 times in the past year, once by a revert", facts[0].Text)
+	assert.Equal(t, "`Parse()` was fixed 2 times in the past year, once by a revert", facts[0].Markdown())
 
 	// Outside the window, nothing is said.
 	later := time.Date(2028, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
@@ -341,7 +342,7 @@ func TestIsConfigFile(t *testing.T) {
 }
 
 func TestHistoryTextIsOneLinePerFile(t *testing.T) {
-	assert.Equal(t, "Parse() was fixed 2 times in the past year, once by a revert", historyText([]fixedFunction{{name: "Parse", fixes: 2, reverts: 1}}))
-	assert.Equal(t, "getDocBlockFromMethod() was fixed 6 times in the past year, findDocBlock() 4 times, +3 more functions",
+	assert.Equal(t, "`Parse()` was fixed 2 times in the past year, once by a revert", historyText([]fixedFunction{{name: "Parse", fixes: 2, reverts: 1}}))
+	assert.Equal(t, "`getDocBlockFromMethod()` was fixed 6 times in the past year, `findDocBlock()` 4 times, +3 more functions",
 		historyText([]fixedFunction{{name: "findDocBlock", fixes: 4}, {name: "getType", fixes: 2}, {name: "getDocBlockFromMethod", fixes: 6}, {name: "a", fixes: 2}, {name: "b", fixes: 2}}))
 }

@@ -55,8 +55,11 @@ type HunkReport struct {
 	Glance int `json:"glance,omitempty"`
 	// counted says Code was measured; decided marks, per added line, whether
 	// it holds a decision token (a branch, a loop, a boolean operator).
+	// located marks, per added line, whether a reader is pointed to it: a
+	// line of code that is more than a delimiter or a package clause.
 	counted bool
 	decided []bool
+	located []bool
 	// renames are the "old → new" pairs of a hunk whose two sides have the
 	// same shape; the hunk becomes a rename once the change as a whole
 	// vouches for them (see resolveRenames).
@@ -285,7 +288,11 @@ func classifyHunks(c Change, language string, moves *MoveIndex, idents identifie
 			out = append(out, r)
 			continue
 		}
-		r.Code = codeLines(language, h.Added) + codeLines(language, h.Removed)
+		r.located = codeMarks(language, h.Added)
+		r.Code = count(r.located) + codeLines(language, h.Removed)
+		for i, line := range h.Added {
+			r.located[i] = r.located[i] && !bareLine.MatchString(line)
+		}
 		r.decided = decided(h.Added)
 		r.counted = true
 		added, removed := strings.Join(h.Added, "\n"), strings.Join(h.Removed, "\n")
@@ -327,20 +334,48 @@ func classifyHunks(c Change, language string, moves *MoveIndex, idents identifie
 	return out
 }
 
-// codeLines counts the lines that hold code: neither blank, nor a comment
+// codeMarks marks the lines that hold code: neither blank, nor a comment
 // (a line starting with a comment marker), nor an import statement of the
 // language.
-func codeLines(language string, lines []string) int {
+func codeMarks(language string, lines []string) []bool {
 	shapes := importLines[language]
-	n := 0
-	for _, line := range lines {
+	out := make([]bool, len(lines))
+	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || isCommentLine(trimmed) || matchesAny(line, shapes.statements) {
-			continue
+		out[i] = trimmed != "" && !isCommentLine(trimmed) && !matchesAny(line, shapes.statements)
+	}
+	return out
+}
+
+// codeLines counts the lines that hold code.
+func codeLines(language string, lines []string) int {
+	return count(codeMarks(language, lines))
+}
+
+func count(marks []bool) int {
+	n := 0
+	for _, mark := range marks {
+		if mark {
+			n++
 		}
-		n++
 	}
 	return n
+}
+
+// bareLine is a line of code that says nothing on its own: closing or
+// opening delimiters, the package clause of a file.
+var bareLine = regexp.MustCompile(`^\s*([(){}\[\];,]+|package\s+[\w.]+;?)\s*$`)
+
+// locates reports whether the line at the given new-side position is worth
+// pointing a reader to: an added line of code that is more than a
+// delimiter, the place of a pure deletion, any line of a hunk that was not
+// measured.
+func (h HunkReport) locates(line int) bool {
+	if !h.counted || h.Added == 0 || h.located == nil {
+		return true
+	}
+	i := line - h.Start
+	return i >= 0 && i < len(h.located) && h.located[i]
 }
 
 // decisionTokens are the tokens that open a branch or a loop in the
