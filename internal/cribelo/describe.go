@@ -43,7 +43,7 @@ func (p *Plan) Describe() string {
 		for _, f := range p.Facts {
 			for _, kind := range section.kinds {
 				if f.Kind == kind {
-					lines = append(lines, fmt.Sprintf("- `%s`: %s", f.Path, f.Text))
+					lines = append(lines, fmt.Sprintf("- `%s`: %s", f.Path, f.Markdown()))
 				}
 			}
 		}
@@ -106,7 +106,7 @@ func readRanges(f *FileReport) string {
 			more++
 			continue
 		}
-		spans = append(spans, fmt.Sprintf("%s() l.%d", shortName(fn.Name), fn.Line))
+		spans = append(spans, fmt.Sprintf("%s l.%d", code(shortName(fn.Name)+"()"), fn.Line))
 	}
 	if len(spans) > 0 {
 		text := "read " + strings.Join(spans, ", ")

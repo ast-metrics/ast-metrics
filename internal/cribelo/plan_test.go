@@ -241,7 +241,7 @@ func TestRunEndToEnd(t *testing.T) {
 
 	// renders
 	assert.Contains(t, plan.Markdown(), "## Cribelo: read 3 of 8 changed files")
-	assert.Contains(t, plan.Text(), "Start with svc/svc.go:")
+	assert.Regexp(t, `1  svc/svc\.go +\d+-\d+\n`, plan.Text())
 	js, err := plan.JSON()
 	require.NoError(t, err)
 	assert.True(t, json.Valid([]byte(js)))

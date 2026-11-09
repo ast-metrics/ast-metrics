@@ -30,6 +30,18 @@ type TouchedFunction struct {
 	Glance bool `json:"glance,omitempty"`
 }
 
+// LineRange is a span of lines of the new version of a file, both ends
+// included.
+type LineRange struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
+}
+
+// rangeGap is the number of lines two spans to read may be apart and still
+// be told as one: the closing brace, the blank line and the comment between
+// two functions are not worth a second span.
+const rangeGap = 3
+
 // glanceComplexity is the cyclomatic complexity up to which a function that
 // gained no decision is glanced at rather than read. Measured on the bench:
 // such functions are repaired half as often as the others.
@@ -57,9 +69,14 @@ type FileReport struct {
 	// ToRead counts the lines to read closely; ToGlance the lines to glance
 	// at: in a function that gained no decision and stays simple, or outside
 	// every function (declarations, fields, data) with no decision.
-	ToRead   int                    `json:"to_read"`
-	ToGlance int                    `json:"to_glance"`
-	Natures  map[Nature]natureCount `json:"natures,omitempty"`
+	ToRead   int `json:"to_read"`
+	ToGlance int `json:"to_glance"`
+	// Ranges are the line spans of the new version that hold the code to
+	// read closely, in order; GlanceRanges those that hold the code to
+	// glance at. The two never overlap.
+	Ranges       []LineRange            `json:"read_ranges,omitempty"`
+	GlanceRanges []LineRange            `json:"glance_ranges,omitempty"`
+	Natures      map[Nature]natureCount `json:"natures,omitempty"`
 	// Test marks a test file read along with the file it exercises.
 	Test bool `json:"test,omitempty"`
 }
@@ -198,7 +215,7 @@ func (f *FileReport) tally() {
 	for j := range f.Hunks {
 		f.Hunks[j].Glance = 0
 	}
-	attributeReads(f.Functions, f.Hunks)
+	f.Ranges, f.GlanceRanges = spansOf(attributeReads(f.Functions, f.Hunks))
 	f.ToRead, f.ToGlance = 0, 0
 	for _, h := range f.Hunks {
 		f.ToRead += h.ReadCost() - h.Glance
@@ -212,8 +229,14 @@ func (f *FileReport) tally() {
 // counts the lines of the hunk that are glanced at: those in a glance
 // function, and those outside every function that hold no decision
 // (declarations, fields, constants, data). A hunk with no new-side span (a
-// pure deletion) goes to the function that holds its position.
-func attributeReads(functions []TouchedFunction, hunks []HunkReport) {
+// pure deletion) goes to the function that holds its position. It returns
+// where the reading happens: the lines of code read closely, those glanced
+// at, and the filler, changed lines a reader is not pointed to (blank lines,
+// comments, delimiters). A move that was edited on the way is read closely
+// over every line it has in a function to read, since the edited ones are
+// not located.
+func attributeReads(functions []TouchedFunction, hunks []HunkReport) (closely, glance []int, filler map[int]bool) {
+	filler = map[int]bool{}
 	innermost := func(line int) int {
 		best := -1
 		for i, fn := range functions {
@@ -244,9 +267,6 @@ func attributeReads(functions []TouchedFunction, hunks []HunkReport) {
 		}
 		h.Glance = base
 		cost -= base
-		if cost == 0 {
-			continue
-		}
 		span := h.End - h.Start + 1
 		if span < 1 {
 			span = 1
@@ -254,22 +274,87 @@ func attributeReads(functions []TouchedFunction, hunks []HunkReport) {
 		counts := map[int]int{}
 		glanced := 0
 		for line := h.Start; line < h.Start+span; line++ {
-			i := innermost(line)
-			switch {
-			case i >= 0:
-				counts[i]++
-				if functions[i].Glance {
-					glanced++
+			read := false
+			if cost > 0 {
+				if i := innermost(line); i >= 0 {
+					counts[i]++
+					read = !functions[i].Glance
+				} else {
+					read = h.decides(line)
 				}
-			case !h.decides(line):
+			}
+			if !read {
 				glanced++
 			}
+			switch {
+			case !h.locates(line):
+				filler[line] = true
+			case read:
+				closely = append(closely, line)
+			default:
+				glance = append(glance, line)
+			}
+		}
+		if cost == 0 {
+			continue
 		}
 		for i, n := range counts {
 			functions[i].ToRead += cost * n / span
 		}
 		h.Glance += cost * glanced / span
 	}
+	return closely, glance, filler
+}
+
+// lineRanges folds lines into spans. Two lines fall in the same span when
+// they are at most rangeGap apart, or when only filler separates them: the
+// comment above a function does not cut a span in two. A span of apart
+// between two lines always does.
+func lineRanges(lines []int, filler map[int]bool, apart ...LineRange) []LineRange {
+	sort.Ints(lines)
+	joins := func(from, to int) bool {
+		for _, r := range apart {
+			if r.Start > from && r.Start < to {
+				return false
+			}
+		}
+		if to-from <= rangeGap+1 {
+			return true
+		}
+		for line := from + 1; line < to; line++ {
+			if !filler[line] {
+				return false
+			}
+		}
+		return true
+	}
+	var out []LineRange
+	for _, line := range lines {
+		if n := len(out); n > 0 && joins(out[n-1].End, line) {
+			out[n-1].End = max(out[n-1].End, line)
+			continue
+		}
+		out = append(out, LineRange{Start: line, End: line})
+	}
+	return out
+}
+
+// spansOf turns the lines read closely and the lines glanced at into
+// spans. A line to glance at that a span to read closely already covers is
+// read with it, and no span to glance at runs over one to read closely.
+func spansOf(closely, glance []int, filler map[int]bool) (read, glanced []LineRange) {
+	read = lineRanges(closely, filler)
+	var left []int
+next:
+	for _, line := range glance {
+		for _, r := range read {
+			if line >= r.Start && line <= r.End {
+				continue next
+			}
+		}
+		left = append(left, line)
+	}
+	return read, lineRanges(left, filler, read...)
 }
 
 // languageOf names the language of a file, from the parser when it saw the

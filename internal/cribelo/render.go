@@ -54,12 +54,8 @@ func (p *Plan) Text() string {
 			b.WriteString(mechanical + "\n")
 		}
 	} else {
-		b.WriteString(styleTitle.Render(p.summary()) + "\n")
-		if mechanical := p.mechanicalSentence(); mechanical != "" {
-			b.WriteString(mechanical + "\n")
-		}
-		b.WriteString(p.startSentence("") + "\n\n")
-		p.textTable(&b)
+		b.WriteString(styleTitle.Render(p.summary()) + "\n\n")
+		p.textReading(&b)
 		if len(p.Facts) > 0 {
 			fmt.Fprintf(&b, "\n%s%s\n", styleTitle.Render("Worth knowing"), styleDim.Render("  true by construction, not predicted"))
 			for _, f := range factsToShow(p.Facts) {
@@ -116,7 +112,7 @@ func skipSummary(skipped []Skipped, sep string) string {
 	})
 	parts := make([]string, 0, len(reasons))
 	for _, r := range reasons {
-		parts = append(parts, fmt.Sprintf("%s %d", r, counts[r]))
+		parts = append(parts, fmt.Sprintf("%d %s", counts[r], r))
 	}
 	return strings.Join(parts, sep)
 }
@@ -226,16 +222,12 @@ func (p *Plan) Markdown() string {
 	} else {
 		lead := p.summary()
 		fmt.Fprintf(&b, "## Cribelo: %s\n\n", strings.TrimSuffix(strings.ToLower(lead[:1])+lead[1:], "."))
-		if mechanical := p.mechanicalSentence(); mechanical != "" {
-			fmt.Fprintf(&b, "%s\n\n", mechanical)
-		}
-		fmt.Fprintf(&b, "%s\n\n", p.startSentence("`"))
-		p.markdownTable(&b)
+		p.markdownReading(&b)
 		b.WriteString("\n")
 		if len(p.Facts) > 0 {
 			b.WriteString("**Worth knowing**\n\n")
 			for _, f := range p.Facts {
-				fmt.Fprintf(&b, "- `%s`: %s\n", f.Path, f.Text)
+				fmt.Fprintf(&b, "- `%s`: %s\n", f.Path, f.Markdown())
 			}
 			b.WriteString("\n")
 		}
@@ -289,17 +281,18 @@ func factsToShow(facts []Fact) []Fact {
 	return facts
 }
 
-// moveLine words one move for a report.
+// moveLine words one move for a report; quote goes around each function
+// with its file.
 func moveLine(m Move, quote string) string {
-	from := fmt.Sprintf("%s%s%s:%s()", quote, m.From, quote, shortName(m.FromName))
+	from := fmt.Sprintf("%s%s:%s()%s", quote, m.From, shortName(m.FromName), quote)
 	if m.From == m.To {
-		from = shortName(m.FromName) + "()"
+		from = fmt.Sprintf("%s%s()%s", quote, shortName(m.FromName), quote)
 	}
 	verb := "moved to"
 	if m.Nature == NatureExtracted {
 		verb = "extracted into"
 	}
-	line := fmt.Sprintf("%s %s %s%s%s:%s(), %d lines", from, verb, quote, m.To, quote, shortName(m.ToName), m.Lines)
+	line := fmt.Sprintf("%s %s %s%s:%s()%s, %d lines", from, verb, quote, m.To, shortName(m.ToName), quote, m.Lines)
 	if m.Same < 1 {
 		line += fmt.Sprintf(", %d%% identical", int(m.Same*100+0.5))
 	}

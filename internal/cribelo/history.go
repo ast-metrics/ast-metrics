@@ -99,7 +99,7 @@ func historyFacts(repo *Repo, baseSha string, base *Parsed, files []FileReport, 
 	}
 	var facts []Fact
 	for _, p := range order {
-		facts = append(facts, Fact{Kind: FactHistory, Path: p, Text: historyText(byPath[p])})
+		facts = append(facts, newFact(FactHistory, p, nil, historyText(byPath[p])))
 	}
 	return facts
 }
@@ -114,7 +114,7 @@ type fixedFunction struct {
 func historyText(fns []fixedFunction) string {
 	sort.SliceStable(fns, func(i, j int) bool { return fns[i].fixes > fns[j].fixes })
 	first := fns[0]
-	text := fmt.Sprintf("%s() was fixed %d times in the past year", first.name, first.fixes)
+	text := fmt.Sprintf("%s was fixed %d times in the past year", code(first.name+"()"), first.fixes)
 	switch first.reverts {
 	case 0:
 	case 1:
@@ -123,7 +123,7 @@ func historyText(fns []fixedFunction) string {
 		text += fmt.Sprintf(", %d times by a revert", first.reverts)
 	}
 	if len(fns) > 1 {
-		text += fmt.Sprintf(", %s() %d times", fns[1].name, fns[1].fixes)
+		text += fmt.Sprintf(", %s %d times", code(fns[1].name+"()"), fns[1].fixes)
 	}
 	if len(fns) > 2 {
 		text += fmt.Sprintf(", +%d more %s", len(fns)-2, plural(len(fns)-2, "function"))

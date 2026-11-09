@@ -146,13 +146,11 @@ func TestTextShowsGroupsAndTests(t *testing.T) {
 	}, ReadCount: 3, ReadMinutes: 3, LinesChanged: 120, LinesToRead: 120}
 	orderReads(plan, map[string][]string{"app/handler.go": {"app/store.go"}}, nil, []FileReport{{Path: "app/store_test.go", Minutes: 1, ToRead: 5, Added: 5}}, 0)
 	text := plan.Text()
-	assert.Contains(t, text, "↳ store.go, then what uses it")
 	assert.Contains(t, text, "app/store_test.go")
 	assert.Regexp(t, `store_test\.go\s+test`, text)
 	assert.Less(t, strings.Index(text, "app/store.go"), strings.Index(text, "app/handler.go"))
 	md := plan.Markdown()
-	assert.Contains(t, md, "| | *store.go, then what uses it* |")
-	assert.Contains(t, md, "`app/store_test.go` _test_")
+	assert.Contains(t, md, "| 1 | `app/store.go` |  |  |\n| 2 | `app/store_test.go` *test* |  |  |\n| 3 | `app/handler.go` |  |  |\n| 4 | `other/x.go` |  |  |\n")
 }
 
 func TestTextAllMechanical(t *testing.T) {
@@ -177,6 +175,6 @@ func TestDescribe(t *testing.T) {
 	assert.Contains(t, out, "**Structure**")
 	assert.Contains(t, out, "- `old → new` in 4 hunks")
 	assert.Contains(t, out, "1. `app/store.go`: the others use it\n2. `app/handler.go`\n")
-	assert.Contains(t, out, "Left out: not analyzed")
+	assert.Contains(t, out, "Left out: 1 not analyzed")
 	assert.Equal(t, "Nothing changed.\n", (&Plan{}).Describe())
 }

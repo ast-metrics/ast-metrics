@@ -97,10 +97,13 @@ type Plan struct {
 	GateReasons     []string `json:"gate_reasons,omitempty"`
 	FailOn          []string `json:"fail_on,omitempty"`
 	FailOverMinutes int      `json:"fail_over_minutes,omitempty"`
-	Calibrated      bool     `json:"calibrated"`
-	TrainedOn       int      `json:"trained_on,omitempty"`
-	TrainedAt       string   `json:"trained_at,omitempty"`
-	CloneIndexed    int      `json:"clone_indexed"`
+	// Links, when set, turns the files and the line spans of the Markdown
+	// plan into links to the pull request.
+	Links        Links  `json:"-"`
+	Calibrated   bool   `json:"calibrated"`
+	TrainedOn    int    `json:"trained_on,omitempty"`
+	TrainedAt    string `json:"trained_at,omitempty"`
+	CloneIndexed int    `json:"clone_indexed"`
 }
 
 // Run builds the plan of the working tree against the base branch.

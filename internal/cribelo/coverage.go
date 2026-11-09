@@ -308,8 +308,8 @@ func coverageFacts(cov *Coverage, files []FileReport, changes map[string]Change)
 		if uncovered == 0 || (uncovered < 10 && uncovered*2 < instrumented) {
 			continue
 		}
-		facts = append(facts, Fact{Kind: FactCoverage, Path: f.Path,
-			Text: fmt.Sprintf("%d of %d changed %s not run by any test, by %s", uncovered, instrumented, plural(instrumented, "line"), cov.Source)})
+		facts = append(facts, newFact(FactCoverage, f.Path, nil,
+			fmt.Sprintf("%d of %d changed %s not run by any test, according to %s", uncovered, instrumented, plural(instrumented, "line"), code(cov.Source))))
 	}
 	return facts
 }

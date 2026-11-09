@@ -368,16 +368,3 @@ func calledNames(sourcePath string) map[string]bool {
 	}
 	return names
 }
-
-// groupTitle words why a group's files are read together; empty for a
-// single file.
-func groupTitle(g ReadingGroup) string {
-	if len(g.Files) < 2 {
-		return ""
-	}
-	lead := path.Base(g.Files[0])
-	if g.Linked {
-		return lead + ", then what uses it"
-	}
-	return lead + " with its tests"
-}
