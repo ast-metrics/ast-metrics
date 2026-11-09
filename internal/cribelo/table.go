@@ -132,7 +132,7 @@ var columns = []column{
 				phrase := fmt.Sprintf(", %d %s", fixes, word)
 				c.text += styleBad.Render(phrase)
 				c.plain += phrase
-				c.markdown += phrase
+				c.markdown += fmt.Sprintf(", %d%s%s", fixes, noBreakSpace, word)
 			}
 			return c
 		},
@@ -292,6 +292,12 @@ func (p *Plan) spans(f *FileReport, ranges []LineRange, markdown bool) string {
 	if len(ranges) == 0 {
 		return ""
 	}
+	// In a table cell a browser breaks a span at its hyphen: Markdown gets
+	// the characters that forbid it.
+	joiner, space := "", " "
+	if markdown {
+		joiner, space = wordJoiner, noBreakSpace
+	}
 	var out []string
 	for i, r := range ranges {
 		if i == maxRanges {
@@ -299,7 +305,7 @@ func (p *Plan) spans(f *FileReport, ranges []LineRange, markdown bool) string {
 		}
 		span := fmt.Sprintf("%d", r.Start)
 		if r.End > r.Start {
-			span = fmt.Sprintf("%d-%d", r.Start, r.End)
+			span = fmt.Sprintf("%d-%s%d", r.Start, joiner, r.End)
 		}
 		if markdown && p.Links != nil {
 			span = fmt.Sprintf("[%s](%s)", span, p.Links(f.Path, r.Start, r.End))
@@ -308,10 +314,10 @@ func (p *Plan) spans(f *FileReport, ranges []LineRange, markdown bool) string {
 	}
 	text := strings.Join(out, ", ")
 	if more := len(ranges) - maxRanges; more > 0 {
-		text += fmt.Sprintf(", +%d more", more)
+		text += fmt.Sprintf(", +%d%smore", more, space)
 	}
 	if len(ranges) == 1 && ranges[0].End <= ranges[0].Start {
-		text = "line " + text
+		text = "line" + space + text
 	}
 	return text
 }
@@ -554,7 +560,7 @@ func (p *Plan) markdownReading(b *strings.Builder) {
 	rows := p.rows()
 
 	// Where to read.
-	b.WriteString("| | File | Lines to read closely | Lines to glance at |\n|--:|:--|:--|:--|\n")
+	b.WriteString("| | File | Lines to read&nbsp;closely | Lines to glance&nbsp;at |\n|--:|:--|:--|:--|\n")
 	for _, r := range rows {
 		file := code(r.file.Path)
 		if t := tag(r.file); t != "" {

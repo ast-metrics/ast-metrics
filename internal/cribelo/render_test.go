@@ -53,9 +53,9 @@ func TestPlanTextEmptyAndNoCode(t *testing.T) {
 func TestPlanMarkdown(t *testing.T) {
 	md := samplePlan().Markdown()
 	assert.Contains(t, md, "## Cribelo: read 1 of 3 changed files, about 2 min\n")
-	assert.Contains(t, md, "| | File | Lines to read closely | Lines to glance at |\n|--:|:--|:--|:--|\n| 1 | `a.go` |  |  |\n")
+	assert.Contains(t, md, "| | File | Lines to read&nbsp;closely | Lines to glance&nbsp;at |\n|--:|:--|:--|:--|\n| 1 | `a.go` |  |  |\n")
 	assert.Contains(t, md, "<details><summary><b>Why these files</b></summary>\n\n| | File | Complexity | Used&nbsp;by | Commits&nbsp;90d | Test changed |\n|--:|:--|:--|:--|:--|:-:|\n")
-	assert.Contains(t, md, "| 1 | `a.go`<br><sub>90% similar to `b.go:H()`</sub> | 🟩&#8288;⬜&#8288;⬜&#8288;⬜&#8288;⬜&nbsp;5 | 🟨&#8288;🟨&#8288;⬜&#8288;⬜&#8288;⬜&nbsp;4 | 🟧&#8288;🟧&#8288;🟧&#8288;⬜&#8288;⬜&nbsp;7, 2 fixes | ❌ |\n")
+	assert.Contains(t, md, "| 1 | `a.go`<br><sub>90% similar to `b.go:H()`</sub> | 🟩&#8288;⬜&#8288;⬜&#8288;⬜&#8288;⬜&nbsp;5 | 🟨&#8288;🟨&#8288;⬜&#8288;⬜&#8288;⬜&nbsp;4 | 🟧&#8288;🟧&#8288;🟧&#8288;⬜&#8288;⬜&nbsp;7, 2&nbsp;fixes | ❌ |\n")
 	assert.Contains(t, md, "<sub><b>Complexity</b>: highest cyclomatic complexity among the functions touched.")
 	assert.Contains(t, md, "<details><summary><b>Totals</b>: 12 lines to read closely, 0 to glance at</summary>\n\n| | File | Lines to read closely | Lines to glance at |\n|--:|:--|--:|--:|\n| 1 | `a.go` | 12 | 0 |\n\n<sub><b>Read closely</b>: code lines in functions that gained a branch, or whose complexity is above 3.")
 	assert.Contains(t, md, "20 lines a minute read closely, 60 glanced at")
@@ -179,11 +179,11 @@ func TestReadingMarkdown(t *testing.T) {
 	p := readingPlan()
 	md := p.Markdown()
 	assert.Contains(t, md, "## Cribelo: read 4 of 5 changed files, about 9 min\n\n"+
-		"| | File | Lines to read closely | Lines to glance at |\n|--:|:--|:--|:--|\n"+
-		"| 1 | `core/store.go` *new* | 10-14, 30, 40-62, 70-71, +2 more | 3-8 |\n"+
-		"| 2 | `core/store_test.go` *test* | line 8 | 20-49 |\n"+
-		"| 3 | `api/handler.go` |  | line 12 |\n"+
-		"| 4 | `cmd/store.go` | 5-7 |  |\n\n"+
+		"| | File | Lines to read&nbsp;closely | Lines to glance&nbsp;at |\n|--:|:--|:--|:--|\n"+
+		"| 1 | `core/store.go` *new* | 10-&#8288;14, 30, 40-&#8288;62, 70-&#8288;71, +2&nbsp;more | 3-&#8288;8 |\n"+
+		"| 2 | `core/store_test.go` *test* | line&nbsp;8 | 20-&#8288;49 |\n"+
+		"| 3 | `api/handler.go` |  | line&nbsp;12 |\n"+
+		"| 4 | `cmd/store.go` | 5-&#8288;7 |  |\n\n"+
 		"<details><summary><b>Why these files</b></summary>\n\n"+
 		"| | File | Complexity | Used&nbsp;by | Test changed |\n")
 	assert.Contains(t, md, "| 4 | `cmd/store.go`<br><sub>84% similar to `pkg/core/store.go:Put()`</sub> | ⬜&#8288;⬜&#8288;⬜&#8288;⬜&#8288;⬜ | ⬜&#8288;⬜&#8288;⬜&#8288;⬜&#8288;⬜ | ✅ |\n")
@@ -196,7 +196,7 @@ func TestReadingMarkdown(t *testing.T) {
 	require.NoError(t, err)
 	p.Links = links
 	md = p.Markdown()
-	assert.Regexp(t, "\\| 2 \\| `core/store_test.go` \\*test\\* \\| line \\[8\\]\\(https://github.com/o/r/pull/12/files#diff-[0-9a-f]{64}R8\\) \\| \\[20-49\\]\\(https://github.com/o/r/pull/12/files#diff-[0-9a-f]{64}R20-R49\\) \\|\n", md)
+	assert.Regexp(t, "\\| 2 \\| `core/store_test.go` \\*test\\* \\| line&nbsp;\\[8\\]\\(https://github.com/o/r/pull/12/files#diff-[0-9a-f]{64}R8\\) \\| \\[20-&#8288;49\\]\\(https://github.com/o/r/pull/12/files#diff-[0-9a-f]{64}R20-R49\\) \\|\n", md)
 	SetColor(false)
 	assert.NotContains(t, p.Text(), "https://", "a terminal gets no link")
 }
