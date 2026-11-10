@@ -73,49 +73,27 @@ func TestEvaluateTopLargerThanFiles(t *testing.T) {
 	assert.InDelta(t, 1.0, m.BaselineCover, 1e-12)
 }
 
-func TestCountsLine(t *testing.T) {
-	assert.Equal(t, "a 1 · b 22 · c 3", countsLine(map[string]int{"c": 3, "a": 1, "b": 22}))
-	assert.Equal(t, "", countsLine(nil))
-}
-
 func TestPct(t *testing.T) {
-	assert.Equal(t, "0%", pct(0))
-	assert.Equal(t, "50%", pct(0.5))
-	assert.Equal(t, "33%", pct(1.0/3))
-	assert.Equal(t, "67%", pct(2.0/3))
-	assert.Equal(t, "13%", pct(0.125), "0.5 rounds up")
-	assert.Equal(t, "100%", pct(1))
+	assert.Equal(t, "0%", Percent(0))
+	assert.Equal(t, "50%", Percent(0.5))
+	assert.Equal(t, "33%", Percent(1.0/3))
+	assert.Equal(t, "67%", Percent(2.0/3))
+	assert.Equal(t, "13%", Percent(0.125), "0.5 rounds up")
+	assert.Equal(t, "100%", Percent(1))
 }
 
-func TestDayAndMinInt(t *testing.T) {
-	assert.Equal(t, "2024-01-01", day(1704067200))
+func TestMinInt(t *testing.T) {
 	assert.Equal(t, 2, minInt(2, 3))
 	assert.Equal(t, 2, minInt(3, 2))
 	assert.Equal(t, 3, maxInt(3, 2))
 }
 
-func TestBacktestTextAndJSONOffline(t *testing.T) {
+func TestBacktestJSONOffline(t *testing.T) {
 	b := handBuiltBacktest()
 	b.Ref, b.Landings = "main", 4
 	b.LeftOut = map[string]int{"too recent to know if a fix followed": 2}
 	b.Generic = b.Evaluate(DefaultWeights(), 0)
-	text := b.Text()
-	assert.Contains(t, text, "cribelo backtest")
-	assert.Contains(t, text, "4 landings on main replayed")
-	assert.Contains(t, text, "Left out: too recent to know if a fix followed 2")
-	assert.Contains(t, text, "generic weights")
-	assert.NotContains(t, text, "calibrated weights")
-
-	m := b.Generic
-	b.Calibrated = &m
-	b.GenericHeldOut = &m
-	assert.Contains(t, b.Text(), "held-out check")
-	assert.Contains(t, b.Text(), "calibrated weights")
-
 	out, err := b.JSON()
 	require.NoError(t, err)
 	assert.True(t, json.Valid([]byte(out)))
-
-	empty := &Backtest{Ref: "main"}
-	assert.Contains(t, empty.Text(), "No landing qualified.")
 }

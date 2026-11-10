@@ -699,7 +699,7 @@ func cloneFacts(files []FileReport, changed map[string]bool) []Fact {
 		names := strings.SplitN(f.Clone.Function, " ~ ", 2)
 		from, to := names[0], names[len(names)-1]
 		facts = append(facts, newFact(FactClone, f.Path, []string{f.Clone.Path},
-			fmt.Sprintf("%s is %d%% similar to %s, which this change does not touch", code(shortName(from)+"()"), int(f.Clone.Similarity*100+0.5), code(f.Clone.Path+":"+shortName(to)+"()"))))
+			fmt.Sprintf("%s is %d%% similar to %s, which this change does not touch", code(ShortName(from)+"()"), int(f.Clone.Similarity*100+0.5), code(f.Clone.Path+":"+ShortName(to)+"()"))))
 	}
 	return facts
 }
@@ -714,7 +714,7 @@ var (
 // line elsewhere. A free function in PHP or TypeScript without a keyword
 // is exported in PHP and local in TypeScript.
 func isExported(language, name, declaration string) bool {
-	short := shortName(name)
+	short := ShortName(name)
 	switch language {
 	case "Golang":
 		r := []rune(short)
@@ -767,7 +767,7 @@ func buildNameIndex(p *Parsed) *nameIndex {
 // callersOf lists the files calling a name, the file declaring it aside.
 func (idx *nameIndex) callersOf(name, except string) []string {
 	var out []string
-	for rel := range idx.callers[shortName(name)] {
+	for rel := range idx.callers[ShortName(name)] {
 		if rel != except {
 			out = append(out, rel)
 		}
@@ -838,16 +838,16 @@ func signatureFacts(gs graphs, head, base *Parsed, codeChanges []Change, names f
 					continue
 				}
 				if len(names().callersOf(name, c.Path)) == 0 {
-					unused = append(unused, code(shortName(name)+"()"))
+					unused = append(unused, code(ShortName(name)+"()"))
 				}
 			case !sameParameters(before, fn):
 				files, resolved := callers(name)
-				text := fmt.Sprintf("%s %s", code(shortName(name)+"()"), parameterChange(before, fn))
+				text := fmt.Sprintf("%s %s", code(ShortName(name)+"()"), parameterChange(before, fn))
 				switch {
 				case len(files) > 0 && resolved:
-					text += fmt.Sprintf(", called from %d %s", len(files), plural(len(files), "file"))
+					text += fmt.Sprintf(", called from %d %s", len(files), Plural(len(files), "file"))
 				case len(files) > 0:
-					text += fmt.Sprintf(", called by name from %d %s", len(files), plural(len(files), "file"))
+					text += fmt.Sprintf(", called by name from %d %s", len(files), Plural(len(files), "file"))
 				default:
 					text += ", no caller in the repository"
 				}
@@ -859,7 +859,7 @@ func signatureFacts(gs graphs, head, base *Parsed, codeChanges []Change, names f
 			if len(shown) > 3 {
 				shown = append(append([]string{}, shown[:3]...), fmt.Sprintf("+%d more", len(unused)-3))
 			}
-			facts = append(facts, newFact(FactAPI, c.Path, nil, fmt.Sprintf("%d new exported %s called nowhere yet: %s", len(unused), plural(len(unused), "function"), strings.Join(shown, ", "))))
+			facts = append(facts, newFact(FactAPI, c.Path, nil, fmt.Sprintf("%d new exported %s called nowhere yet: %s", len(unused), Plural(len(unused), "function"), strings.Join(shown, ", "))))
 		}
 	}
 	return facts
@@ -867,7 +867,7 @@ func signatureFacts(gs graphs, head, base *Parsed, codeChanges []Change, names f
 
 // isEntryPoint names the functions a runtime calls, which no code needs to.
 func isEntryPoint(name string) bool {
-	short := strings.ToLower(shortName(name))
+	short := strings.ToLower(ShortName(name))
 	switch short {
 	case "main", "init", "__construct", "__destruct", "__invoke", "__tostring", "__get", "__set", "constructor", "new", "default", "drop", "fmt", "dispose", "finalize", "tostring", "equals", "hashcode", "gethashcode", "setup", "teardown", "run":
 		return true
@@ -912,7 +912,7 @@ func sameParameters(a, b *pb.StmtFunction) bool {
 // parameterChange words what happened to a parameter list: the counts, and
 // the names that appeared or went when the lists tell them apart.
 func parameterChange(before, after *pb.StmtFunction) string {
-	text := fmt.Sprintf("went from %d to %d %s", len(before.Parameters), len(after.Parameters), plural(len(after.Parameters), "parameter"))
+	text := fmt.Sprintf("went from %d to %d %s", len(before.Parameters), len(after.Parameters), Plural(len(after.Parameters), "parameter"))
 	was := map[string]bool{}
 	for _, p := range before.Parameters {
 		was[p.GetName()] = true
@@ -986,8 +986,8 @@ func collectFacts(gs graphs, head, base *Parsed, codeChanges []Change, files []F
 	return facts
 }
 
-// factsOf lists the facts about one file.
-func factsOf(facts []Fact, path string) []Fact {
+// FactsOf lists the facts about one file.
+func FactsOf(facts []Fact, path string) []Fact {
 	var out []Fact
 	for _, f := range facts {
 		if f.Path == path {

@@ -410,7 +410,7 @@ func (h HunkReport) decides(line int) bool {
 func moveDetail(where string, newLines int, fresh []string) string {
 	detail := where
 	if newLines > 0 {
-		detail = fmt.Sprintf("%s, %d %s new", where, newLines, plural(newLines, "line"))
+		detail = fmt.Sprintf("%s, %d %s new", where, newLines, Plural(newLines, "line"))
 	}
 	if len(fresh) > 3 {
 		fresh = append(fresh[:3], fmt.Sprintf("+%d more", len(fresh)-3))
@@ -522,14 +522,14 @@ func renamesOf(files []FileReport) []Rename {
 	return out
 }
 
-// natureCounts counts the hunks of a file by nature, lines included.
-type natureCount struct {
+// NatureCount counts the hunks of one nature in a file, lines included.
+type NatureCount struct {
 	Hunks int `json:"hunks"`
 	Lines int `json:"lines"`
 }
 
-func countNatures(hunks []HunkReport) map[Nature]natureCount {
-	counts := map[Nature]natureCount{}
+func countNatures(hunks []HunkReport) map[Nature]NatureCount {
+	counts := map[Nature]NatureCount{}
 	for _, h := range hunks {
 		c := counts[h.Nature]
 		c.Hunks++
@@ -539,8 +539,9 @@ func countNatures(hunks []HunkReport) map[Nature]natureCount {
 	return counts
 }
 
-// natureLabel is the wording of a nature in the plan, with its count.
-func natureLabel(n Nature, count int) string {
+// Label is the wording of a nature with its count, "3 moves" or "1 import
+// hunk". Empty for a nature that is read, not set aside.
+func (n Nature) Label(count int) string {
 	word := map[Nature]string{
 		NatureMoved: "move", NatureExtracted: "extraction", NatureRename: "rename",
 		NatureFormat: "formatting hunk", NatureComment: "comment hunk", NatureImports: "import hunk",
@@ -548,5 +549,5 @@ func natureLabel(n Nature, count int) string {
 	if word == "" {
 		return ""
 	}
-	return fmt.Sprintf("%d %s", count, plural(count, word))
+	return fmt.Sprintf("%d %s", count, Plural(count, word))
 }

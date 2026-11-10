@@ -160,12 +160,13 @@ func TestGate(t *testing.T) {
 	p = &Plan{ChangeMinutes: 48, Facts: facts}
 	p.gate(Options{FailOver: time.Hour, FailOn: []string{FactDependency}})
 	assert.Equal(t, "passed", p.Gate)
-	assert.Equal(t, "reading time 48 min of 1 h allowed, no dependency", p.gateTerms())
+	assert.Equal(t, 60, p.FailOverMinutes)
+	assert.Equal(t, []string{FactDependency}, p.FailOn)
 
 	p = &Plan{}
 	p.gate(Options{FailOn: []string{FactCycle, FactSignature}})
 	assert.Equal(t, "passed", p.Gate, "nothing changed passes a gate that is set")
-	assert.Equal(t, "no cycle, no signature", p.gateTerms())
+	assert.Empty(t, p.GateReasons)
 }
 
 func TestGateFacts(t *testing.T) {

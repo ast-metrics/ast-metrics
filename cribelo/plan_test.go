@@ -239,19 +239,17 @@ func TestRunEndToEnd(t *testing.T) {
 	assert.Equal(t, plan.Changed, len(plan.Files)+nonCode)
 	assert.Equal(t, 0, plan.TestFiles)
 
-	// renders
-	assert.Contains(t, plan.Markdown(), "## Cribelo: read 3 of 8 changed files")
-	assert.Regexp(t, `1  svc/svc\.go +\d+-\d+\n`, plan.Text())
+	// the first file to read has lines to read closely, in a known function
+	svcReport := plan.File("svc/svc.go")
+	require.NotNil(t, svcReport)
+	assert.True(t, svcReport.Read)
+	assert.NotEmpty(t, svcReport.Ranges)
+	assert.NotEmpty(t, svcReport.Functions)
+	assert.Contains(t, svcReport.Functions[0].Name, "Process")
+	assert.Nil(t, plan.File("does/not/exist.go"))
 	js, err := plan.JSON()
 	require.NoError(t, err)
 	assert.True(t, json.Valid([]byte(js)))
-
-	explained, err := plan.Explain("svc/svc.go")
-	require.NoError(t, err)
-	assert.Contains(t, explained, "svc/svc.go")
-	assert.Contains(t, explained, "Process")
-	_, err = plan.Explain("does/not/exist.go")
-	assert.Error(t, err)
 
 	// gate
 	assert.Equal(t, "", plan.Gate, "no gate by default")
@@ -329,7 +327,6 @@ func TestRunNothingChanged(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, plan.Changed)
 	assert.Equal(t, "", plan.Gate)
-	assert.Contains(t, plan.Text(), "Nothing changed")
 }
 
 func TestRunUsesConfigIgnoreAndErrors(t *testing.T) {
@@ -445,4 +442,18 @@ func TestHistoryAndLandingsRealGit(t *testing.T) {
 	assert.False(t, landings[0].Merge)
 	assert.Equal(t, repo.MergeBase("main", "HEAD"), landings[0].Parent)
 	assert.Equal(t, "xyz", repo.MergeBase("xyz", "also-bad"), "falls back to the first argument")
+}
+
+func TestPlanJSONRoundTrip(t *testing.T) {
+	p := &Plan{
+		Methodology: MethodologyVersion, Base: "main", Changed: 3, ReadCount: 1,
+		Files: []FileReport{{Path: "a.go", Level: LevelHigh, Read: true, Clone: &CloneMatch{Path: "b.go", Function: "F ~ H", Line: 7, Similarity: 0.9}}},
+	}
+	out, err := p.JSON()
+	require.NoError(t, err)
+	var back Plan
+	require.NoError(t, json.Unmarshal([]byte(out), &back))
+	assert.Equal(t, 3, back.Changed)
+	assert.Equal(t, LevelHigh, back.Files[0].Level)
+	assert.Equal(t, 0.9, back.Files[0].Clone.Similarity)
 }

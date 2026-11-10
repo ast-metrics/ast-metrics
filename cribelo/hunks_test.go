@@ -131,11 +131,11 @@ func TestClassifyHunksAdditionIsBehavior(t *testing.T) {
 
 func TestCountNaturesAndLabels(t *testing.T) {
 	counts := countNatures([]HunkReport{{Nature: NatureMoved, Added: 10}, {Nature: NatureMoved, Added: 5}, {Nature: NatureBehavior, Added: 2, Deleted: 1}})
-	assert.Equal(t, natureCount{Hunks: 2, Lines: 15}, counts[NatureMoved])
-	assert.Equal(t, natureCount{Hunks: 1, Lines: 3}, counts[NatureBehavior])
-	assert.Equal(t, "2 moves", natureLabel(NatureMoved, 2))
-	assert.Equal(t, "1 extraction", natureLabel(NatureExtracted, 1))
-	assert.Equal(t, "", natureLabel(NatureBehavior, 3))
+	assert.Equal(t, NatureCount{Hunks: 2, Lines: 15}, counts[NatureMoved])
+	assert.Equal(t, NatureCount{Hunks: 1, Lines: 3}, counts[NatureBehavior])
+	assert.Equal(t, "2 moves", NatureMoved.Label(2))
+	assert.Equal(t, "1 extraction", NatureExtracted.Label(1))
+	assert.Equal(t, "", NatureBehavior.Label(3))
 }
 
 // parsedTree parses a set of Go files written under a fresh directory.

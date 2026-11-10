@@ -1,7 +1,6 @@
 package cribelo
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -129,8 +128,8 @@ func TestTestStrength(t *testing.T) {
 
 func TestSelectReadsLeavesMechanicalOut(t *testing.T) {
 	plan := &Plan{Files: []FileReport{
-		{Path: "moved.go", Score: 0.9, Minutes: 3, Hunks: []HunkReport{{Nature: NatureMoved}}, Natures: map[Nature]natureCount{NatureMoved: {Hunks: 1, Lines: 60}}},
-		{Path: "real.go", Score: 0.5, Minutes: 2, Hunks: []HunkReport{{Nature: NatureBehavior}}, Natures: map[Nature]natureCount{NatureBehavior: {Hunks: 1, Lines: 10}}},
+		{Path: "moved.go", Score: 0.9, Minutes: 3, Hunks: []HunkReport{{Nature: NatureMoved}}, Natures: map[Nature]NatureCount{NatureMoved: {Hunks: 1, Lines: 60}}},
+		{Path: "real.go", Score: 0.5, Minutes: 2, Hunks: []HunkReport{{Nature: NatureBehavior}}, Natures: map[Nature]NatureCount{NatureBehavior: {Hunks: 1, Lines: 10}}},
 	}}
 	selectReads(plan, Options{Top: 1})
 	assert.False(t, plan.Files[0].Read)
@@ -138,43 +137,19 @@ func TestSelectReadsLeavesMechanicalOut(t *testing.T) {
 	assert.Equal(t, 1, plan.ReadCount)
 }
 
-func TestTextShowsGroupsAndTests(t *testing.T) {
+func TestOrderPlacesTestsAfterTheirFile(t *testing.T) {
 	plan := &Plan{Changed: 4, Files: []FileReport{
 		readReport("app/store.go", 0.5, 30),
 		readReport("app/handler.go", 0.9, 80),
 		readReport("other/x.go", 0.7, 10),
 	}, ReadCount: 3, ReadMinutes: 3, LinesChanged: 120, LinesToRead: 120}
 	orderReads(plan, map[string][]string{"app/handler.go": {"app/store.go"}}, nil, []FileReport{{Path: "app/store_test.go", Minutes: 1, ToRead: 5, Added: 5}}, 0)
-	text := plan.Text()
-	assert.Contains(t, text, "app/store_test.go")
-	assert.Regexp(t, `store_test\.go\s+test`, text)
-	assert.Less(t, strings.Index(text, "app/store.go"), strings.Index(text, "app/handler.go"))
-	md := plan.Markdown()
-	assert.Contains(t, md, "| 1 | `app/store.go` |  |  |\n| 2 | `app/store_test.go` *test* |  |  |\n| 3 | `app/handler.go` |  |  |\n| 4 | `other/x.go` |  |  |\n")
-}
-
-func TestTextAllMechanical(t *testing.T) {
-	plan := &Plan{Changed: 1, Files: []FileReport{{Path: "moved.go", Added: 40, Hunks: []HunkReport{{Nature: NatureMoved}}, Natures: map[Nature]natureCount{NatureMoved: {Hunks: 1, Lines: 40}}}}, LinesChanged: 40}
-	assert.Contains(t, plan.Text(), "every change is mechanical")
-	assert.Contains(t, plan.Text(), "0 of 40 changed lines to read")
-	assert.Contains(t, plan.Markdown(), "nothing to read (1 file changed, every change is mechanical)")
-}
-
-func TestDescribe(t *testing.T) {
-	plan := &Plan{Changed: 5, LinesChanged: 200, LinesToRead: 150, Natures: map[Nature]natureCount{NatureRename: {Hunks: 4, Lines: 50}},
-		Files:     []FileReport{readReport("app/store.go", 0.5, 30), readReport("app/handler.go", 0.9, 80)},
-		ReadCount: 2, ReadMinutes: 8,
-		Facts:   []Fact{{Kind: FactSignature, Path: "app/store.go", Text: "Load() changed its parameters (id → id, ctx), called by name from 3 files"}, {Kind: FactCycle, Path: "app/handler.go", Text: "introduces a cycle: handler.go → store.go → handler.go"}},
-		Renames: []Rename{{Pair: "old → new", Hunks: 4}},
-		Skipped: []Skipped{{Path: "README.md", Kind: "not analyzed", Reason: "not analyzed (docs, config, other languages)"}}}
-	orderReads(plan, map[string][]string{"app/handler.go": {"app/store.go"}}, nil, nil, 0)
-	out := plan.Describe()
-	assert.Contains(t, out, "5 files changed, 200 lines, 150 to read closely.\nSet aside: 4 renames")
-	assert.Contains(t, out, "**Signatures and API**")
-	assert.Contains(t, out, "- `app/store.go`: Load() changed its parameters")
-	assert.Contains(t, out, "**Structure**")
-	assert.Contains(t, out, "- `old → new` in 4 hunks")
-	assert.Contains(t, out, "1. `app/store.go`: the others use it\n2. `app/handler.go`\n")
-	assert.Contains(t, out, "Left out: 1 not analyzed")
-	assert.Equal(t, "Nothing changed.\n", (&Plan{}).Describe())
+	assert.Equal(t, []string{"app/store.go", "app/store_test.go", "app/handler.go", "other/x.go"}, paths(plan.Files))
+	test := plan.File("app/store_test.go")
+	require.NotNil(t, test)
+	assert.True(t, test.Test)
+	assert.True(t, test.Read)
+	require.Len(t, plan.Groups, 2)
+	assert.Equal(t, []string{"app/store.go", "app/store_test.go", "app/handler.go"}, plan.Groups[0].Files)
+	assert.True(t, plan.Groups[0].Linked)
 }

@@ -328,7 +328,7 @@ func siblingUses(head *Parsed, readPaths []string) map[string][]string {
 			}
 			declared[p] = map[string]bool{}
 			for name := range review.CollectFunctions(file) {
-				if short := shortName(name); len(short) > 3 {
+				if short := ShortName(name); len(short) > 3 {
 					declared[p][short] = true
 				}
 			}

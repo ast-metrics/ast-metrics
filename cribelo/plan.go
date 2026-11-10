@@ -1,6 +1,7 @@
 package cribelo
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -76,7 +77,7 @@ type Plan struct {
 	LinesChanged  int                    `json:"lines_changed"`
 	LinesToRead   int                    `json:"lines_to_read"`
 	LinesToGlance int                    `json:"lines_to_glance"`
-	Natures       map[Nature]natureCount `json:"natures,omitempty"`
+	Natures       map[Nature]NatureCount `json:"natures,omitempty"`
 	Moves         []Move                 `json:"moves,omitempty"`
 	// Renames are the "old → new" pairs of the change with the number of
 	// hunks each one touches, most frequent first.
@@ -97,13 +98,10 @@ type Plan struct {
 	GateReasons     []string `json:"gate_reasons,omitempty"`
 	FailOn          []string `json:"fail_on,omitempty"`
 	FailOverMinutes int      `json:"fail_over_minutes,omitempty"`
-	// Links, when set, turns the files and the line spans of the Markdown
-	// plan into links to the pull request.
-	Links        Links  `json:"-"`
-	Calibrated   bool   `json:"calibrated"`
-	TrainedOn    int    `json:"trained_on,omitempty"`
-	TrainedAt    string `json:"trained_at,omitempty"`
-	CloneIndexed int    `json:"clone_indexed"`
+	Calibrated      bool     `json:"calibrated"`
+	TrainedOn       int      `json:"trained_on,omitempty"`
+	TrainedAt       string   `json:"trained_at,omitempty"`
+	CloneIndexed    int      `json:"clone_indexed"`
 }
 
 // Run builds the plan of the working tree against the base branch.
@@ -276,7 +274,7 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 	for _, c := range testChanges {
 		tests = append(tests, measure.features(c))
 	}
-	plan.Natures = map[Nature]natureCount{}
+	plan.Natures = map[Nature]NatureCount{}
 	for _, report := range append(append([]FileReport{}, plan.Files...), tests...) {
 		plan.LinesChanged += report.Added + report.Deleted
 		plan.LinesToRead += report.ToRead
@@ -514,7 +512,7 @@ func (p *Plan) gate(opts Options) {
 	}
 	p.Gate = "passed"
 	if p.FailOverMinutes > 0 && p.ChangeMinutes > p.FailOverMinutes {
-		p.GateReasons = append(p.GateReasons, fmt.Sprintf("reading time %s, over the %s allowed", duration(p.ChangeMinutes), duration(p.FailOverMinutes)))
+		p.GateReasons = append(p.GateReasons, fmt.Sprintf("reading time %s, over the %s allowed", Duration(p.ChangeMinutes), Duration(p.FailOverMinutes)))
 	}
 	for _, kind := range p.FailOn {
 		for _, f := range p.Facts {
@@ -528,17 +526,24 @@ func (p *Plan) gate(opts Options) {
 	}
 }
 
-// gateTerms says what the gate checks, for a passed gate: "reading time
-// 48 min of 1 h allowed, no cycle".
-func (p *Plan) gateTerms() string {
-	var terms []string
-	if p.FailOverMinutes > 0 {
-		terms = append(terms, fmt.Sprintf("reading time %s of %s allowed", duration(p.ChangeMinutes), duration(p.FailOverMinutes)))
+// JSON renders the whole plan.
+func (p *Plan) JSON() (string, error) {
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return "", err
 	}
-	if len(p.FailOn) > 0 {
-		terms = append(terms, "no "+strings.Join(p.FailOn, ", no "))
+	return string(data) + "\n", nil
+}
+
+// File finds the report of a code file by path, nil when the path is not
+// one of the analyzed files.
+func (p *Plan) File(path string) *FileReport {
+	for i := range p.Files {
+		if p.Files[i].Path == path {
+			return &p.Files[i]
+		}
 	}
-	return strings.Join(terms, ", ")
+	return nil
 }
 
 // Highest returns the level of the top ranked file, low when none.

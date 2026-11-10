@@ -62,7 +62,7 @@ type Sample struct {
 	// aside; Natures counts those hunks.
 	ToRead   int                    `json:"to_read"`
 	ToGlance int                    `json:"to_glance"`
-	Natures  map[Nature]natureCount `json:"natures,omitempty"`
+	Natures  map[Nature]NatureCount `json:"natures,omitempty"`
 	Values   map[Feature]float64    `json:"features"`
 	// Fixed: a fix commit touched the file within the window.
 	Fixed bool `json:"fixed"`
@@ -522,54 +522,6 @@ func (b *Backtest) Evaluate(weights Weights, from int) Metrics {
 	return m
 }
 
-func (b *Backtest) positiveWording() string {
-	if b.Label == LabelFixed {
-		return "later touched by a fix"
-	}
-	return "wrote lines a later fix repaired"
-}
-
-// Text renders the backtest for a terminal.
-func (b *Backtest) Text() string {
-	var s strings.Builder
-	fmt.Fprintf(&s, "%s %s\n\n", styleTitle.Render("cribelo backtest"), styleDim.Render(fmt.Sprintf("· %d landings on %s replayed", b.Landings, b.Ref)))
-	if len(b.Changes) == 0 {
-		s.WriteString("No landing qualified.\n")
-	} else {
-		share := float64(b.Generic.FixedFiles) / float64(maxInt(b.Generic.Files, 1))
-		fmt.Fprintf(&s, "%d changes qualified, %s → %s: %d code files, %d of them (%s) %s.\n\n", len(b.Changes), day(b.From), day(b.To), b.Generic.Files, b.Generic.FixedFiles, pct(share), b.positiveWording())
-		s.WriteString(metricsLines(b.Generic, b.Top, "generic weights, all qualified changes"))
-		if b.Calibrated != nil && b.GenericHeldOut != nil {
-			fmt.Fprintf(&s, "\n%s\n", styleTitle.Render(fmt.Sprintf("held-out check, the %d most recent changes", b.Calibrated.Changes)))
-			fmt.Fprintf(&s, "  generic weights     top-%d covers %s of those files for %s of the lines; every high file: %s for %s\n", b.Top, pct(b.GenericHeldOut.Coverage), pct(b.GenericHeldOut.LinesShare), pct(b.GenericHeldOut.RuleCoverage), pct(b.GenericHeldOut.RuleShare))
-			fmt.Fprintf(&s, "  calibrated weights  top-%d covers %s of those files for %s of the lines; every high file: %s for %s\n", b.Top, pct(b.Calibrated.Coverage), pct(b.Calibrated.LinesShare), pct(b.Calibrated.RuleCoverage), pct(b.Calibrated.RuleShare))
-			fmt.Fprintf(&s, "  %d largest files     cover %s of those files for %s of the lines\n", b.Top, pct(b.Calibrated.BaselineCover), pct(b.Calibrated.BaselineShare))
-		}
-	}
-	if len(b.LeftOut) > 0 {
-		s.WriteString("\n" + styleDim.Render("Left out: "+countsLine(b.LeftOut)) + "\n")
-	}
-	fixWords := "a commit whose message says fix, bug, revert, regression, correction, corrigé... (English, French, Spanish, Portuguese, German; add yours with fix_pattern in .cribelo.yaml)"
-	if b.Label == LabelFixed {
-		s.WriteString(styleDim.Render("A file counts when "+fixWords+" touches it within 90 days. Hub signal from today's graph; clones not replayed.") + "\n")
-	} else {
-		s.WriteString(styleDim.Render("A file counts when "+fixWords+", within 90 days, changes or deletes lines that git blame attributes to this change in that file (SZZ). Hub signal from today's graph; clones not replayed.") + "\n")
-	}
-	return s.String()
-}
-
-func metricsLines(m Metrics, top int, label string) string {
-	var s strings.Builder
-	fmt.Fprintf(&s, "%s\n", styleTitle.Render(label))
-	fmt.Fprintf(&s, "  Setting aside moves, extractions, renames, formatting and imports leaves %s of the changed lines to read.\n", pct(m.ToReadShare))
-	fmt.Fprintf(&s, "  Reading the top-%d files covered %s of those files, for %s of the changed lines (%s once classified).\n", top, pct(m.Coverage), pct(m.LinesShare), pct(m.ToReadTopShare))
-	fmt.Fprintf(&s, "  Reading the first %d in path order, as a pull request lists them: %s, for %s of the lines.\n", top, pct(m.PathOrderCover), pct(m.PathOrderShare))
-	fmt.Fprintf(&s, "  Reading the %d largest files instead: %s, for %s of the lines.\n", top, pct(m.BaselineCover), pct(m.BaselineShare))
-	perChange := float64(m.RuleRead) / float64(maxInt(m.Changes, 1))
-	fmt.Fprintf(&s, "  Reading every high file, at least %d (%.1f files a change): %s, for %s of the lines.\n", top, perChange, pct(m.RuleCoverage), pct(m.RuleShare))
-	return s.String()
-}
-
 // JSON renders the backtest.
 func (b *Backtest) JSON() (string, error) {
 	data, err := json.MarshalIndent(b, "", "  ")
@@ -577,23 +529,6 @@ func (b *Backtest) JSON() (string, error) {
 		return "", err
 	}
 	return string(data) + "\n", nil
-}
-
-func pct(x float64) string { return fmt.Sprintf("%d%%", int(x*100+0.5)) }
-
-func day(t int64) string { return time.Unix(t, 0).UTC().Format("2006-01-02") }
-
-func countsLine(counts map[string]int) string {
-	keys := make([]string, 0, len(counts))
-	for k := range counts {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	parts := make([]string, 0, len(keys))
-	for _, k := range keys {
-		parts = append(parts, fmt.Sprintf("%s %d", k, counts[k]))
-	}
-	return strings.Join(parts, " · ")
 }
 
 func minInt(a, b int) int {
