@@ -1,6 +1,3 @@
-// Package cribelo ranks the files of a change by how much they deserve a human
-// reader. Everything it computes is deterministic: the same repository state
-// and the same weights give the same plan.
 package cribelo
 
 import (

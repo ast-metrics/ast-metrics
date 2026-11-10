@@ -18,9 +18,9 @@ func TestLinesPhrase(t *testing.T) {
 }
 
 func TestShortName(t *testing.T) {
-	assert.Equal(t, "Process", shortName("Invoice::Process"))
-	assert.Equal(t, "Process", shortName("Process"))
-	assert.Equal(t, "c", shortName("a::b::c"))
+	assert.Equal(t, "Process", ShortName("Invoice::Process"))
+	assert.Equal(t, "Process", ShortName("Process"))
+	assert.Equal(t, "c", ShortName("a::b::c"))
 }
 
 func TestReasonsNewFunction(t *testing.T) {

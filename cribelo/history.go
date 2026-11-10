@@ -95,7 +95,7 @@ func historyFacts(repo *Repo, baseSha string, base *Parsed, files []FileReport, 
 		if _, seen := byPath[a.path]; !seen {
 			order = append(order, a.path)
 		}
-		byPath[a.path] = append(byPath[a.path], fixedFunction{name: shortName(a.name), fixes: h.fixes, reverts: h.reverts})
+		byPath[a.path] = append(byPath[a.path], fixedFunction{name: ShortName(a.name), fixes: h.fixes, reverts: h.reverts})
 	}
 	var facts []Fact
 	for _, p := range order {
@@ -126,7 +126,7 @@ func historyText(fns []fixedFunction) string {
 		text += fmt.Sprintf(", %s %d times", code(fns[1].name+"()"), fns[1].fixes)
 	}
 	if len(fns) > 2 {
-		text += fmt.Sprintf(", +%d more %s", len(fns)-2, plural(len(fns)-2, "function"))
+		text += fmt.Sprintf(", +%d more %s", len(fns)-2, Plural(len(fns)-2, "function"))
 	}
 	return text
 }

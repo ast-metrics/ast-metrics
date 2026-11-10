@@ -309,7 +309,7 @@ func coverageFacts(cov *Coverage, files []FileReport, changes map[string]Change)
 			continue
 		}
 		facts = append(facts, newFact(FactCoverage, f.Path, nil,
-			fmt.Sprintf("%d of %d changed %s not run by any test, according to %s", uncovered, instrumented, plural(instrumented, "line"), code(cov.Source))))
+			fmt.Sprintf("%d of %d changed %s not run by any test, according to %s", uncovered, instrumented, Plural(instrumented, "line"), code(cov.Source))))
 	}
 	return facts
 }

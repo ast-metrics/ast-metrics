@@ -93,7 +93,6 @@ func TestRunBacktestEndToEnd(t *testing.T) {
 	js, err := bt.JSON()
 	require.NoError(t, err)
 	assert.True(t, json.Valid([]byte(js)))
-	assert.Contains(t, bt.Text(), "cribelo backtest")
 }
 
 func TestRunBacktestTooRecent(t *testing.T) {
@@ -111,5 +110,4 @@ func TestRunBacktestTooRecent(t *testing.T) {
 	assert.Empty(t, bt.Changes)
 	assert.Equal(t, 0, bt.Landings, "commits younger than the window are not even listed")
 	assert.Empty(t, bt.LeftOut)
-	assert.Contains(t, bt.Text(), "No landing qualified.")
 }

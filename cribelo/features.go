@@ -25,7 +25,7 @@ type TouchedFunction struct {
 	// ToRead is the reading cost of the hunk lines inside the function.
 	ToRead int `json:"to_read,omitempty"`
 	// Glance marks a function that gained no decision and stays simple
-	// (cyclomatic complexity at most glanceComplexity): its lines are glanced
+	// (cyclomatic complexity at most GlanceComplexity): its lines are glanced
 	// at rather than read.
 	Glance bool `json:"glance,omitempty"`
 }
@@ -42,10 +42,10 @@ type LineRange struct {
 // two functions are not worth a second span.
 const rangeGap = 3
 
-// glanceComplexity is the cyclomatic complexity up to which a function that
+// GlanceComplexity is the cyclomatic complexity up to which a function that
 // gained no decision is glanced at rather than read. Measured on the bench:
 // such functions are repaired half as often as the others.
-const glanceComplexity = 3
+const GlanceComplexity = 3
 
 // FileReport is everything known about one ranked file.
 type FileReport struct {
@@ -76,10 +76,22 @@ type FileReport struct {
 	// glance at. The two never overlap.
 	Ranges       []LineRange            `json:"read_ranges,omitempty"`
 	GlanceRanges []LineRange            `json:"glance_ranges,omitempty"`
-	Natures      map[Nature]natureCount `json:"natures,omitempty"`
+	Natures      map[Nature]NatureCount `json:"natures,omitempty"`
 	// Test marks a test file read along with the file it exercises.
 	Test bool `json:"test,omitempty"`
 }
+
+// ReadLines are the lines of the file to read closely and to glance at. A
+// file whose hunks were not classified is read whole.
+func (f *FileReport) ReadLines() (closely, glance int) {
+	if f.Hunks == nil {
+		return f.Added + f.Deleted, 0
+	}
+	return f.ToRead, f.ToGlance
+}
+
+// IsNew says whether the file did not exist on the base.
+func (f *FileReport) IsNew() bool { return f.Status == "A" || f.Values[FeatureNewFile] > 0 }
 
 // Measure holds what the features are computed from.
 type Measure struct {
@@ -210,7 +222,7 @@ func (f *FileReport) tally() {
 	for i := range f.Functions {
 		fn := &f.Functions[i]
 		fn.ToRead = 0
-		fn.Glance = fn.growth() <= 0 && fn.After <= glanceComplexity
+		fn.Glance = fn.growth() <= 0 && fn.After <= GlanceComplexity
 	}
 	for j := range f.Hunks {
 		f.Hunks[j].Glance = 0

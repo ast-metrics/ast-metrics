@@ -233,9 +233,9 @@ func buildMoveIndex(head, base *Parsed, changed []Change, deleted []Change) *Mov
 	taken := make([]bool, len(gone))
 	record := func(nature Nature, from fnEntry, to fnEntry, same float64) {
 		idx.Moves = append(idx.Moves, Move{Nature: nature, From: from.path, FromName: from.name, To: to.path, ToName: to.name, Lines: to.end - to.start + 1, Same: same})
-		where := fmt.Sprintf("%s:%s()", from.path, shortName(from.name))
+		where := fmt.Sprintf("%s:%s()", from.path, ShortName(from.name))
 		if from.path == to.path {
-			where = shortName(from.name) + "()"
+			where = ShortName(from.name) + "()"
 		}
 		verb := map[Nature]string{NatureMoved: "moved from", NatureExtracted: "extracted from"}[nature]
 		detail := verb + " " + where
@@ -244,9 +244,9 @@ func buildMoveIndex(head, base *Parsed, changed []Change, deleted []Change) *Mov
 		}
 		idx.arrived[to.path] = append(idx.arrived[to.path], moveSpan{to.start, to.end, nature, detail, from.lines, from.names, from.path})
 		if nature == NatureMoved {
-			target := fmt.Sprintf("%s:%s()", to.path, shortName(to.name))
+			target := fmt.Sprintf("%s:%s()", to.path, ShortName(to.name))
 			if from.path == to.path {
-				target = shortName(to.name) + "()"
+				target = ShortName(to.name) + "()"
 			}
 			idx.left[from.path] = append(idx.left[from.path], moveSpan{from.start, from.end, nature, "moved to " + target, to.lines, to.names, to.path})
 		}

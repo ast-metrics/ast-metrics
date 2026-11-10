@@ -85,9 +85,9 @@ func Calibrate(b *Backtest, now time.Time) (*Calibration, error) {
 	cal.AfterTest = b.Evaluate(learned, split)
 	cal.Improved = cal.AfterTest.Covered >= cal.BeforeTest.Covered && cal.AfterTest.RuleCovered >= cal.BeforeTest.RuleCovered
 	if cal.Improved {
-		cal.Explanation = fmt.Sprintf("on the %d most recent changes, calibrated weights cover %s of the later-fixed files in the top-%d and %s with every high file (generic: %s and %s)", cal.TestCount, pct(cal.AfterTest.Coverage), b.Top, pct(cal.AfterTest.RuleCoverage), pct(cal.BeforeTest.Coverage), pct(cal.BeforeTest.RuleCoverage))
+		cal.Explanation = fmt.Sprintf("on the %d most recent changes, calibrated weights cover %s of the later-fixed files in the top-%d and %s with every high file (generic: %s and %s)", cal.TestCount, Percent(cal.AfterTest.Coverage), b.Top, Percent(cal.AfterTest.RuleCoverage), Percent(cal.BeforeTest.Coverage), Percent(cal.BeforeTest.RuleCoverage))
 	} else {
-		cal.Explanation = fmt.Sprintf("on the %d most recent changes, calibrated weights cover %s of the later-fixed files in the top-%d and %s with every high file, generic ones %s and %s: the generic model is kept", cal.TestCount, pct(cal.AfterTest.Coverage), b.Top, pct(cal.AfterTest.RuleCoverage), pct(cal.BeforeTest.Coverage), pct(cal.BeforeTest.RuleCoverage))
+		cal.Explanation = fmt.Sprintf("on the %d most recent changes, calibrated weights cover %s of the later-fixed files in the top-%d and %s with every high file, generic ones %s and %s: the generic model is kept", cal.TestCount, Percent(cal.AfterTest.Coverage), b.Top, Percent(cal.AfterTest.RuleCoverage), Percent(cal.BeforeTest.Coverage), Percent(cal.BeforeTest.RuleCoverage))
 	}
 	return cal, nil
 }

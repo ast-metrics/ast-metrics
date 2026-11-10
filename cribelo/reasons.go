@@ -27,16 +27,16 @@ func reasons(r *FileReport) []string {
 			if r.Clone != nil {
 				names := strings.SplitN(r.Clone.Function, " ~ ", 2)
 				from, to := names[0], names[len(names)-1]
-				add("clone", fmt.Sprintf("%s() %d%% similar to %s:%s()", shortName(from), int(r.Clone.Similarity*100+0.5), r.Clone.Path, shortName(to)))
+				add("clone", fmt.Sprintf("%s() %d%% similar to %s:%s()", ShortName(from), int(r.Clone.Similarity*100+0.5), r.Clone.Path, ShortName(to)))
 			}
 		case FeatureComplexityAdded, FeatureMaxComplexity:
 			add("complexity", complexityPhrase(r))
 		case FeatureAfferent:
-			add("afferent", fmt.Sprintf("imported by %d %s", int(c.Value), plural(int(c.Value), "file")))
+			add("afferent", fmt.Sprintf("imported by %d %s", int(c.Value), Plural(int(c.Value), "file")))
 		case FeatureFixes90d:
 			add("fixes", fmt.Sprintf("fixed %d× in 90 days", int(c.Value)))
 		case FeatureChurn90d:
-			add("churn", fmt.Sprintf("%d %s in 90 days", int(c.Value), plural(int(c.Value), "commit")))
+			add("churn", fmt.Sprintf("%d %s in 90 days", int(c.Value), Plural(int(c.Value), "commit")))
 		case FeatureLinesAdded, FeatureLinesDeleted:
 			add("lines", linesPhrase(r.Added, r.Deleted))
 		case FeatureNewFile:
@@ -71,11 +71,11 @@ func complexityPhrase(r *FileReport) string {
 	}
 	var phrase string
 	if top.New {
-		phrase = fmt.Sprintf("new %s() complexity %d", shortName(top.Name), top.After)
+		phrase = fmt.Sprintf("new %s() complexity %d", ShortName(top.Name), top.After)
 	} else if top.After != top.Before {
-		phrase = fmt.Sprintf("%s() complexity %d → %d", shortName(top.Name), top.Before, top.After)
+		phrase = fmt.Sprintf("%s() complexity %d → %d", ShortName(top.Name), top.Before, top.After)
 	} else {
-		phrase = fmt.Sprintf("%s() complexity %d", shortName(top.Name), top.After)
+		phrase = fmt.Sprintf("%s() complexity %d", ShortName(top.Name), top.After)
 	}
 	grown := 0
 	for _, fn := range r.Functions[1:] {
@@ -87,19 +87,4 @@ func complexityPhrase(r *FileReport) string {
 		phrase += fmt.Sprintf(", +%d more", grown)
 	}
 	return phrase
-}
-
-// shortName drops the class qualifier of a method for display.
-func shortName(name string) string {
-	if idx := strings.LastIndex(name, "::"); idx >= 0 {
-		return name[idx+2:]
-	}
-	return name
-}
-
-func plural(n int, word string) string {
-	if n == 1 {
-		return word
-	}
-	return word + "s"
 }

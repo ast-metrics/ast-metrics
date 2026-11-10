@@ -346,3 +346,11 @@ func TestHistoryTextIsOneLinePerFile(t *testing.T) {
 	assert.Equal(t, "`getDocBlockFromMethod()` was fixed 6 times in the past year, `findDocBlock()` 4 times, +3 more functions",
 		historyText([]fixedFunction{{name: "findDocBlock", fixes: 4}, {name: "getType", fixes: 2}, {name: "getDocBlockFromMethod", fixes: 6}, {name: "a", fixes: 2}, {name: "b", fixes: 2}}))
 }
+
+func TestFactMarkdown(t *testing.T) {
+	fact := newFact(FactDependency, "a.go", nil, "`core` depends on `api` for the first time")
+	assert.Equal(t, "core depends on api for the first time", fact.Text)
+	assert.Equal(t, "`core` depends on `api` for the first time", fact.Markdown())
+	assert.Equal(t, "plain", Fact{Text: "plain"}.Markdown())
+	assert.Equal(t, []Fact{fact}, FactsOf([]Fact{fact, {Path: "b.go"}}, "a.go"))
+}

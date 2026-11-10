@@ -124,3 +124,35 @@ func decidedAt(n int, offsets ...int) []bool {
 	}
 	return out
 }
+
+func TestLineRanges(t *testing.T) {
+	assert.Equal(t, []LineRange{{3, 9}, {14, 14}, {30, 31}}, lineRanges([]int{30, 3, 4, 5, 9, 14, 31}, nil), "lines three apart at most are one span")
+	comment := map[int]bool{10: true, 11: true, 12: true, 13: true, 14: true}
+	assert.Equal(t, []LineRange{{7, 16}}, lineRanges([]int{7, 8, 9, 15, 16}, comment), "filler does not cut a span, whatever its length")
+	assert.Equal(t, []LineRange{{7, 9}, {15, 16}}, lineRanges([]int{7, 8, 9, 15, 16}, nil), "unchanged lines do, past three")
+	assert.Equal(t, []LineRange{{7, 9}, {15, 16}}, lineRanges([]int{7, 8, 9, 15, 16}, comment, LineRange{12, 13}), "a span of the other kind always does")
+	assert.Empty(t, lineRanges(nil, nil))
+
+	read, glanced := spansOf([]int{10, 12, 20}, []int{5, 11, 14, 22}, nil)
+	assert.Equal(t, []LineRange{{10, 12}, {20, 20}}, read)
+	assert.Equal(t, []LineRange{{5, 5}, {14, 14}, {22, 22}}, glanced, "line 11 is read with the span around it; 14 and 22 stand on each side of line 20")
+
+	assert.True(t, bareLine.MatchString("\t})"))
+	assert.True(t, bareLine.MatchString("package analyzer"))
+	assert.False(t, bareLine.MatchString("\treturn x }"))
+}
+
+func TestReadLinesAndIsNew(t *testing.T) {
+	whole := &FileReport{Added: 10, Deleted: 2, ToRead: 0}
+	closely, glance := whole.ReadLines()
+	assert.Equal(t, 12, closely, "a file without classified hunks is read whole")
+	assert.Equal(t, 0, glance)
+	classified := &FileReport{Added: 10, Deleted: 2, ToRead: 4, ToGlance: 3, Hunks: []HunkReport{{}}}
+	closely, glance = classified.ReadLines()
+	assert.Equal(t, 4, closely)
+	assert.Equal(t, 3, glance)
+
+	assert.True(t, (&FileReport{Status: "A"}).IsNew())
+	assert.True(t, (&FileReport{Values: map[Feature]float64{FeatureNewFile: 1}}).IsNew())
+	assert.False(t, (&FileReport{Status: "M"}).IsNew())
+}
