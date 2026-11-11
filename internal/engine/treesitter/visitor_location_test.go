@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	enginePkg "github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/cpp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/csharp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/golang"
 	"github.com/ast-metrics/ast-metrics/internal/engine/java"
@@ -97,6 +98,20 @@ func TestVisitor_PopulatesLocations(t *testing.T) {
 				"}\n", // 5
 			funcName: "Bar", funcLine: 2,
 			className: "Foo", classLine: 1,
+		},
+		{
+			lang:   "cpp",
+			runner: &cpp.CppRunner{},
+			code: "namespace app {\n" + // 1
+				"\n" + // 2
+				"class Foo {\n" + // 3
+				"    int bar() {\n" + // 4
+				"        return 1;\n" + // 5
+				"    }\n" + // 6
+				"};\n" + // 7
+				"}\n", // 8
+			funcName: "bar", funcLine: 4,
+			className: "Foo", classLine: 3,
 		},
 		{
 			lang:   "typescript",

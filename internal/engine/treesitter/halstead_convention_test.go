@@ -5,6 +5,7 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/cpp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/csharp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/golang"
 	"github.com/ast-metrics/ast-metrics/internal/engine/java"
@@ -131,6 +132,24 @@ impl Cart {
         this.items[qty] = qty;
     }
 }
+`,
+		},
+		{
+			language: "C++",
+			runner:   &cpp.CppRunner{},
+			access:   "->",
+			source: `class Cart {
+    int* items;
+
+public:
+    int keys() {
+        return count(this->items);
+    }
+
+    void add(int name, int qty) {
+        this->items[qty] = qty;
+    }
+};
 `,
 		},
 		{

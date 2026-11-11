@@ -28,7 +28,7 @@ import (
 	pb "github.com/ast-metrics/ast-metrics/pb"
 )
 
-var allLanguages = []string{langGo, langPHP, langPython, langTS, langJava, langCSharp, langRust}
+var allLanguages = []string{langGo, langPHP, langPython, langTS, langJava, langCSharp, langRust, langCpp}
 
 // parse runs the engine and the analyzers over src, as a real run would.
 func parse(t *testing.T, lang, src string) *pb.File {
@@ -82,6 +82,7 @@ var llocScenarios = []llocScenario{
 			langJava:   "class C { void f() {\n\t} }\n",
 			langCSharp: "class C { void f() {\n\t} }\n",
 			langRust:   "fn f() {\n}\n",
+			langCpp:    "void f() {\n}\n",
 		},
 	},
 	{
@@ -96,6 +97,7 @@ var llocScenarios = []llocScenario{
 			langJava:   "class C { void f() {\n\t\tint a = 1;\n\t\tg(a);\n\t\tg(a);\n\t} }\n",
 			langCSharp: "class C { void f() {\n\t\tint a = 1;\n\t\tG(a);\n\t\tG(a);\n\t} }\n",
 			langRust:   "fn f() {\n\tlet a = 1;\n\tg(a);\n\tg(a);\n}\n",
+			langCpp:    "void f() {\n\tint a = 1;\n\tg(a);\n\tg(a);\n}\n",
 		},
 	},
 	{
@@ -110,6 +112,7 @@ var llocScenarios = []llocScenario{
 			langJava:   "class C { void f() {\n\t\tg(\n\t\t\t1,\n\t\t\t2\n\t\t);\n\t} }\n",
 			langCSharp: "class C { void f() {\n\t\tG(\n\t\t\t1,\n\t\t\t2\n\t\t);\n\t} }\n",
 			langRust:   "fn f() {\n\tg(\n\t\t1,\n\t\t2,\n\t);\n}\n",
+			langCpp:    "void f() {\n\tg(\n\t\t1,\n\t\t2\n\t);\n}\n",
 		},
 	},
 	{
@@ -124,6 +127,7 @@ var llocScenarios = []llocScenario{
 			langJava:   "class C { void f() {\n\t\tint a = 1; g(a);\n\t} }\n",
 			langCSharp: "class C { void f() {\n\t\tint a = 1; G(a);\n\t} }\n",
 			langRust:   "fn f() {\n\tlet a = 1; g(a);\n}\n",
+			langCpp:    "void f() {\n\tint a = 1; g(a);\n}\n",
 		},
 	},
 	{
@@ -138,6 +142,7 @@ var llocScenarios = []llocScenario{
 			langJava:   "class C { int f(int a) {\n\t\tint r = 0;\n\t\tif (a > 0) {\n\t\t\tr = 1;\n\t\t} else {\n\t\t\tr = 2;\n\t\t}\n\t\treturn r;\n\t} }\n",
 			langCSharp: "class C { int f(int a) {\n\t\tint r = 0;\n\t\tif (a > 0) {\n\t\t\tr = 1;\n\t\t} else {\n\t\t\tr = 2;\n\t\t}\n\t\treturn r;\n\t} }\n",
 			langRust:   "fn f(a: i32) -> i32 {\n\tlet mut r = 0;\n\tif a > 0 {\n\t\tr = 1;\n\t} else {\n\t\tr = 2;\n\t}\n\treturn r;\n}\n",
+			langCpp:    "int f(int a) {\n\tint r = 0;\n\tif (a > 0) {\n\t\tr = 1;\n\t} else {\n\t\tr = 2;\n\t}\n\treturn r;\n}\n",
 		},
 	},
 	{
@@ -152,6 +157,7 @@ var llocScenarios = []llocScenario{
 			langJava:   "class C { int f(int a) {\n\t\tint r = 0;\n\t\tif (a > 0) {\n\t\t\tr = 1;\n\t\t} else if (a < 0) {\n\t\t\tr = 2;\n\t\t} else {\n\t\t\tr = 3;\n\t\t}\n\t\treturn r;\n\t} }\n",
 			langCSharp: "class C { int f(int a) {\n\t\tint r = 0;\n\t\tif (a > 0) {\n\t\t\tr = 1;\n\t\t} else if (a < 0) {\n\t\t\tr = 2;\n\t\t} else {\n\t\t\tr = 3;\n\t\t}\n\t\treturn r;\n\t} }\n",
 			langRust:   "fn f(a: i32) -> i32 {\n\tlet mut r = 0;\n\tif a > 0 {\n\t\tr = 1;\n\t} else if a < 0 {\n\t\tr = 2;\n\t} else {\n\t\tr = 3;\n\t}\n\treturn r;\n}\n",
+			langCpp:    "int f(int a) {\n\tint r = 0;\n\tif (a > 0) {\n\t\tr = 1;\n\t} else if (a < 0) {\n\t\tr = 2;\n\t} else {\n\t\tr = 3;\n\t}\n\treturn r;\n}\n",
 		},
 	},
 	{
@@ -166,6 +172,7 @@ var llocScenarios = []llocScenario{
 			langJava:   "class C { int f() {\n\t\tint t = 0;\n\t\tfor (int i = 0; i < 3; i++) {\n\t\t\tt += i;\n\t\t}\n\t\treturn t;\n\t} }\n",
 			langCSharp: "class C { int f() {\n\t\tint t = 0;\n\t\tfor (int i = 0; i < 3; i++) {\n\t\t\tt += i;\n\t\t}\n\t\treturn t;\n\t} }\n",
 			langRust:   "fn f() -> i32 {\n\tlet mut t = 0;\n\tfor i in 0..3 {\n\t\tt += i;\n\t}\n\treturn t;\n}\n",
+			langCpp:    "int f() {\n\tint t = 0;\n\tfor (int i = 0; i < 3; ++i) {\n\t\tt += i;\n\t}\n\treturn t;\n}\n",
 		},
 	},
 	{
@@ -186,6 +193,7 @@ var llocScenarios = []llocScenario{
 			// Rust arms take an expression, so the returns are written out to
 			// describe the same program rather than the same syntax
 			langRust: "fn f(a: i32) -> i32 {\n\tmatch a {\n\t\t1 => {\n\t\t\treturn 1;\n\t\t}\n\t\t2 => {\n\t\t\treturn 2;\n\t\t}\n\t\t_ => {\n\t\t\treturn 3;\n\t\t}\n\t}\n}\n",
+			langCpp:  "int f(int a) {\n\tswitch (a) {\n\tcase 1:\n\t\treturn 1;\n\tcase 2:\n\t\treturn 2;\n\tdefault:\n\t\treturn 3;\n\t}\n}\n",
 		},
 	},
 	{
@@ -197,6 +205,7 @@ var llocScenarios = []llocScenario{
 			langPython: "def f():\n    try:\n        g()\n    except ValueError:\n        h()\n    except KeyError:\n        i()\n",
 			langJava:   "class C { void f() {\n\t\ttry {\n\t\t\tg();\n\t\t} catch (RuntimeException e) {\n\t\t\th();\n\t\t} catch (Error e) {\n\t\t\ti();\n\t\t}\n\t} }\n",
 			langCSharp: "class C { void f() {\n\t\ttry {\n\t\t\tG();\n\t\t} catch (System.Exception e) {\n\t\t\tH();\n\t\t} catch {\n\t\t\tI();\n\t\t}\n\t} }\n",
+			langCpp:    "void f() {\n\ttry {\n\t\tg();\n\t} catch (A& e) {\n\t\th();\n\t} catch (B& e) {\n\t\ti();\n\t}\n}\n",
 		},
 	},
 	{
@@ -215,6 +224,7 @@ var llocScenarios = []llocScenario{
 			langJava:   "package n;\n\nimport java.util.List;\n\nclass C {\n\tprivate int x;\n\tstatic final int K = 1;\n\n\t@Override\n\tpublic int f() {\n\t\treturn K;\n\t}\n}\n",
 			langCSharp: "using System;\n\nnamespace N {\n\tclass C {\n\t\tprivate int x;\n\t\tconst int K = 1;\n\t\tpublic int Prop { get; set; }\n\n\t\t[Obsolete]\n\t\tpublic int f() {\n\t\t\treturn K;\n\t\t}\n\t}\n}\n",
 			langRust:   "use std::fmt;\n\nconst K: i32 = 1;\nstatic V: i32 = 2;\n\nstruct T {\n\tx: i32,\n}\n\nimpl T {\n\tfn f(&self) -> i32 {\n\t\treturn K;\n\t}\n}\n",
+			langCpp:    "#include <vector>\nclass C { int x; static const int K = 1; void f() { g(); } };\n",
 		},
 	},
 	{
@@ -229,6 +239,7 @@ var llocScenarios = []llocScenario{
 			langJava:   "class C {\n\t/**\n\t * One.\n\t * Two.\n\t * Three.\n\t */\n\tint f() {\n\t\treturn 1;\n\t}\n}\n",
 			langCSharp: "class C {\n\t/// One.\n\t/// Two.\n\t/// Three.\n\tint f() {\n\t\treturn 1;\n\t}\n}\n",
 			langRust:   "/// One.\n/// Two.\n/// Three.\nfn f() -> i32 {\n\treturn 1;\n}\n",
+			langCpp:    "/// One.\n/// Two.\n/// Three.\nint f() {\n\treturn 1;\n}\n",
 		},
 	},
 	{
@@ -243,6 +254,7 @@ var llocScenarios = []llocScenario{
 			langJava:   "class C {\n\tint g() {\n\t\tint a = 1;\n\t\tint b = 2;\n\t\treturn a + b;\n\t}\n\tint f() {\n\t\treturn 1;\n\t}\n}\n",
 			langCSharp: "class C {\n\tint g() {\n\t\tint a = 1;\n\t\tint b = 2;\n\t\treturn a + b;\n\t}\n\tint f() {\n\t\treturn 1;\n\t}\n}\n",
 			langRust:   "fn g() -> i32 {\n\tlet a = 1;\n\tlet b = 2;\n\treturn a + b;\n}\nfn f() -> i32 {\n\treturn 1;\n}\n",
+			langCpp:    "int g() { int a=1; int b=2; return a+b; }\nint f() {\n\treturn 1;\n}\n",
 		},
 	},
 }
@@ -326,6 +338,10 @@ var documentedFixture = map[string]struct {
 	},
 	langRust: {
 		src: "// doc line one\n// doc line two\nfn f(a: i32) -> i32 {\n\tlet mut b = a + 1; // trailing note\n\n\t/* block one\n\t   block two */\n\tif b > 0 {\n\t\tb = b - 1;\n\t}\n\treturn b;\n}\n",
+		loc: 12, cloc: 4, ncloc: 7, lloc: 4,
+	},
+	langCpp: {
+		src: "// doc line one\n// doc line two\nint f(int a) {\n\tint b = a + 1; // trailing note\n\n\t/* block one\n\t   block two */\n\tif (b > 0) {\n\t\tb = b - 1;\n\t}\n\treturn b;\n}\n",
 		loc: 12, cloc: 4, ncloc: 7, lloc: 4,
 	},
 }
