@@ -355,7 +355,13 @@ func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 			walk(x.Child(i), prefix)
 		}
 	}
-	walk(n, "")
+	// Only the path is walked: the visibility of `pub(crate) use a::B` holds a
+	// `crate` (or `super`, `self`, `in path`) that names no dependency.
+	if argument := n.ChildByFieldName("argument"); argument != nil {
+		walk(argument, "")
+	} else {
+		walk(n, "")
+	}
 	return dedup(items)
 }
 

@@ -348,6 +348,40 @@ var rustScenarios = []dependencyScenario{
 			"src/app.rs":       {"src/model/inner.rs", "src/model/mod.rs"},
 		},
 	},
+	{
+		name: "an item declared next to an aliased import of the same name is read where it is declared",
+		why:  "error.rs declares Error and knows the parser's Error only as ParseError; crate::error::Error is the one of error.rs",
+		files: map[string]string{
+			"Cargo.toml":    "[package]\nname = \"demo\"\n",
+			"src/lib.rs":    "mod app;\nmod error;\nmod parser;\n",
+			"src/parser.rs": "pub struct Error;\n",
+			"src/error.rs":  "use crate::parser::Error as ParseError;\n\npub enum Error {\n    Parse(ParseError),\n}\n",
+			"src/app.rs":    "use crate::error::Error;\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/app.rs", "src/error.rs", "src/parser.rs"},
+			"src/error.rs": {"src/parser.rs"},
+			"src/app.rs":   {"src/error.rs"},
+		},
+	},
+	{
+		name: "the visibility of a use is not a dependency",
+		why:  "pub(crate) and pub(super) restrict who sees the import; they name neither the crate root nor the parent module",
+		files: map[string]string{
+			"Cargo.toml":   "[package]\nname = \"demo\"\n",
+			"src/lib.rs":   "mod m;\n",
+			"src/m/mod.rs": "mod a;\nmod b;\nmod c;\n",
+			"src/m/b.rs":   "pub struct Thing;\n",
+			"src/m/a.rs":   "pub(crate) use crate::m::b::Thing;\n",
+			"src/m/c.rs":   "pub(super) use super::b::Thing;\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/m/mod.rs"},
+			"src/m/mod.rs": {"src/m/a.rs", "src/m/b.rs", "src/m/c.rs"},
+			"src/m/a.rs":   {"src/m/b.rs"},
+			"src/m/c.rs":   {"src/m/b.rs"},
+		},
+	},
 }
 
 // ---------------------------------------------------------------------------
