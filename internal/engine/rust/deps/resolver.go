@@ -41,6 +41,7 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 	locations := make(map[string]crateModule)
 	crateNames := make(map[string]string)
 	imports := make(map[string][]*pb.StmtExternalDependency)
+	declared := make(map[string]map[string]bool)
 
 	crates := module.NewCache()
 	for _, file := range files {
@@ -55,6 +56,7 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 		location := crateModule{crate: located.Crate, module: located.Module}
 		locations[path] = location
 		imports[path] = engine.GetDependenciesInFile(file)
+		declared[path] = declaredItems(file)
 		modules.Add(moduleKey(location.crate, location.module), path)
 		if located.Name != "" {
 			crateNames[located.Name] = location.crate
@@ -65,7 +67,24 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 		locations:  locations,
 		crateNames: crateNames,
 		imports:    imports,
+		declared:   declared,
 	}
+}
+
+// declaredItems names the types and free functions a file declares itself.
+func declaredItems(file *pb.File) map[string]bool {
+	names := make(map[string]bool)
+	for _, class := range engine.GetClassesInFile(file) {
+		names[class.GetName().GetShort()] = true
+	}
+	for _, trait := range engine.GetInterfacesInFile(file) {
+		names[trait.GetName().GetShort()] = true
+	}
+	for _, function := range engine.GetFunctionsOutsideClassesInFile(file) {
+		names[function.GetName().GetShort()] = true
+	}
+	delete(names, "")
+	return names
 }
 
 func moduleKey(crate, module string) string {
@@ -79,6 +98,9 @@ type scopedFileDependencyResolver struct {
 	// imports holds each file's dependencies, read to follow an item to the
 	// module that defines it when another module re-exports it.
 	imports map[string][]*pb.StmtExternalDependency
+	// declared holds the items each file declares itself, which no import of
+	// the same name can stand for.
+	declared map[string]map[string]bool
 }
 
 var _ dependency.ScopedResolver = (*scopedFileDependencyResolver)(nil)
@@ -163,13 +185,18 @@ func (r *scopedFileDependencyResolver) resolvePath(from crateModule, path string
 // A glob (`pub use a::*`) is not followed, since what it brings in is only
 // known to the compiler. Nor is an alias (`pub use error::Error as AppError`):
 // the engine keeps the imported name, not the local one, so `crate::AppError`
-// stays on the re-exporting file.
+// stays on the re-exporting file. For the same reason an item the file
+// declares is its own, whatever it imports: next to `enum Error`, the Error of
+// `use crate::parser::Error as ParseError` is only known as ParseError.
 func (r *scopedFileDependencyResolver) reexported(path, item string, followed map[string]bool) []string {
 	key := path + "\x00" + item
 	if followed[key] {
 		return nil
 	}
 	followed[key] = true
+	if r.declared[path][item] {
+		return nil
+	}
 	for _, dep := range r.imports[path] {
 		if dep.GetClassName() != item {
 			continue

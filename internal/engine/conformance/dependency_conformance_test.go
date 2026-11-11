@@ -349,6 +349,22 @@ var rustScenarios = []dependencyScenario{
 		},
 	},
 	{
+		name: "an item declared next to an aliased import of the same name is read where it is declared",
+		why:  "error.rs declares Error and knows the parser's Error only as ParseError; crate::error::Error is the one of error.rs",
+		files: map[string]string{
+			"Cargo.toml":    "[package]\nname = \"demo\"\n",
+			"src/lib.rs":    "mod app;\nmod error;\nmod parser;\n",
+			"src/parser.rs": "pub struct Error;\n",
+			"src/error.rs":  "use crate::parser::Error as ParseError;\n\npub enum Error {\n    Parse(ParseError),\n}\n",
+			"src/app.rs":    "use crate::error::Error;\n",
+		},
+		edges: map[string][]string{
+			"src/lib.rs":   {"src/app.rs", "src/error.rs", "src/parser.rs"},
+			"src/error.rs": {"src/parser.rs"},
+			"src/app.rs":   {"src/error.rs"},
+		},
+	},
+	{
 		name: "the visibility of a use is not a dependency",
 		why:  "pub(crate) and pub(super) restrict who sees the import; they name neither the crate root nor the parent module",
 		files: map[string]string{
