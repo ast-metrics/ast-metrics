@@ -50,6 +50,16 @@ type Skipped struct {
 	Kind   string  `json:"kind"`
 	Reason string  `json:"reason"`
 	Score  float64 `json:"score,omitempty"`
+	// Mechanical marks a code file whose every hunk is a move, a rename,
+	// formatting, comments or imports: nothing in it changes behavior.
+	Mechanical bool `json:"mechanical,omitempty"`
+}
+
+// Glanceable tells a skipped file a reviewer can mark as seen without
+// opening it: mechanical code, a file renamed and left as it was, a
+// generated file.
+func (s Skipped) Glanceable() bool {
+	return s.Mechanical || s.Kind == KindRenamed.String() || s.Kind == KindGenerated.String()
 }
 
 // Plan is the outcome: files to read, files to skip, and how the plan was made.
@@ -204,7 +214,19 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 			kept = append(kept, rel)
 		}
 	}
-	head, err := parseFiles(repo.Root, kept)
+	// A change that touches no file of a parsed language has nothing to
+	// measure: the tree is not parsed for it.
+	measurable := false
+	for _, c := range changes {
+		if !c.Binary && analyzedExtensions[strings.ToLower(path.Ext(c.Path))] {
+			measurable = true
+			break
+		}
+	}
+	if !measurable {
+		kept = nil
+	}
+	head, err := parseTree(repo.Root, kept)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +345,7 @@ func Run(repo *Repo, opts Options) (*Plan, error) {
 		if f.Read || f.Test {
 			continue
 		}
-		plan.Skipped = append(plan.Skipped, Skipped{Path: f.Path, Kind: "code", Reason: skipReason(f), Score: f.Score})
+		plan.Skipped = append(plan.Skipped, Skipped{Path: f.Path, Kind: "code", Reason: skipReason(f), Score: f.Score, Mechanical: allMechanical(f)})
 	}
 	sort.SliceStable(plan.Skipped, func(i, j int) bool {
 		if plan.Skipped[i].Kind != plan.Skipped[j].Kind {
