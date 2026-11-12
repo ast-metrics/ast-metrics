@@ -72,6 +72,14 @@ func parseFiles(root string, relPaths []string) (*Parsed, error) {
 	}
 	// Only the complexity is read from the analysis; the plan does not need the volume metrics.
 	files = analyzer.AnalyzeFilesComplexity(files)
+	// The files come back in the order of their paths, whatever the order
+	// the engines ran in: the plan must not depend on it.
+	sort.SliceStable(files, func(i, j int) bool {
+		if files[i] == nil || files[j] == nil {
+			return files[j] == nil && files[i] != nil
+		}
+		return files[i].Path < files[j].Path
+	})
 	parsed := &Parsed{Root: root, Files: make(map[string]*pb.File, len(files)), All: files}
 	for _, f := range files {
 		if f == nil {
