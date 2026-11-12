@@ -589,24 +589,34 @@ func (v *Visitor) collectDecisions(scope *sitter.Node, target *pb.Stmts) {
 	if scope == nil || target == nil {
 		return
 	}
-	var walk func(n *sitter.Node)
-	walk = func(n *sitter.Node) {
+	var walk func(n, parent *sitter.Node)
+	walk = func(n, parent *sitter.Node) {
 		if n == nil {
 			return
 		}
-		v.recordDecision(n, target)
+		v.recordDecision(n, parent, target)
 		for i := 0; i < int(n.ChildCount()); i++ {
 			if ch := n.Child(i); !v.isScopeBoundary(ch) {
-				walk(ch)
+				walk(ch, n)
 			}
 		}
 	}
 	// the scope node itself is not a decision: start at its children
 	for i := 0; i < int(scope.ChildCount()); i++ {
 		if ch := scope.Child(i); !v.isScopeBoundary(ch) {
-			walk(ch)
+			walk(ch, scope)
 		}
 	}
+}
+
+// decision classifies n, a child of parent. The parent is handed to the
+// adapters that need it, which spares them asking the node for it: tree-sitter
+// answers that by walking down from the root of the tree.
+func (v *Visitor) decision(n, parent *sitter.Node) DecisionKind {
+	if pd, ok := v.ad.(ParentDecider); ok {
+		return pd.DecisionIn(n, parent)
+	}
+	return v.ad.Decision(n)
 }
 
 // decisionLocation returns the source range a decision covers.
@@ -624,7 +634,7 @@ func (v *Visitor) decisionLocation(n *sitter.Node, kind DecisionKind) *pb.StmtLo
 	if alt == nil {
 		// the others (PHP, TypeScript, Python, Rust) make it a child clause
 		for i := 0; i < int(n.ChildCount()) && alt == nil; i++ {
-			switch v.ad.Decision(n.Child(i)) {
+			switch v.decision(n.Child(i), n) {
 			case DecElse, DecElif:
 				alt = n.Child(i)
 			}
@@ -638,8 +648,8 @@ func (v *Visitor) decisionLocation(n *sitter.Node, kind DecisionKind) *pb.StmtLo
 	return loc
 }
 
-func (v *Visitor) recordDecision(n *sitter.Node, target *pb.Stmts) {
-	kind := v.ad.Decision(n)
+func (v *Visitor) recordDecision(n, parent *sitter.Node, target *pb.Stmts) {
+	kind := v.decision(n, parent)
 	loc := v.decisionLocation(n, kind)
 	switch kind {
 	case DecIf:

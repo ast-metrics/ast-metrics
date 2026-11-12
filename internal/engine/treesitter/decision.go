@@ -168,17 +168,33 @@ func (s *DecisionSpec) LogicalOperator(n *sitter.Node, src []byte) string {
 	return ""
 }
 
+// ParentDecider is implemented by the adapters whose classification of a node
+// depends on its parent (the else branch of Go, Java, C# and C++).
+//
+// Asking a node for its parent makes tree-sitter walk down from the root of
+// the tree again, and Decision is called on every node of a scope: the walk
+// that calls it already holds the parent, so it hands it over instead.
+type ParentDecider interface {
+	// DecisionIn is Decision for a node whose parent is known. A nil parent
+	// means the caller does not know it: it is then asked to the node.
+	DecisionIn(n, parent *sitter.Node) DecisionKind
+}
+
 // IsElseBranch reports whether n is the else branch of the if statement that
 // contains it, in a grammar that has no else_clause node of its own (Go, Java,
 // C#): there the branch is the `alternative` field of the if statement, holding
 // either a block (a plain else) or another if statement (an else-if).
 //
 // It answers false for the else-if form, which is counted as the if it is.
-func IsElseBranch(n *sitter.Node, ifType string) bool {
+//
+// parent is the parent of n when the caller holds it, nil otherwise.
+func IsElseBranch(n, parent *sitter.Node, ifType string) bool {
 	if n == nil || n.Type() == ifType {
 		return false
 	}
-	parent := n.Parent()
+	if parent == nil {
+		parent = n.Parent()
+	}
 	if parent == nil || parent.Type() != ifType {
 		return false
 	}

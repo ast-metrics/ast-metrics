@@ -216,11 +216,16 @@ var javaDecisions = &Treesitter.DecisionSpec{
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
+	return a.DecisionIn(n, nil)
+}
+
+// DecisionIn implements Treesitter.ParentDecider.
+func (a *TreeSitterAdapter) DecisionIn(n, parent *sitter.Node) Treesitter.DecisionKind {
 	kind := javaDecisions.Classify(n, a.src)
 	if kind == Treesitter.DecCase && Treesitter.HasChildOfType(n, "default") {
 		return Treesitter.DecDefault
 	}
-	if kind == Treesitter.DecNone && Treesitter.IsElseBranch(n, "if_statement") {
+	if kind == Treesitter.DecNone && Treesitter.IsElseBranch(n, parent, "if_statement") {
 		return Treesitter.DecElse
 	}
 	return kind
