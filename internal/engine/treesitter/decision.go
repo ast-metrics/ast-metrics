@@ -73,15 +73,22 @@ type DecisionSpec struct {
 	Logical []string
 	Ops     []string
 
+	// Shorthand lists node types that branch but read as one expression, such
+	// as Rust's `?` or a comprehension's clauses. They keep the kind another
+	// list gives them, and so their cyclomatic weight, but add nothing to
+	// cognitive complexity (see cognitive.go).
+	Shorthand []string
+
 	// Language is the grammar these node types belong to, which lets the
 	// classification work on symbol ids instead of node type names. See
 	// symbols.go.
 	Language func() *sitter.Language
 
-	once     sync.Once
-	byType   map[string]DecisionKind
-	ops      map[string]bool
-	bySymbol symbolTable[DecisionKind]
+	once      sync.Once
+	byType    map[string]DecisionKind
+	ops       map[string]bool
+	shorthand map[string]bool
+	bySymbol  symbolTable[DecisionKind]
 }
 
 // decLogicalCandidate marks a node type that may carry a short-circuit
@@ -115,6 +122,10 @@ func (s *DecisionSpec) index() {
 		s.ops = make(map[string]bool, len(s.Ops))
 		for _, o := range s.Ops {
 			s.ops[o] = true
+		}
+		s.shorthand = make(map[string]bool, len(s.Shorthand))
+		for _, t := range s.Shorthand {
+			s.shorthand[t] = true
 		}
 		if s.Language != nil {
 			s.bySymbol = newSymbolTable(s.Language(), s.byType)
@@ -155,6 +166,21 @@ func (s *DecisionSpec) logicalKind(n *sitter.Node, src []byte) DecisionKind {
 		return DecNone
 	}
 	return DecLogical
+}
+
+// IsShorthand reports whether a node is one of the spec's shorthand types.
+func (s *DecisionSpec) IsShorthand(n *sitter.Node) bool {
+	if n == nil {
+		return false
+	}
+	s.index()
+	return s.shorthand[n.Type()]
+}
+
+// ShorthandAware is implemented by an adapter whose language has shorthand
+// branches.
+type ShorthandAware interface {
+	IsShorthand(n *sitter.Node) bool
 }
 
 // LogicalOperator returns the operator carried by a DecLogical node.
