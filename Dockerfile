@@ -3,7 +3,7 @@
 # docker run -it --rm ast-metrics/ast-metrics:latest sh
 # docker run -it -v .:/src  --rm ast-metrics/ast-metrics:latest ast-metrics analyze --report-html=/src/report /src
 #
-FROM golang:1.25-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 # Install packages
 RUN apk --update --no-cache add \

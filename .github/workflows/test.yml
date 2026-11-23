@@ -10,6 +10,9 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-15, windows-latest]
+        # 1.26 is the minimum go.mod allows, 1.27 is what release binaries are
+        # built with: both have to be covered.
+        go: ["1.26", "1.27"]
 
     defaults:
       run:
@@ -20,10 +23,10 @@ jobs:
         with:
           clean: true
 
-      - name: Setup Go (version from go.mod)
-        uses: actions/setup-go@v4
+      - name: Setup Go ${{ matrix.go }}
+        uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: ${{ matrix.go }}
           cache-dependency-path: go.sum
 
       - name: Display Go version
@@ -32,16 +35,18 @@ jobs:
       - name: Install dependencies
         run: go mod tidy
 
-      - name: Test with the Go CLI (coverage only on ubuntu)
+      - name: Test with the Go CLI (coverage on ubuntu/1.27 only)
         run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.27'
 
-      - name: Test with the Go CLI (no coverage on other OS)
+      - name: Test with the Go CLI (no coverage)
         run: go test -race ./...
-        if: matrix.os != 'ubuntu-latest'
+        if: matrix.os != 'ubuntu-latest' || matrix.go != '1.27'
 
+      # One report per commit: six would make the Codecov diff unreadable.
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4.0.1
+        if: matrix.os == 'ubuntu-latest' && matrix.go == '1.27'
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: ast-metrics/ast-metrics
@@ -54,7 +59,7 @@ jobs:
           clean: true
 
       - name: Setup Go (version from go.mod)
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
