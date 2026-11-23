@@ -24,7 +24,7 @@ No problem! Golang is accessible and easy to learn. Here are some resources to g
 + [Go by Example](https://gobyexample.com/): a hands-on introduction to Go using annotated example programs.
 + [Go in 5 minutes](https://www.youtube.com/c/go-in-5-minutes): a series of short videos that will help you get started with Go.
 
-You will need `Go 1.21+` to contribute to the source code. Please follow the [official installation guide](https://go.dev/doc/install) to install Go on your machine.
+You will need `Go 1.26+` to contribute to the source code. Please follow the [official installation guide](https://go.dev/doc/install) to install Go on your machine.
 
 ## 🤖 How to run automated tests?
 

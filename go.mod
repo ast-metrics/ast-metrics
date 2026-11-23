@@ -1,6 +1,8 @@
 module github.com/ast-metrics/ast-metrics
 
-go 1.25.0
+go 1.26.0
+
+toolchain go1.27.3
 
 require (
 	github.com/bsm/openmetrics v0.3.1
