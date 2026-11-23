@@ -19,12 +19,12 @@ jobs:
         shell: bash
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           clean: true
 
       - name: Setup Go ${{ matrix.go }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
           cache-dependency-path: go.sum
@@ -45,7 +45,7 @@ jobs:
 
       # One report per commit: six would make the Codecov diff unreadable.
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4.0.1
+        uses: codecov/codecov-action@v7
         if: matrix.os == 'ubuntu-latest' && matrix.go == '1.27'
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -54,12 +54,12 @@ jobs:
   lighthouse:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           clean: true
 
       - name: Setup Go (version from go.mod)
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
