@@ -99,6 +99,8 @@ message StmtFunction {
   repeated StmtParameter parameters = 8;
   repeated Name externals = 9; // dependencies
   LinesOfCode linesOfCode = 10;
+  // cognitive complexity, scored by the engine while it holds the syntax tree
+  optional int32 cognitiveComplexity = 11;
 }
 
 // Represents a Parameter node (for function)
@@ -232,6 +234,7 @@ message Analyze {
 }
 message Complexity {
   optional int32 cyclomatic = 1;
+  optional int32 cognitive = 2;
 }
 message Volume {
   optional int32 loc = 1;

@@ -223,14 +223,15 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // a try_expression, a node distinct from the `?Sized` of a trait bound, so a
 // relaxed bound is never mistaken for a branch.
 var rustDecisions = &Treesitter.DecisionSpec{
-	Language: tsRust.GetLanguage,
-	If:       []string{"if_expression", "if_let_expression", "try_expression"},
-	Else:     []string{"else_clause"},
-	Loop:     []string{"for_expression", "while_expression", "while_let_expression", "loop_expression"},
-	Switch:   []string{"match_expression"},
-	Case:     []string{"match_arm"},
-	Logical:  []string{"binary_expression"},
-	Ops:      []string{"&&", "||"},
+	Language:  tsRust.GetLanguage,
+	If:        []string{"if_expression", "if_let_expression", "try_expression"},
+	Else:      []string{"else_clause"},
+	Loop:      []string{"for_expression", "while_expression", "while_let_expression", "loop_expression"},
+	Switch:    []string{"match_expression"},
+	Case:      []string{"match_arm"},
+	Logical:   []string{"binary_expression"},
+	Ops:       []string{"&&", "||"},
+	Shorthand: []string{"try_expression"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -243,6 +244,10 @@ func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
 
 func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
 	return rustDecisions.LogicalOperator(n, a.src)
+}
+
+func (a *TreeSitterAdapter) IsShorthand(n *sitter.Node) bool {
+	return rustDecisions.IsShorthand(n)
 }
 
 // isWildcardArm reports whether a match arm is the catch-all one (`_ => ...`).
