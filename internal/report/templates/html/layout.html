@@ -660,70 +660,27 @@
             color: #64748b;
         }
 
-        /* One-line description of each section, shown beside the sidebar entry
-           on hover and on focus. Positioned by script because the sidebar
-           scrolls and would clip a CSS bubble. */
-        .nav-tip {
-            position: fixed; z-index: 70; pointer-events: none;
-            background: #1e293b; color: #f8fafc; font-size: 11px; line-height: 1.5;
-            padding: 6px 10px; border-radius: 8px; max-width: 260px;
+        /* Single tooltip bubble shared by the whole report: any element carrying
+           data-tip (above it) or data-nav-tip (beside it) shows it on hover and
+           on keyboard focus. It lives at the end of <body> and is placed by
+           script: a bubble nested in the page would be clipped by the scrolling
+           wrappers of the wide tables and by the sidebar. */
+        .tip {
+            position: fixed; top: 0; left: 0; z-index: 70; pointer-events: none;
+            max-width: 280px;
+            background: #1e293b; color: #f8fafc;
+            font-size: 11px; font-weight: 400; line-height: 1.5;
+            text-align: left; text-transform: none; letter-spacing: 0;
+            padding: 8px 10px; border-radius: 8px;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
-            opacity: 0; transition: opacity 0.12s ease;
+            opacity: 0; visibility: hidden; transition: opacity 0.12s ease;
         }
-        .nav-tip.is-on { opacity: 1; }
-        .nav-tip::before {
-            content: ''; position: absolute; right: 100%; top: 50%; transform: translateY(-50%);
-            border: 5px solid transparent; border-right-color: #1e293b;
-        }
-        /* Shared accessible CSS tooltips: any element with data-tip="..." shows a
-           small dark bubble on hover and on keyboard focus. */
-        [data-tip] { position: relative; cursor: help; }
-        [data-tip]::after {
-            content: attr(data-tip);
-            position: absolute;
-            bottom: calc(100% + 8px);
-            left: 50%;
-            transform: translateX(-50%) translateY(4px);
-            background: #1e293b;
-            color: #f8fafc;
-            font-size: 11px;
-            font-weight: 400;
-            line-height: 1.5;
-            text-transform: none;
-            letter-spacing: 0;
-            text-align: left;
-            padding: 8px 10px;
-            border-radius: 8px;
-            width: max-content;
-            max-width: 260px;
-            white-space: normal;
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity 0.15s ease, transform 0.15s ease;
-            z-index: 60;
-            pointer-events: none;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
-        }
-        [data-tip]::before {
-            content: '';
-            position: absolute;
-            bottom: calc(100% + 3px);
-            left: 50%;
-            transform: translateX(-50%);
-            border: 5px solid transparent;
-            border-top-color: #1e293b;
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity 0.15s ease;
-            z-index: 60;
-            pointer-events: none;
-        }
-        [data-tip]:hover::after, [data-tip]:focus-visible::after,
-        [data-tip]:hover::before, [data-tip]:focus-visible::before {
-            opacity: 1;
-            visibility: visible;
-            transform: translateX(-50%) translateY(0);
-        }
+        .tip.is-on { opacity: 1; visibility: visible; }
+        .tip-arrow { position: absolute; width: 0; height: 0; border: 5px solid transparent; }
+        .tip--top .tip-arrow { top: 100%; border-top-color: #1e293b; }
+        .tip--bottom .tip-arrow { bottom: 100%; border-bottom-color: #1e293b; }
+        .tip--right .tip-arrow { right: 100%; border-right-color: #1e293b; }
+        [data-tip] { cursor: help; }
         [data-tip]:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; border-radius: 4px; }
     </style>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -902,27 +859,106 @@
                 </a>
             </div>
         </aside>
-        <div id="nav-tip" class="nav-tip" role="tooltip" aria-hidden="true"></div>
+        <!-- Tooltips: one bubble for the whole page, kept inside the viewport.
+             Events are delegated, so tooltips also work on the rows the tables
+             render at runtime. -->
         <script>
         (function () {
-            var tip = document.getElementById('nav-tip');
-            if (!tip) return;
-            function show(el) {
-                tip.textContent = el.getAttribute('data-nav-tip');
-                var r = el.getBoundingClientRect();
-                tip.style.left = (r.right + 10) + 'px';
-                tip.style.top = r.top + 'px';
-                tip.classList.add('is-on');
-                // centre on the entry once the bubble has a height
-                tip.style.top = (r.top + (r.height - tip.offsetHeight) / 2) + 'px';
+            'use strict';
+            var SELECTOR = '[data-tip], [data-nav-tip]';
+            var GAP = 9;   // distance between the anchor and the bubble, arrow included
+            var EDGE = 8;  // minimum distance to the edges of the viewport
+            var bubble, label, arrow, anchor;
+
+            function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+
+            function build() {
+                bubble = document.createElement('div');
+                bubble.id = 'report-tip';
+                bubble.className = 'tip';
+                bubble.setAttribute('role', 'tooltip');
+                label = document.createElement('span');
+                arrow = document.createElement('span');
+                arrow.className = 'tip-arrow';
+                bubble.appendChild(label);
+                bubble.appendChild(arrow);
+                document.body.appendChild(bubble);
             }
-            function hide() { tip.classList.remove('is-on'); }
-            document.querySelectorAll('[data-nav-tip]').forEach(function (el) {
-                el.addEventListener('mouseenter', function () { show(el); });
-                el.addEventListener('focus', function () { show(el); });
-                el.addEventListener('mouseleave', hide);
-                el.addEventListener('blur', hide);
+
+            function show(el) {
+                var text = el.getAttribute('data-tip') || el.getAttribute('data-nav-tip');
+                if (!text) return;
+                if (!bubble) build();
+                anchor = el;
+                label.textContent = text;
+                bubble.style.maxWidth = Math.min(280, window.innerWidth - 2 * EDGE) + 'px';
+                bubble.classList.add('is-on');
+                el.setAttribute('aria-describedby', bubble.id);
+                place();
+            }
+
+            function place() {
+                var r = anchor.getBoundingClientRect();
+                var w = bubble.offsetWidth, h = bubble.offsetHeight;
+                // sidebar entries get the bubble beside them, everything else above,
+                // and below when there is no room above
+                var side = anchor.hasAttribute('data-nav-tip') ? 'right'
+                    : (r.top - h - GAP >= EDGE ? 'top' : 'bottom');
+                var left, top;
+                if (side === 'right') {
+                    left = r.right + GAP;
+                    top = r.top + (r.height - h) / 2;
+                } else {
+                    left = r.left + (r.width - w) / 2;
+                    top = side === 'top' ? r.top - h - GAP : r.bottom + GAP;
+                }
+                left = clamp(left, EDGE, Math.max(EDGE, window.innerWidth - w - EDGE));
+                top = clamp(top, EDGE, Math.max(EDGE, window.innerHeight - h - EDGE));
+                bubble.className = 'is-on tip tip--' + side;
+                bubble.style.left = Math.round(left) + 'px';
+                bubble.style.top = Math.round(top) + 'px';
+                // the arrow keeps pointing at the anchor, wherever the bubble landed
+                if (side === 'right') {
+                    arrow.style.left = '';
+                    arrow.style.top = Math.round(clamp(r.top + r.height / 2 - top, 10, h - 10) - 5) + 'px';
+                } else {
+                    arrow.style.top = '';
+                    arrow.style.left = Math.round(clamp(r.left + r.width / 2 - left, 10, w - 10) - 5) + 'px';
+                }
+            }
+
+            function hide() {
+                if (!anchor) return;
+                anchor.removeAttribute('aria-describedby');
+                anchor = null;
+                bubble.className = 'tip';
+            }
+
+            function anchorOf(event) {
+                var el = event.target;
+                return el && el.closest ? el.closest(SELECTOR) : null;
+            }
+
+            document.addEventListener('mouseover', function (event) {
+                var el = anchorOf(event);
+                if (el === anchor) return;
+                hide();
+                if (el) show(el);
             });
+            document.addEventListener('mouseout', function (event) {
+                if (anchor && anchorOf(event) === anchor && !anchor.contains(event.relatedTarget)) hide();
+            });
+            // on focus only for keyboard users: a click should not pop a bubble
+            document.addEventListener('focusin', function (event) {
+                var el = anchorOf(event);
+                if (!el || !el.matches(':focus-visible')) return;
+                hide();
+                show(el);
+            });
+            document.addEventListener('focusout', hide);
+            document.addEventListener('keydown', function (event) { if (event.key === 'Escape') hide(); });
+            window.addEventListener('scroll', hide, true);
+            window.addEventListener('resize', hide);
         })();
         </script>
 
