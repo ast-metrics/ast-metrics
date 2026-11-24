@@ -269,6 +269,16 @@ type InterfaceAware interface {
 	IsInterface(*sitter.Node) bool
 }
 
+// QualifiedNameAware lets an adapter compute the short and qualified names of
+// a class or a function from the node itself, including any enclosing scope
+// the generic traversal cannot know about (C++ namespace blocks, which are
+// per-declaration rather than per-file). When the adapter implements it and
+// answers a non-empty short name, that answer takes precedence over the
+// generic NodeName + file-namespace prefixing.
+type QualifiedNameAware interface {
+	NodeQualifiedName(n *sitter.Node) (short, qualified string)
+}
+
 // ReceiverAware lets an adapter tell that a function node is a method bound to a
 // type declared elsewhere in the file. Go declares its methods at the top level,
 // outside of the struct they belong to: without this, a struct would hold no
@@ -410,7 +420,11 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		name := v.ad.NodeName(node)
 		qualified := name
 		// qualify with namespace if provided (PHP namespaces, even single segment)
-		if v.ns != nil && v.ns.Name != nil {
+		if qn, ok := v.ad.(QualifiedNameAware); ok {
+			if short, q := qn.NodeQualifiedName(node); short != "" {
+				name, qualified = short, q
+			}
+		} else if v.ns != nil && v.ns.Name != nil {
 			ns := v.ns.Name.Qualified
 			if ns != "" {
 				qualified = ns + v.namespaceSeparator() + name
@@ -470,7 +484,11 @@ func (v *Visitor) Visit(node *sitter.Node) {
 	case v.ad.IsFunction(node):
 		name := v.ad.NodeName(node)
 		qualified := name
-		if cls := v.curClass(); cls != nil {
+		if qn, ok := v.ad.(QualifiedNameAware); ok {
+			if short, q := qn.NodeQualifiedName(node); short != "" {
+				name, qualified = short, q
+			}
+		} else if cls := v.curClass(); cls != nil {
 			qualified = v.ad.AttachQualified(cls.Name.Qualified, name)
 		} else if v.interfaceName != "" {
 			qualified = v.ad.AttachQualified(v.interfaceName, name)
@@ -493,6 +511,8 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		nodeStart := int(node.StartPoint().Row) + 1
 		nodeEnd := int(node.EndPoint().Row) + 1
 		fn.LinesOfCode = v.linesOfCodeIn(nodeStart, nodeEnd)
+		cognitive := v.cognitiveComplexity(node)
+		fn.CognitiveComplexity = &cognitive
 
 		v.attachFunction(fn)
 		if ra, ok := v.ad.(ReceiverAware); ok && v.curClass() == nil {
@@ -571,24 +591,34 @@ func (v *Visitor) collectDecisions(scope *sitter.Node, target *pb.Stmts) {
 	if scope == nil || target == nil {
 		return
 	}
-	var walk func(n *sitter.Node)
-	walk = func(n *sitter.Node) {
+	var walk func(n, parent *sitter.Node)
+	walk = func(n, parent *sitter.Node) {
 		if n == nil {
 			return
 		}
-		v.recordDecision(n, target)
+		v.recordDecision(n, parent, target)
 		for i := 0; i < int(n.ChildCount()); i++ {
 			if ch := n.Child(i); !v.isScopeBoundary(ch) {
-				walk(ch)
+				walk(ch, n)
 			}
 		}
 	}
 	// the scope node itself is not a decision: start at its children
 	for i := 0; i < int(scope.ChildCount()); i++ {
 		if ch := scope.Child(i); !v.isScopeBoundary(ch) {
-			walk(ch)
+			walk(ch, scope)
 		}
 	}
+}
+
+// decision classifies n, a child of parent. The parent is handed to the
+// adapters that need it, which spares them asking the node for it: tree-sitter
+// answers that by walking down from the root of the tree.
+func (v *Visitor) decision(n, parent *sitter.Node) DecisionKind {
+	if pd, ok := v.ad.(ParentDecider); ok {
+		return pd.DecisionIn(n, parent)
+	}
+	return v.ad.Decision(n)
 }
 
 // decisionLocation returns the source range a decision covers.
@@ -606,7 +636,7 @@ func (v *Visitor) decisionLocation(n *sitter.Node, kind DecisionKind) *pb.StmtLo
 	if alt == nil {
 		// the others (PHP, TypeScript, Python, Rust) make it a child clause
 		for i := 0; i < int(n.ChildCount()) && alt == nil; i++ {
-			switch v.ad.Decision(n.Child(i)) {
+			switch v.decision(n.Child(i), n) {
 			case DecElse, DecElif:
 				alt = n.Child(i)
 			}
@@ -620,8 +650,8 @@ func (v *Visitor) decisionLocation(n *sitter.Node, kind DecisionKind) *pb.StmtLo
 	return loc
 }
 
-func (v *Visitor) recordDecision(n *sitter.Node, target *pb.Stmts) {
-	kind := v.ad.Decision(n)
+func (v *Visitor) recordDecision(n, parent *sitter.Node, target *pb.Stmts) {
+	kind := v.decision(n, parent)
 	loc := v.decisionLocation(n, kind)
 	switch kind {
 	case DecIf:

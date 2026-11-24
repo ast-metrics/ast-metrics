@@ -3,6 +3,7 @@ package deps
 import (
 	"strings"
 
+	"github.com/ast-metrics/ast-metrics/internal/engine"
 	"github.com/ast-metrics/ast-metrics/internal/engine/dependency"
 	"github.com/ast-metrics/ast-metrics/internal/engine/rust/module"
 	pb "github.com/ast-metrics/ast-metrics/pb"
@@ -39,6 +40,8 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 	modules := dependency.NewIndex()
 	locations := make(map[string]crateModule)
 	crateNames := make(map[string]string)
+	imports := make(map[string][]*pb.StmtExternalDependency)
+	declared := make(map[string]map[string]bool)
 
 	crates := module.NewCache()
 	for _, file := range files {
@@ -52,6 +55,8 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 		}
 		location := crateModule{crate: located.Crate, module: located.Module}
 		locations[path] = location
+		imports[path] = engine.GetDependenciesInFile(file)
+		declared[path] = declaredItems(file)
 		modules.Add(moduleKey(location.crate, location.module), path)
 		if located.Name != "" {
 			crateNames[located.Name] = location.crate
@@ -61,7 +66,25 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 		modules:    modules,
 		locations:  locations,
 		crateNames: crateNames,
+		imports:    imports,
+		declared:   declared,
 	}
+}
+
+// declaredItems names the types and free functions a file declares itself.
+func declaredItems(file *pb.File) map[string]bool {
+	names := make(map[string]bool)
+	for _, class := range engine.GetClassesInFile(file) {
+		names[class.GetName().GetShort()] = true
+	}
+	for _, trait := range engine.GetInterfacesInFile(file) {
+		names[trait.GetName().GetShort()] = true
+	}
+	for _, function := range engine.GetFunctionsOutsideClassesInFile(file) {
+		names[function.GetName().GetShort()] = true
+	}
+	delete(names, "")
+	return names
 }
 
 func moduleKey(crate, module string) string {
@@ -72,9 +95,30 @@ type scopedFileDependencyResolver struct {
 	modules    *dependency.Index
 	locations  map[string]crateModule
 	crateNames map[string]string
+	// imports holds each file's dependencies, read to follow an item to the
+	// module that defines it when another module re-exports it.
+	imports map[string][]*pb.StmtExternalDependency
+	// declared holds the items each file declares itself, which no import of
+	// the same name can stand for.
+	declared map[string]map[string]bool
 }
 
 var _ dependency.ScopedResolver = (*scopedFileDependencyResolver)(nil)
+var _ dependency.StandardLibraryTeller = (*scopedFileDependencyResolver)(nil)
+
+// IsStandardLibrary tells the crates shipped with the toolchain from the
+// ones of the registry.
+func (r *scopedFileDependencyResolver) IsStandardLibrary(path string) bool {
+	segments := splitPath(path)
+	if len(segments) == 0 {
+		return false
+	}
+	switch segments[0] {
+	case "std", "core", "alloc", "proc_macro", "test":
+		return true
+	}
+	return false
+}
 
 func (r *scopedFileDependencyResolver) Resolve(source *pb.File, dep *pb.StmtExternalDependency) ([]string, bool) {
 	if source == nil || dep == nil || source.GetProgrammingLanguage() != Language {
@@ -99,22 +143,86 @@ func (r *scopedFileDependencyResolver) Resolve(source *pb.File, dep *pb.StmtExte
 		path = strings.TrimPrefix(path, "::")
 	}
 
+	return r.resolvePath(from, path, map[string]bool{}), true
+}
+
+func (r *scopedFileDependencyResolver) resolvePath(from crateModule, path string, followed map[string]bool) []string {
 	crate, segments, understood := r.rebase(from, path)
 	if !understood {
-		return nil, true
+		return nil
 	}
 
 	// A use path ends on an item, not on a module: `crate::model::User` names
 	// the struct User inside the module `model`. Which trailing segments are
 	// items is only known to the compiler, so the longest prefix that is a
-	// module wins.
-	for end := len(segments); end >= 0; end-- {
+	// module wins. The empty prefix is the crate root, which only a path
+	// anchored to the crate can mean: `serde::Deserialize`, read from the root
+	// for want of a module named serde, is an external crate, not lib.rs.
+	shortest := 1
+	if r.anchored(path) {
+		shortest = 0
+	}
+	for end := len(segments); end >= shortest; end-- {
 		module := strings.Join(segments[:end], "::")
-		if targets := r.modules.Get(moduleKey(crate, module)); len(targets) > 0 {
-			return targets, true
+		targets := r.modules.Get(moduleKey(crate, module))
+		if len(targets) == 0 {
+			continue
+		}
+		if end == len(segments)-1 && len(targets) == 1 {
+			if defining := r.reexported(targets[0], segments[end], followed); len(defining) > 0 {
+				return defining
+			}
+		}
+		return targets
+	}
+	return nil
+}
+
+// reexported follows an item the module of the given file only imports, as
+// a crate root does with `pub use error::Error`, to the file that defines it:
+// a module naming `crate::Error` reads error.rs, not lib.rs. It returns
+// nothing when the file imports no item of that name, so the item is its own.
+// A glob (`pub use a::*`) is not followed, since what it brings in is only
+// known to the compiler. Nor is an alias (`pub use error::Error as AppError`):
+// the engine keeps the imported name, not the local one, so `crate::AppError`
+// stays on the re-exporting file. For the same reason an item the file
+// declares is its own, whatever it imports: next to `enum Error`, the Error of
+// `use crate::parser::Error as ParseError` is only known as ParseError.
+func (r *scopedFileDependencyResolver) reexported(path, item string, followed map[string]bool) []string {
+	key := path + "\x00" + item
+	if followed[key] {
+		return nil
+	}
+	followed[key] = true
+	if r.declared[path][item] {
+		return nil
+	}
+	for _, dep := range r.imports[path] {
+		if dep.GetClassName() != item {
+			continue
+		}
+		joined := strings.TrimPrefix(strings.TrimSuffix(dep.GetNamespace(), "::")+"::"+item, "::")
+		if targets := r.resolvePath(r.locations[path], joined, followed); len(targets) > 0 {
+			return targets
 		}
 	}
-	return nil, true
+	return nil
+}
+
+// anchored tells a path written from a crate, `crate::`, `self::`, `super::`
+// or a crate of the workspace by name, from one read from the root only
+// because nothing else claims it.
+func (r *scopedFileDependencyResolver) anchored(path string) bool {
+	segments := splitPath(path)
+	if len(segments) == 0 {
+		return false
+	}
+	switch segments[0] {
+	case "crate", "self", "super":
+		return true
+	}
+	_, named := r.crateNames[segments[0]]
+	return named
 }
 
 // rebase turns a use path into a crate and the module segments to walk from

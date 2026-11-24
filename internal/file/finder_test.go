@@ -328,3 +328,35 @@ func TestFinder_SearchMultiple(t *testing.T) {
 		}
 	})
 }
+
+func TestSearchSurvivesGlobMetacharacterFilenames(t *testing.T) {
+	base := t.TempDir()
+	// A documentation file whose name breaks double-star globbing: filepath
+	// treats "[].md" as a malformed character class and the whole pattern
+	// fails (this exact shape exists in nlohmann/json).
+	_ = os.WriteFile(filepath.Join(base, "operator[].md"), []byte("docs\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(base, "main.cpp"), []byte("int main() {}\n"), 0o644)
+
+	finder := Finder{Configuration: configuration.Configuration{SourcesToAnalyzePath: []string{base}}}
+	result := finder.Search(".cpp")
+
+	if len(result.Files) != 1 {
+		t.Fatalf("Expected 1 .cpp file (glob failure must fall back to a walk), got %d (%v)", len(result.Files), result.Files)
+	}
+	if result.Files[0] != filepath.Join(base, "main.cpp") {
+		t.Fatalf("Expected main.cpp, got %v", result.Files)
+	}
+}
+
+func TestSearchMultipleHandlesGlobMetacharacterFilenames(t *testing.T) {
+	base := t.TempDir()
+	_ = os.WriteFile(filepath.Join(base, "operator[].md"), []byte("docs\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(base, "main.cpp"), []byte("int main() {}\n"), 0o644)
+
+	finder := Finder{Configuration: configuration.Configuration{SourcesToAnalyzePath: []string{base}}}
+	results := finder.SearchMultiple([]string{".cpp", ".md"})
+
+	if len(results[".cpp"].Files) != 1 {
+		t.Fatalf("Expected 1 .cpp file from the walk, got %d (%v)", len(results[".cpp"].Files), results[".cpp"].Files)
+	}
+}

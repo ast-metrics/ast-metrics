@@ -44,7 +44,7 @@ test:
 	@echo "\e[34m\033[1m-> Running tests\033[0m\e[39m\n"
 	go clean -testcache
 	find . -type d  -iname ".ast-metrics-cache" -exec rm -rf "{}" \; || true
-	go test ./cmd/... ./internal/... ./pb/...
+	go test ./cmd/... ./cribelo/... ./internal/... ./pb/...
 	@echo "\e[34m\033[1mDONE \033[0m\e[39m\n"
 
 # monkey test: download random PHP and Go packages from top 100 and analyze them

@@ -1,12 +1,14 @@
 package file
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
+	"github.com/sirupsen/logrus"
 	"github.com/yargevad/filepathx"
 )
 
@@ -146,7 +148,18 @@ func (r Finder) Search(fileExtension string) FileList {
 		if strings.HasSuffix(path, fileExtension) {
 			matches = append(matches, path)
 		} else {
-			matches, _ = filepathx.Glob(path + "/**/*" + fileExtension)
+			globbed, err := filepathx.Glob(path + "/**/*" + fileExtension)
+			if err != nil {
+				// A filename with glob metacharacters (an unbalanced "[", a
+				// stray "*") makes the double-star glob give up on the whole
+				// tree. Walking instead keeps the rest of the project
+				// analyzable, and the warning keeps the skipped pattern
+				// visible.
+				logrus.Warnf("globbing %s failed (%v), walking the directory instead", path+"/**/*"+fileExtension, err)
+				matches = walkMatchingFiles(path, fileExtension)
+			} else {
+				matches = globbed
+			}
 		}
 
 		// deal with excluded files
@@ -171,6 +184,24 @@ func (r Finder) Search(fileExtension string) FileList {
 	}
 
 	return result
+}
+
+// walkMatchingFiles collects every regular file under root whose extension
+// equals extension. It is the fallback for when double-star globbing cannot
+// run, so exclusions and scope ownership stay with the caller.
+func walkMatchingFiles(root, extension string) []string {
+	var matches []string
+	filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) == extension {
+			matches = append(matches, path)
+		}
+		return nil
+	})
+
+	return matches
 }
 
 // SearchMultiple performs a single directory walk and dispatches files by extension.
@@ -445,4 +476,30 @@ func relativeTo(root, file string) (target string, ok bool) {
 		return "", false
 	}
 	return "/" + filepath.ToSlash(rel), true
+}
+
+// NewFileDiscoveryFromFiles builds a discovery cache from an explicit list of
+// files, grouped by extension, instead of walking directories. Every
+// extension in extensions gets an entry, empty when no file matches, so that
+// a lookup never falls back to a directory walk.
+func NewFileDiscoveryFromFiles(files []string, extensions []string) *FileDiscovery {
+	results := make(map[string]FileList, len(extensions))
+	for _, ext := range extensions {
+		if !strings.HasPrefix(ext, ".") {
+			ext = "." + ext
+		}
+		results[ext] = FileList{Files: []string{}, FilesByDirectory: map[string][]string{}}
+	}
+	for _, file := range files {
+		ext := strings.ToLower(filepath.Ext(file))
+		list, ok := results[ext]
+		if !ok {
+			continue
+		}
+		list.Files = append(list.Files, file)
+		dir := filepath.Dir(file)
+		list.FilesByDirectory[dir] = append(list.FilesByDirectory[dir], file)
+		results[ext] = list
+	}
+	return &FileDiscovery{results: results}
 }

@@ -1,6 +1,10 @@
 package deps
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ast-metrics/ast-metrics/internal/engine/dependency"
+)
 
 func TestRebaseAnchorsAPath(t *testing.T) {
 	resolver := &scopedFileDependencyResolver{
@@ -52,4 +56,13 @@ func joinPath(segments []string) string {
 		joined += segment
 	}
 	return joined
+}
+
+func TestFileDependencyResolverTellsTheStandardLibrary(t *testing.T) {
+	teller := NewFileDependencyResolver().ForFiles(nil).(dependency.StandardLibraryTeller)
+	for module, standard := range map[string]bool{"std::collections": true, "core": true, "tracing": false, "serde::de": false, "": false} {
+		if got := teller.IsStandardLibrary(module); got != standard {
+			t.Errorf("IsStandardLibrary(%q) = %v, expected %v", module, got, standard)
+		}
+	}
 }

@@ -305,3 +305,38 @@ func TestCouplingRule_CheckFile_DepsAtNamespaceLevel(t *testing.T) {
 		t.Fatalf("expected 1 error for namespace-level dependency, got %d", len(errors))
 	}
 }
+
+func TestCouplingRule_CheckFile_ForbidsAPackage(t *testing.T) {
+	cfg := &configuration.ConfigurationCouplingRule{
+		Forbidden: []struct {
+			From string `yaml:"from"`
+			To   string `yaml:"to"`
+		}{
+			{From: "Controller", To: `org\.apache\.logging`},
+		},
+	}
+	rule := NewCouplingRule(cfg)
+
+	// An import is recorded as a package and a simple name, apart: the rule
+	// has to see the package.
+	file := &pb.File{
+		Path: "/src/controller/UserController.java",
+		Stmts: &pb.Stmts{
+			StmtExternalDependencies: []*pb.StmtExternalDependency{
+				{ClassName: "Logger", Namespace: "org.apache.logging.log4j"},
+			},
+		},
+	}
+
+	errors := []issue.RequirementError{}
+	rule.CheckFile(file,
+		func(e issue.RequirementError) { errors = append(errors, e) },
+		func(string) {})
+
+	if len(errors) != 1 {
+		t.Fatalf("expected 1 error for a forbidden package, got %d", len(errors))
+	}
+	if want := "Forbidden coupling between /src/controller/UserController.java and org.apache.logging.log4j"; errors[0].Message != want {
+		t.Errorf("message: got %q, want %q", errors[0].Message, want)
+	}
+}

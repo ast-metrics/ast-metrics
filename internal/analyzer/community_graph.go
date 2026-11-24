@@ -81,6 +81,9 @@ type unitGraph struct {
 	IsFile map[string]bool
 	// FileOf gives the file declaring a class unit, when there is one.
 	FileOf map[string]*pb.File
+	// FilesOf gives every file taking part in a unit: the one declaring a
+	// class, the ones making up a namespace.
+	FilesOf map[string]map[string]struct{}
 	// Out holds the directed weighted edges: Out[a][b] is the number of
 	// distinct places in a where b is used. In is the same graph read from
 	// the other end: In[b][a] == Out[a][b].
@@ -106,6 +109,7 @@ func buildUnitGraph(aggregate *Aggregated) *unitGraph {
 		IsInterface: map[string]bool{},
 		IsFile:      map[string]bool{},
 		FileOf:      map[string]*pb.File{},
+		FilesOf:     map[string]map[string]struct{}{},
 		Out:         map[string]map[string]int{},
 		In:          map[string]map[string]int{},
 		Externals:   map[string]map[string]int{},
@@ -210,6 +214,7 @@ func buildUnitGraph(aggregate *Aggregated) *unitGraph {
 			}
 			g.Namespace[node] = parent
 		}
+		g.addFile(node, file)
 		return node
 	}
 	// A file with code outside any class, in a language whose units are
@@ -225,6 +230,7 @@ func buildUnitGraph(aggregate *Aggregated) *unitGraph {
 			g.Namespace[id] = reduce(file, index.namespaceOfFile[file])
 			g.IsFile[id] = true
 			g.FileOf[id] = file
+			g.addFile(id, file)
 		}
 		return id
 	}
@@ -241,6 +247,7 @@ func buildUnitGraph(aggregate *Aggregated) *unitGraph {
 			g.IsClass[id] = true
 			g.IsInterface[id] = t.Class == nil
 			g.FileOf[id] = t.File
+			g.addFile(id, t.File)
 		}
 		return id
 	}
@@ -324,6 +331,17 @@ func buildUnitGraph(aggregate *Aggregated) *unitGraph {
 	}
 	g.Units = slices.Sorted(maps.Keys(units))
 	return g
+}
+
+// addFile records a file as taking part in a unit.
+func (g *unitGraph) addFile(unit string, file *pb.File) {
+	if file == nil || file.Path == "" {
+		return
+	}
+	if g.FilesOf[unit] == nil {
+		g.FilesOf[unit] = map[string]struct{}{}
+	}
+	g.FilesOf[unit][file.Path] = struct{}{}
 }
 
 // subgraphOf returns the part of a unit graph made of the given units and of

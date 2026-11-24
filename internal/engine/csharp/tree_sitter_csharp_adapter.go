@@ -235,13 +235,22 @@ var csDecisions = &Treesitter.DecisionSpec{
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
+	return a.DecisionIn(n, nil)
+}
+
+// DecisionIn implements Treesitter.ParentDecider.
+func (a *TreeSitterAdapter) DecisionIn(n, parent *sitter.Node) Treesitter.DecisionKind {
 	kind := csDecisions.Classify(n, a.src)
 	switch kind {
 	case Treesitter.DecCase, Treesitter.DecDefault:
 		// `case` and `default` are also keywords outside of a switch (goto
 		// case, the default(T) expression): only a switch label is a branch
 		if n.Type() == "case" || n.Type() == "default" {
-			if p := n.Parent(); p == nil || p.Type() != "switch_section" {
+			p := parent
+			if p == nil {
+				p = n.Parent()
+			}
+			if p == nil || p.Type() != "switch_section" {
 				return Treesitter.DecNone
 			}
 		}
@@ -250,7 +259,7 @@ func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
 			return Treesitter.DecDefault
 		}
 	case Treesitter.DecNone:
-		if Treesitter.IsElseBranch(n, "if_statement") {
+		if Treesitter.IsElseBranch(n, parent, "if_statement") {
 			return Treesitter.DecElse
 		}
 	}

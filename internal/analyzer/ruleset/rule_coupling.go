@@ -52,20 +52,36 @@ func (c *couplingRule) CheckFile(file *pb.File, addError func(issue.RequirementE
 		}
 		toRegex := regexp.MustCompile("(?i)" + forbidden.To)
 		for _, dependency := range dependencies {
-			if toRegex.MatchString(dependency.ClassName) {
-				addError(issue.RequirementError{
-					Severity: issue.SeverityUnknown,
-					Code:     c.Name(),
-					Message:  fmt.Sprintf("Forbidden coupling between %s and %s", file.Path, dependency.ClassName),
-					Line:     line,
-				})
-				hasError = true
-				break
+			name, matched := forbiddenName(toRegex, dependency)
+			if !matched {
+				continue
 			}
+			addError(issue.RequirementError{
+				Severity: issue.SeverityUnknown,
+				Code:     c.Name(),
+				Message:  fmt.Sprintf("Forbidden coupling between %s and %s", file.Path, name),
+				Line:     line,
+			})
+			hasError = true
+			break
 		}
 	}
 
 	if !hasError {
 		addSuccess("Coupling OK")
 	}
+}
+
+// forbiddenName tells whether a dependency is one the rule forbids, and under
+// which name. A rule may name a class ("UserRepository") or a package
+// ("org\\.apache\\.logging"): an engine records the two apart, so the
+// pattern is tried on the class name first, then on the namespace.
+func forbiddenName(pattern *regexp.Regexp, dependency *pb.StmtExternalDependency) (string, bool) {
+	if className := dependency.GetClassName(); className != "" && pattern.MatchString(className) {
+		return className, true
+	}
+	if namespace := dependency.GetNamespace(); namespace != "" && pattern.MatchString(namespace) {
+		return namespace, true
+	}
+	return "", false
 }

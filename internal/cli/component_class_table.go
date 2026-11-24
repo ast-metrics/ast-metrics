@@ -27,7 +27,7 @@ var cols = map[string]int{
 	"Commits":         1,
 	"Authors":         2,
 	"Methods":         3,
-	"LLoc":            4,
+	"LLOC":            4,
 	"Cyclomatic":      5,
 	"Halstead Length": 6,
 	"Halstead Volume": 7,
@@ -94,7 +94,7 @@ func (v *ComponentTableClass) Init() {
 		{Title: "Commits", Width: 6},
 		{Title: "Authors", Width: 6},
 		{Title: "Methods", Width: 9},
-		{Title: "LLoc", Width: 6},
+		{Title: "LLOC", Width: 6},
 		{Title: "Cyclomatic", Width: 9},
 		{Title: "H. Length", Width: 9},
 		{Title: "H. Volume", Width: 9},
@@ -156,7 +156,7 @@ func (v *ComponentTableClass) Init() {
 				strconv.Itoa(nbCommits),
 				strconv.Itoa(nbCommitters),
 				strconv.Itoa(nbFunctions),
-				strconv.Itoa(int(volume.GetLoc())),
+				strconv.Itoa(int(volume.GetLloc())),
 				strconv.Itoa(int(complexity.GetCyclomatic())),
 				strconv.Itoa(int(volume.GetHalsteadLength())),
 				fmt.Sprintf("%.2f", ToFixed(volume.GetHalsteadVolume(), 2)),
@@ -221,7 +221,7 @@ func (v *ComponentTableClass) Sort(sortColumnIndex int) {
 		return a > b
 	})
 
-	v.sortColumnIndex = 0
+	v.sortColumnIndex = sortColumnIndex
 	v.table.SetRows(rows)
 }
 

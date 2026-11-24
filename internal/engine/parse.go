@@ -17,12 +17,9 @@ func ParseFiles(config *configuration.Configuration, runners []Engine) ([]*pb.Fi
 	if config.FileDiscovery == nil {
 		discovery := &filefinder.FileDiscovery{}
 		finder := filefinder.Finder{Configuration: *config}
-		allExts := []string{".go", ".php", ".py", ".rs", ".ts", ".tsx", ".java", ".cs"}
-		if config.Extensions != nil {
-			for _, exts := range config.Extensions {
-				allExts = append(allExts, exts...)
-			}
-		}
+		// beyond the extensions a language owns, the ones its runner looks
+		// at too: TypeScript reads .tsx, C++ reads the .h whose content is C++
+		allExts := append(config.AllExtensions(), ".tsx", ".h")
 		discovery.Precompute(finder, uniqueExts(allExts))
 		config.FileDiscovery = discovery
 	}

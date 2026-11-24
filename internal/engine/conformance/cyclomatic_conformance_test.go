@@ -16,6 +16,7 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/cpp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/csharp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/golang"
 	"github.com/ast-metrics/ast-metrics/internal/engine/java"
@@ -34,6 +35,7 @@ const (
 	langJava   = "java"
 	langCSharp = "csharp"
 	langRust   = "rust"
+	langCpp    = "cpp"
 )
 
 func runnerFor(lang string) engine.Engine {
@@ -52,6 +54,8 @@ func runnerFor(lang string) engine.Engine {
 		return &csharp.CSharpRunner{}
 	case langRust:
 		return &rust.RustRunner{}
+	case langCpp:
+		return &cpp.CppRunner{}
 	}
 	return nil
 }
@@ -125,6 +129,7 @@ var scenarios = []scenario{
 			langJava:   "class C { int f(int a) { return a; } }\n",
 			langCSharp: "class C { int f(int a) { return a; } }\n",
 			langRust:   "fn f(a: i32) -> i32 { a }\n",
+			langCpp:    "int f(int a) { return a; }\n",
 		},
 	},
 	{
@@ -139,6 +144,7 @@ var scenarios = []scenario{
 			langJava:   "class C { int f(int a) { if (a > 0) { return 1; } else { return 2; } } }\n",
 			langCSharp: "class C { int f(int a) { if (a > 0) { return 1; } else { return 2; } } }\n",
 			langRust:   "fn f(a: i32) -> i32 { if a > 0 { 1 } else { 2 } }\n",
+			langCpp:    "int f(int a) { if (a > 0) return 1; else return 2; }\n",
 		},
 	},
 	{
@@ -153,6 +159,7 @@ var scenarios = []scenario{
 			langJava:   "class C { int f(int a) { if (a > 0) { return 1; } else if (a < 0) { return 2; } else { return 3; } } }\n",
 			langCSharp: "class C { int f(int a) { if (a > 0) { return 1; } else if (a < 0) { return 2; } else { return 3; } } }\n",
 			langRust:   "fn f(a: i32) -> i32 { if a > 0 { 1 } else if a < 0 { 2 } else { 3 } }\n",
+			langCpp:    "int f(int a) { if (a > 0) return 1; else if (a < 0) return 2; else return 3; }\n",
 		},
 	},
 	{
@@ -167,6 +174,7 @@ var scenarios = []scenario{
 			langJava:   "class C { int f(int a) { while (a < 10) { a++; } return a; } }\n",
 			langCSharp: "class C { int f(int a) { while (a < 10) { a++; } return a; } }\n",
 			langRust:   "fn f(a: i32) -> i32 { let mut a = a; while a < 10 { a += 1 } a }\n",
+			langCpp:    "int f(int a) { while (a < 10) ++a; return a; }\n",
 		},
 	},
 	{
@@ -181,6 +189,7 @@ var scenarios = []scenario{
 			langJava:   "class C { int f(int[] xs) { int t = 0; for (int x : xs) { t += x; } return t; } }\n",
 			langCSharp: "class C { int f(int[] xs) { int t = 0; foreach (var x in xs) { t += x; } return t; } }\n",
 			langRust:   "fn f(xs: Vec<i32>) -> i32 { let mut t = 0; for x in xs { t += x } t }\n",
+			langCpp:    "int f(int* xs) { int t = 0; for (int x : xs) t += x; return t; }\n",
 		},
 	},
 	{
@@ -195,6 +204,7 @@ var scenarios = []scenario{
 			langJava:   "class C { int f(int a) { switch (a) { case 1: return 1; case 2: return 2; default: return 0; } } }\n",
 			langCSharp: "class C { int f(int a) { switch (a) { case 1: return 1; case 2: return 2; default: return 0; } } }\n",
 			langRust:   "fn f(a: i32) -> i32 { match a { 1 => 1, 2 => 2, _ => 0 } }\n",
+			langCpp:    "int f(int a) { switch (a) { case 1: return 1; case 2: return 2; default: return 0; } }\n",
 		},
 	},
 	{
@@ -212,6 +222,7 @@ var scenarios = []scenario{
 			langJava:   "class C {\n\tint f(int a) {\n\t\tswitch (a) {\n\t\t\tcase 1:\n\t\t\t\tif (a > 0) {\n\t\t\t\t\tfor (int i = 0; i < 3; i++) { a++; }\n\t\t\t\t}\n\t\t\t\tbreak;\n\t\t\tcase 2:\n\t\t\t\tif (a < 0) { a--; }\n\t\t\t\tbreak;\n\t\t}\n\t\treturn a;\n\t}\n}\n",
 			langCSharp: "class C {\n\tint f(int a) {\n\t\tswitch (a) {\n\t\t\tcase 1:\n\t\t\t\tif (a > 0) {\n\t\t\t\t\tfor (int i = 0; i < 3; i++) { a++; }\n\t\t\t\t}\n\t\t\t\tbreak;\n\t\t\tcase 2:\n\t\t\t\tif (a < 0) { a--; }\n\t\t\t\tbreak;\n\t\t}\n\t\treturn a;\n\t}\n}\n",
 			langRust:   "fn f(a: i32) -> i32 {\n\tlet mut a = a;\n\tmatch a {\n\t\t1 => { if a > 0 { for _i in 0..3 { a += 1 } } }\n\t\t2 => { if a < 0 { a -= 1 } }\n\t\t_ => {}\n\t}\n\ta\n}\n",
+			langCpp:    "int f(int a) { switch (a) { case 1: if (a > 0) for (int i=0; i<3; ++i) ++a; break; case 2: if (a < 0) --a; } return a; }\n",
 		},
 	},
 	{
@@ -229,6 +240,7 @@ var scenarios = []scenario{
 			langJava:   "class C { int f(int a, int b) { if (a > 0 && b > 0 || a < 0) { return 1; } return 0; } }\n",
 			langCSharp: "class C { int f(int a, int b) { if (a > 0 && b > 0 || a < 0) { return 1; } return 0; } }\n",
 			langRust:   "fn f(a: i32, b: i32) -> i32 { if a > 0 && b > 0 || a < 0 { return 1 } 0 }\n",
+			langCpp:    "int f(int a, int b) { if (a > 0 && b > 0 || a < 0) return 1; return 0; }\n",
 		},
 	},
 	{
@@ -241,6 +253,7 @@ var scenarios = []scenario{
 			langTS:     "function f(a: number): number { return a > 0 ? 1 : 2 }\n",
 			langJava:   "class C { int f(int a) { return a > 0 ? 1 : 2; } }\n",
 			langCSharp: "class C { int f(int a) { return a > 0 ? 1 : 2; } }\n",
+			langCpp:    "int f(int a) { return a > 0 ? 1 : 2; }\n",
 		},
 	},
 	{
@@ -254,6 +267,7 @@ var scenarios = []scenario{
 			langTS:     "function f(a: number): number { try { g() } catch (e) { return 1 } try { h() } catch (e) { return 2 } return 0 }\n",
 			langJava:   "class C { int f(int a) { try { g(); } catch (RuntimeException e) { return 1; } catch (Error e) { return 2; } return 0; } }\n",
 			langCSharp: "class C { int f(int a) { try { G(); } catch (System.Exception e) { return 1; } catch { return 2; } return 0; } }\n",
+			langCpp:    "int f(int a) { try { g(); } catch (A& e) { return 1; } catch (B& e) { return 2; } return 0; }\n",
 		},
 	},
 	{
@@ -282,6 +296,7 @@ var scenarios = []scenario{
 			langJava:   "class C { int g(int a) { if (a > 0) { return 1; } if (a < 0) { return 2; } return 0; } int f(int a) { if (a > 0) { return 1; } return 0; } }\n",
 			langCSharp: "class C { int g(int a) { if (a > 0) { return 1; } if (a < 0) { return 2; } return 0; } int f(int a) { if (a > 0) { return 1; } return 0; } }\n",
 			langRust:   "fn g(a: i32) -> i32 { if a > 0 { return 1 } if a < 0 { return 2 } 0 }\nfn f(a: i32) -> i32 { if a > 0 { return 1 } 0 }\n",
+			langCpp:    "int g(int a) { if (a > 0) return 1; if (a < 0) return 2; return 0; } int f(int a) { if (a > 0) return 1; return 0; }\n",
 		},
 	},
 }
@@ -310,7 +325,7 @@ func TestEveryLanguageCoversEveryUniversalConstruct(t *testing.T) {
 		"logical_operators_in_condition":              true,
 		"nested_function_does_not_inflate_its_parent": true,
 	}
-	all := []string{langGo, langPHP, langPython, langTS, langJava, langCSharp, langRust}
+	all := []string{langGo, langPHP, langPython, langTS, langJava, langCSharp, langRust, langCpp}
 	for _, sc := range scenarios {
 		if !universal[sc.name] {
 			continue

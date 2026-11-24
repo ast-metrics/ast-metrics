@@ -74,13 +74,13 @@ func (v *MaintainabilityIndexVisitor) Calculate(stmts *pb.Stmts) {
 	var cyclomatic int32 = *stmts.Analyze.Complexity.Cyclomatic
 	var halsteadVolume float64 = *stmts.Analyze.Volume.HalsteadVolume
 
-	// The index is built on the logarithm of the Halstead volume, so a volume of
-	// zero has no defined index. That covers a declaration holding no statement
-	// (a struct of fields, an interface) as well as a body made of a single
-	// distinct symbol, whose volume is N x log2(1) = 0. Leaving the index
-	// undefined keeps those out of the averages, where an invented value would
-	// drag the whole project down.
-	if halsteadVolume <= 0 {
+	// The formula takes logarithms of both Halstead volume and logical LOC, so
+	// either being zero leaves no defined index. LLOC counts executable
+	// statements, not declarations; a DTO or property-only class can therefore
+	// have a positive Halstead volume but no logical lines. Keep such scopes
+	// undefined, as for a declaration-only scope with zero Halstead volume,
+	// rather than assigning a misleading zero that drags down project averages.
+	if halsteadVolume <= 0 || lloc <= 0 {
 		return
 	}
 	var MIwoC float64 = 0

@@ -105,7 +105,7 @@ func (ga *GraphAggregator) Calculate(aggregate *Aggregated) {
 
 	for _, file := range aggregate.ConcernedFiles {
 		for _, dep := range dependenciesOf[file] {
-			if dep == nil {
+			if dep == nil || namesAFile(dep, file) {
 				continue
 			}
 			// Reduce the namespaces to keep the nodes at the scale of a module

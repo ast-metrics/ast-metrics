@@ -4,6 +4,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	"github.com/ast-metrics/ast-metrics/internal/engine/dependency"
 	pb "github.com/ast-metrics/ast-metrics/pb"
+	"strings"
 )
 
 // Language is the value the Java engine writes in pb.File.ProgrammingLanguage.
@@ -42,6 +43,11 @@ func (r *FileDependencyResolver) ForFiles(files []*pb.File) dependency.ScopedRes
 				types.Add(dependency.QualifiedOrShort(name), path)
 			}
 		}
+		for _, itf := range engine.GetInterfacesInFile(file) {
+			if name := itf.GetName(); name != nil {
+				types.Add(dependency.QualifiedOrShort(name), path)
+			}
+		}
 	}
 	return &scopedFileDependencyResolver{types: types, packages: packages}
 }
@@ -52,6 +58,18 @@ type scopedFileDependencyResolver struct {
 }
 
 var _ dependency.ScopedResolver = (*scopedFileDependencyResolver)(nil)
+var _ dependency.StandardLibraryTeller = (*scopedFileDependencyResolver)(nil)
+
+// IsStandardLibrary tells the packages of the platform from the ones of a
+// dependency: java.*, javax.* and jdk.* ship with the runtime.
+func (r *scopedFileDependencyResolver) IsStandardLibrary(pkg string) bool {
+	for _, prefix := range [...]string{"java", "javax", "jdk"} {
+		if pkg == prefix || strings.HasPrefix(pkg, prefix+".") {
+			return true
+		}
+	}
+	return false
+}
 
 func (r *scopedFileDependencyResolver) Resolve(source *pb.File, dep *pb.StmtExternalDependency) ([]string, bool) {
 	if source == nil || dep == nil || source.GetProgrammingLanguage() != Language {

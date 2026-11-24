@@ -189,17 +189,18 @@ func findDescendantOfType(n *sitter.Node, t string) *sitter.Node {
 // `if_clause` count exactly like the statements they abbreviate. `case _:` is
 // a case_clause like any other and is demoted to a Default by Decision below.
 var pythonDecisions = &Treesitter.DecisionSpec{
-	Language: tsPython.GetLanguage,
-	If:       []string{"if_statement", "if_clause"},
-	Elif:     []string{"elif_clause"},
-	Else:     []string{"else_clause"},
-	Loop:     []string{"for_statement", "while_statement", "for_in_clause"},
-	Switch:   []string{"match_statement"},
-	Case:     []string{"case_clause", "case_block"},
-	Catch:    []string{"except_clause", "except_group_clause"},
-	Ternary:  []string{"conditional_expression"},
-	Logical:  []string{"boolean_operator"},
-	Ops:      []string{"and", "or"},
+	Language:  tsPython.GetLanguage,
+	If:        []string{"if_statement", "if_clause"},
+	Elif:      []string{"elif_clause"},
+	Else:      []string{"else_clause"},
+	Loop:      []string{"for_statement", "while_statement", "for_in_clause"},
+	Switch:    []string{"match_statement"},
+	Case:      []string{"case_clause", "case_block"},
+	Catch:     []string{"except_clause", "except_group_clause"},
+	Ternary:   []string{"conditional_expression"},
+	Logical:   []string{"boolean_operator"},
+	Ops:       []string{"and", "or"},
+	Shorthand: []string{"if_clause", "for_in_clause"},
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
@@ -212,6 +213,10 @@ func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
 
 func (a *TreeSitterAdapter) LogicalOperator(n *sitter.Node) string {
 	return pythonDecisions.LogicalOperator(n, a.src)
+}
+
+func (a *TreeSitterAdapter) IsShorthand(n *sitter.Node) bool {
+	return pythonDecisions.IsShorthand(n)
 }
 
 // isWildcardCase reports whether a match arm is the catch-all one (`case _:`).

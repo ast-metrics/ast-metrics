@@ -30,6 +30,25 @@ func NewCache() *Cache {
 	return &Cache{modulePathByRoot: make(map[string]string)}
 }
 
+// ModulePathOf returns the module path declared by the nearest go.mod above a
+// directory, and an empty string when there is none.
+func (c *Cache) ModulePathOf(directory string) string {
+	absolute, err := filepath.Abs(directory)
+	if err != nil {
+		absolute = filepath.Clean(directory)
+	}
+	for current := absolute; ; {
+		if modulePath := c.modulePathAt(current); modulePath != "" {
+			return modulePath
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return ""
+		}
+		current = parent
+	}
+}
+
 // ImportPathOf returns the import path of the package held by a directory, and
 // an empty string when no go.mod stands above it. The nil cache answers the
 // same, remembering nothing: a caller parsing a single file has nothing to

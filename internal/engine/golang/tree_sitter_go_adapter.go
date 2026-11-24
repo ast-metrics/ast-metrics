@@ -195,8 +195,13 @@ var goDecisions = &Treesitter.DecisionSpec{
 }
 
 func (a *TreeSitterAdapter) Decision(n *sitter.Node) Treesitter.DecisionKind {
+	return a.DecisionIn(n, nil)
+}
+
+// DecisionIn implements Treesitter.ParentDecider.
+func (a *TreeSitterAdapter) DecisionIn(n, parent *sitter.Node) Treesitter.DecisionKind {
 	kind := goDecisions.Classify(n, a.src)
-	if kind == Treesitter.DecNone && Treesitter.IsElseBranch(n, "if_statement") {
+	if kind == Treesitter.DecNone && Treesitter.IsElseBranch(n, parent, "if_statement") {
 		return Treesitter.DecElse
 	}
 	return kind

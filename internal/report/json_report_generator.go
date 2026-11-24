@@ -184,6 +184,7 @@ func (j *JsonReportGenerator) buildReport(projectAggregated analyzer.ProjectAggr
 	r.CommittedFilesCountForPeriod = combined.CommittedFilesCountForPeriod
 	r.BusFactor = combined.BusFactor
 	r.PackageRelations = combined.PackageRelations
+	r.Libraries = combined.FileDependencies.LibraryUses()
 
 	return r
 }

@@ -60,7 +60,7 @@ var tips = []string{
 	"Explore rulesets with \"ast-metrics ruleset list\" to find built-in quality rules.",
 	"Add a ruleset to your config with \"ast-metrics ruleset add <name>\".",
 	"Use \"--watch\" flag with analyze to re-run analysis when files change.",
-	"AST Metrics supports Go, PHP, Python, and Rust out of the box.",
+	"AST Metrics supports Go, PHP, Python, Rust, Java, C#, TypeScript and C++ out of the box.",
 	"Use \"--exclude\" to skip files matching a pattern (e.g., vendor, node_modules).",
 	"Maintainability Index below 64 is a red flag. Above 85 is excellent.",
 }

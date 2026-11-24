@@ -23,7 +23,7 @@ jobs:
           - os: macos-15-intel     # Intel
             goos: darwin
             goarch: amd64
-          - os: macos-14           # Apple Silicon
+          - os: macos-15           # Apple Silicon
             goos: darwin
             goarch: arm64
           # Windows

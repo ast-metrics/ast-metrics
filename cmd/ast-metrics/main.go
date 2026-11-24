@@ -13,6 +13,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/command"
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	"github.com/ast-metrics/ast-metrics/internal/engine"
+	"github.com/ast-metrics/ast-metrics/internal/engine/cpp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/csharp"
 	"github.com/ast-metrics/ast-metrics/internal/engine/golang"
 	"github.com/ast-metrics/ast-metrics/internal/engine/java"
@@ -163,7 +164,8 @@ func main() {
 	runnerTypeScript := typescript.TypeScriptRunner{}
 	runnerJava := java.JavaRunner{}
 	runnerCSharp := csharp.CSharpRunner{}
-	runners := []engine.Engine{&runnerPhp, &runnerGolang, &runnerPython, &runnerRust, &runnerTypeScript, &runnerJava, &runnerCSharp}
+	runnerCpp := cpp.CppRunner{}
+	runners := []engine.Engine{&runnerPhp, &runnerGolang, &runnerPython, &runnerRust, &runnerTypeScript, &runnerJava, &runnerCSharp, &runnerCpp}
 
 	app := &cliV2.App{
 		Name:  "ast-metrics",
@@ -390,6 +392,7 @@ func main() {
 						Usage:    "Extra file extensions for C# (comma-separated)",
 						Category: "File selection",
 					},
+					&cliV2.StringFlag{Name: "cpp-extensions", Usage: "Extra file extensions for C++ (comma-separated)", Category: "File selection"},
 				},
 				Action: func(cCtx *cliV2.Context) error {
 
@@ -675,6 +678,7 @@ func main() {
 					&cliV2.StringFlag{Name: "typescript-extensions", Usage: "Extra file extensions for TypeScript (comma-separated)", Category: "File selection"},
 					&cliV2.StringFlag{Name: "java-extensions", Usage: "Extra file extensions for Java (comma-separated)", Category: "File selection"},
 					&cliV2.StringFlag{Name: "csharp-extensions", Usage: "Extra file extensions for C# (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "cpp-extensions", Usage: "Extra file extensions for C++ (comma-separated)", Category: "File selection"},
 				},
 				Action: func(cCtx *cliV2.Context) error {
 					if cCtx.Bool("verbose") {
@@ -759,6 +763,7 @@ func main() {
 					&cliV2.StringFlag{Name: "typescript-extensions", Usage: "Extra file extensions for TypeScript (comma-separated)", Category: "File selection"},
 					&cliV2.StringFlag{Name: "java-extensions", Usage: "Extra file extensions for Java (comma-separated)", Category: "File selection"},
 					&cliV2.StringFlag{Name: "csharp-extensions", Usage: "Extra file extensions for C# (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "cpp-extensions", Usage: "Extra file extensions for C++ (comma-separated)", Category: "File selection"},
 				},
 				Action: func(cCtx *cliV2.Context) error {
 					if cCtx.Bool("verbose") {
@@ -828,6 +833,7 @@ func main() {
 					&cliV2.StringFlag{Name: "typescript-extensions", Usage: "Extra file extensions for TypeScript (comma-separated)", Category: "File selection"},
 					&cliV2.StringFlag{Name: "java-extensions", Usage: "Extra file extensions for Java (comma-separated)", Category: "File selection"},
 					&cliV2.StringFlag{Name: "csharp-extensions", Usage: "Extra file extensions for C# (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "cpp-extensions", Usage: "Extra file extensions for C++ (comma-separated)", Category: "File selection"},
 				},
 				Action: func(cCtx *cliV2.Context) error {
 					if cCtx.Bool("verbose") {
@@ -950,6 +956,7 @@ func main() {
 					&cliV2.StringFlag{Name: "typescript-extensions", Usage: "Extra file extensions for TypeScript (comma-separated)", Category: "File selection"},
 					&cliV2.StringFlag{Name: "java-extensions", Usage: "Extra file extensions for Java (comma-separated)", Category: "File selection"},
 					&cliV2.StringFlag{Name: "csharp-extensions", Usage: "Extra file extensions for C# (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "cpp-extensions", Usage: "Extra file extensions for C++ (comma-separated)", Category: "File selection"},
 				},
 				Action: func(cCtx *cliV2.Context) error {
 					if cCtx.Bool("verbose") {
@@ -997,6 +1004,69 @@ func main() {
 					cmd.ReportJson = cCtx.String("report-json")
 					cmd.ReportSarif = cCtx.String("report-sarif")
 					cmd.ReportSarifMaxLevel = cCtx.String("sarif-max-level")
+					return cmd.Execute()
+				},
+			},
+			{
+				Name:      "who-uses",
+				Usage:     "List the files that depend on a library, directly or through other files, and the communities they belong to",
+				ArgsUsage: "<library> [path...]",
+				Flags: []cliV2.Flag{
+					&cliV2.BoolFlag{Name: "verbose", Aliases: []string{"v"}, Usage: "Enable verbose mode", Category: "Global options"},
+					&cliV2.StringFlag{Name: "format", Usage: "Output format: text or json", Value: "text", Category: "Who uses"},
+					&cliV2.IntFlag{Name: "max-depth", Usage: "How many levels past the importing files to follow (0: no limit)", Value: 0, Category: "Who uses"},
+					&cliV2.IntFlag{Name: "limit", Usage: "Maximum number of files listed per level in the text output (0: all)", Value: 20, Category: "Who uses"},
+					&cliV2.StringSliceFlag{Name: "exclude", Usage: "Regular expression to exclude files from analysis", Category: "File selection"},
+					&cliV2.StringFlag{Name: "config", Usage: "Load configuration from file", Category: "Configuration"},
+					&cliV2.StringFlag{Name: "php-extensions", Usage: "Extra file extensions for PHP (comma-separated, e.g. .inc,.module)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "go-extensions", Usage: "Extra file extensions for Go (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "python-extensions", Usage: "Extra file extensions for Python (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "rust-extensions", Usage: "Extra file extensions for Rust (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "typescript-extensions", Usage: "Extra file extensions for TypeScript (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "java-extensions", Usage: "Extra file extensions for Java (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "csharp-extensions", Usage: "Extra file extensions for C# (comma-separated)", Category: "File selection"},
+				},
+				Action: func(cCtx *cliV2.Context) error {
+					if cCtx.Bool("verbose") {
+						logrus.SetLevel(logrus.DebugLevel)
+					}
+					if cCtx.Args().Len() == 0 {
+						return fmt.Errorf("please name the library to look for, e.g. ast-metrics who-uses log4j")
+					}
+					config := configuration.NewConfiguration()
+					loader := configuration.NewConfigurationLoader()
+					if cCtx.String("config") != "" {
+						loader.FilenameToChecks = []string{cCtx.String("config")}
+					}
+					cfg, err := loader.Loads(config)
+					if err != nil {
+						cli.PrintError("Cannot load configuration file: " + err.Error())
+					}
+					// The library first, then the paths: from args, then the
+					// configuration file, then the current directory
+					pathsSlice := cCtx.Args().Slice()[1:]
+					if len(pathsSlice) == 0 {
+						if len(cfg.SourcesToAnalyzePath) > 0 {
+							pathsSlice = cfg.SourcesToAnalyzePath
+						} else {
+							pathsSlice = []string{"."}
+						}
+					}
+					if err := cfg.SetSourcesToAnalyzePath(pathsSlice); err != nil {
+						cli.PrintError(err.Error())
+						return err
+					}
+					if len(cfg.ExcludePatterns) == 0 {
+						if ex := cCtx.StringSlice("exclude"); len(ex) > 0 {
+							cfg.SetExcludePatterns(ex)
+						}
+					}
+					mergeExtensionFlags(cCtx, cfg)
+
+					cmd := command.NewWhoUsesCommand(cfg, os.Stdout, runners, cCtx.Args().First())
+					cmd.Format = cCtx.String("format")
+					cmd.MaxDepth = cCtx.Int("max-depth")
+					cmd.Limit = cCtx.Int("limit")
 					return cmd.Execute()
 				},
 			},
@@ -1079,6 +1149,7 @@ func main() {
 					&cliV2.StringFlag{Name: "rust-extensions", Usage: "Extra file extensions for Rust (comma-separated)", Category: "File selection"},
 					&cliV2.StringFlag{Name: "java-extensions", Usage: "Extra file extensions for Java (comma-separated)", Category: "File selection"},
 					&cliV2.StringFlag{Name: "csharp-extensions", Usage: "Extra file extensions for C# (comma-separated)", Category: "File selection"},
+					&cliV2.StringFlag{Name: "cpp-extensions", Usage: "Extra file extensions for C++ (comma-separated)", Category: "File selection"},
 				},
 				Action: func(cCtx *cliV2.Context) error {
 					// Redirect all logging to stderr (stdout is reserved for JSON-RPC)
@@ -1144,6 +1215,7 @@ func mergeExtensionFlags(cCtx *cliV2.Context, config *configuration.Configuratio
 		{"python-extensions", "python"}, {"rust-extensions", "rust"},
 		{"typescript-extensions", "typescript"},
 		{"java-extensions", "java"}, {"csharp-extensions", "csharp"},
+		{"cpp-extensions", "cpp"},
 	} {
 		if v := cCtx.String(pair.flag); v != "" {
 			if config.Extensions == nil {
