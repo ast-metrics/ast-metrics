@@ -18,7 +18,7 @@ func (v *ReportersFactory) Factory(configuration *configuration.Configuration) [
 			reporters = append(reporters, NewMarkdownReportGenerator(v.Configuration.Reports.Markdown))
 		}
 		if v.Configuration.Reports.Json != "" {
-			reporters = append(reporters, NewJsonReportGenerator(v.Configuration.Reports.Json))
+			reporters = append(reporters, NewJsonReportGenerator(v.Configuration.Reports.Json, v.Configuration.Reports.JsonFunctions))
 		}
 		if v.Configuration.Reports.OpenMetrics != "" {
 			reporters = append(reporters, NewOpenMetricsReportGenerator(v.Configuration.Reports.OpenMetrics))

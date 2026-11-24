@@ -303,6 +303,11 @@ func main() {
 						Usage:    "Generate a report in JSON format",
 						Category: "Report",
 					},
+					&cliV2.BoolFlag{
+						Name:     "report-json-functions",
+						Usage:    "Add a row per function to each file of the JSON report",
+						Category: "Report",
+					},
 					// OpenMetrics report
 					// https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md
 					&cliV2.StringFlag{
@@ -506,6 +511,9 @@ func main() {
 					}
 					if cCtx.String("report-json") != "" {
 						config.Reports.Json = cCtx.String("report-json")
+					}
+					if cCtx.Bool("report-json-functions") {
+						config.Reports.JsonFunctions = true
 					}
 					if cCtx.String("report-openmetrics") != "" {
 						config.Reports.OpenMetrics = cCtx.String("report-openmetrics")
@@ -821,6 +829,7 @@ func main() {
 					&cliV2.BoolFlag{Name: "open-html", Usage: "Automatically open HTML report in browser", Category: "Report"},
 					&cliV2.StringFlag{Name: "report-markdown", Usage: "Generate a Markdown report file", Category: "Report"},
 					&cliV2.StringFlag{Name: "report-json", Usage: "Generate a report in JSON format", Category: "Report"},
+					&cliV2.BoolFlag{Name: "report-json-functions", Usage: "Add a row per function to each file of the JSON report", Category: "Report"},
 					&cliV2.StringFlag{Name: "report-openmetrics", Usage: "Generate a report in OpenMetrics format", Category: "Report"},
 					&cliV2.StringFlag{Name: "report-sarif", Usage: "Generate a report in SARIF format (2.1.0)", Category: "Report"},
 					&cliV2.BoolFlag{Name: "report-summary", Usage: "Print a summary of the analysis on the standard output. Use --report-summary=false to silence it", Value: true, Category: "Report"},
@@ -892,6 +901,9 @@ func main() {
 					}
 					if cCtx.String("report-json") != "" {
 						cfg.Reports.Json = cCtx.String("report-json")
+					}
+					if cCtx.Bool("report-json-functions") {
+						cfg.Reports.JsonFunctions = true
 					}
 					if cCtx.String("report-openmetrics") != "" {
 						cfg.Reports.OpenMetrics = cCtx.String("report-openmetrics")

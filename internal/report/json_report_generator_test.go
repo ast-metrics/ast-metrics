@@ -10,6 +10,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/analyzer"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestGenerateJson(t *testing.T) {
@@ -129,4 +130,86 @@ func TestBuildReportMapsPerMethodMaintainability(t *testing.T) {
 	if r.AverageMIcwPerMethod != 20 {
 		t.Errorf("expected AverageMIcwPerMethod 20, got %v", r.AverageMIcwPerMethod)
 	}
+}
+
+func TestBuildReportListsEachFunctionWithItsLinesAndMetrics(t *testing.T) {
+	cyclomatic, loc := int32(3), int32(12)
+	method := &pb.StmtFunction{
+		Name:     &pb.Name{Short: "run", Qualified: "App::run"},
+		Location: &pb.StmtLocationInFile{StartLine: 4, EndLine: 15, StartFilePos: 40},
+		Stmts: &pb.Stmts{Analyze: &pb.Analyze{
+			Complexity: &pb.Complexity{Cyclomatic: &cyclomatic},
+			Volume:     &pb.Volume{Loc: &loc},
+		}},
+	}
+	helper := &pb.StmtFunction{
+		Name:     &pb.Name{Short: "mk"},
+		Location: &pb.StmtLocationInFile{StartLine: 20, EndLine: 21, StartFilePos: 300},
+	}
+	shadow := &pb.StmtFunction{
+		Name:     &pb.Name{Short: "mk"},
+		Location: &pb.StmtLocationInFile{StartLine: 30, EndLine: 31, StartFilePos: 500},
+	}
+	f := &pb.File{Path: "app.ts", Stmts: &pb.Stmts{
+		StmtClass:    []*pb.StmtClass{{Stmts: &pb.Stmts{StmtFunction: []*pb.StmtFunction{method}}}},
+		StmtFunction: []*pb.StmtFunction{method, helper, shadow},
+	}}
+
+	r := (&JsonReportGenerator{Functions: true}).buildReport(analyzer.ProjectAggregated{
+		Combined: analyzer.Aggregated{ConcernedFiles: []*pb.File{f}},
+	})
+
+	expected := []function{
+		{Name: "run", QualifiedName: "App::run", StartLine: 4, EndLine: 15,
+			Complexity: complexity{Cyclomatic: 3}, Volume: volume{Loc: 12}},
+		{Name: "mk", StartLine: 20, EndLine: 21},
+		{Name: "mk", StartLine: 30, EndLine: 31},
+	}
+	assert.Equal(t, expected, r.ConcernedFiles[0].Functions)
+}
+
+func TestBuildReportLeavesFunctionRowsOutUnlessAsked(t *testing.T) {
+	f := &pb.File{Path: "app.ts", Stmts: &pb.Stmts{StmtFunction: []*pb.StmtFunction{
+		{Name: &pb.Name{Short: "run"}, Location: &pb.StmtLocationInFile{StartLine: 1, EndLine: 2}},
+	}}}
+	aggregated := analyzer.ProjectAggregated{Combined: analyzer.Aggregated{ConcernedFiles: []*pb.File{f}}}
+
+	assert.Empty(t, (&JsonReportGenerator{}).buildReport(aggregated).ConcernedFiles[0].Functions)
+	assert.Len(t, (&JsonReportGenerator{Functions: true}).buildReport(aggregated).ConcernedFiles[0].Functions, 1)
+}
+
+func TestBuildReportRoundsTheFiguresOfARowToTwoDecimals(t *testing.T) {
+	analyze := &pb.Analyze{
+		Volume: &pb.Volume{
+			HalsteadVolume: proto.Float64(123.456789), HalsteadDifficulty: proto.Float64(4.006),
+			HalsteadEffort: proto.Float64(10.0), HalsteadTime: proto.Float64(0.3333),
+			HalsteadEstimatedLength: proto.Float64(7.999),
+		},
+		Maintainability: &pb.Maintainability{
+			MaintainabilityIndex: proto.Float64(87.12345), MaintainabilityIndexWithoutComments: proto.Float64(70.666),
+			CommentWeight: proto.Float64(16.4567),
+		},
+		Risk:     &pb.Risk{Score: 0.123456},
+		Coupling: &pb.Coupling{Instability: 0.666666},
+	}
+	f := &pb.File{Path: "app.ts", Stmts: &pb.Stmts{Analyze: analyze, StmtFunction: []*pb.StmtFunction{
+		{Name: &pb.Name{Short: "run"}, Stmts: &pb.Stmts{Analyze: analyze}},
+	}}}
+	r := (&JsonReportGenerator{Functions: true}).buildReport(analyzer.ProjectAggregated{
+		Combined: analyzer.Aggregated{ConcernedFiles: []*pb.File{f}},
+	})
+
+	row := r.ConcernedFiles[0]
+	for _, v := range []volume{row.Volume, row.Functions[0].Volume} {
+		assert.Equal(t, 123.46, v.HalsteadVolume)
+		assert.Equal(t, 4.01, v.HalsteadDifficulty)
+		assert.Equal(t, 10.0, v.HalsteadEffort)
+		assert.Equal(t, 0.33, v.HalsteadTime)
+		assert.Equal(t, 8.0, v.HalsteadEstimatedLength)
+	}
+	for _, m := range []maintainability{row.Maintainability, row.Functions[0].Maintainability} {
+		assert.Equal(t, maintainability{MaintainabilityIndex: 87.12, MaintainabilityIndexWithoutComments: 70.67, CommentWeight: 16.46}, m)
+	}
+	assert.Equal(t, 0.12, row.Risk.Score)
+	assert.Equal(t, 0.67, row.Coupling.Instability)
 }

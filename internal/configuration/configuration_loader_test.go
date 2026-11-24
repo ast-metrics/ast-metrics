@@ -140,3 +140,15 @@ func TestCreateDefaultFile(t *testing.T) {
 	assert.NotNil(t, cfg.Requirements.Rules.Complexity.Cyclomatic)
 	assert.Equal(t, 10, *cfg.Requirements.Rules.Complexity.Cyclomatic)
 }
+
+func TestLoadsTheJsonFunctionsOption(t *testing.T) {
+	tempFile, _ := ioutil.TempFile("", "test")
+	defer os.Remove(tempFile.Name())
+	tempFile.Write([]byte("reports:\n  json: ./build/report.json\n  json_functions: true\n"))
+	tempFile.Close()
+
+	cfg, err := (&ConfigurationLoader{FilenameToChecks: []string{tempFile.Name()}}).Loads(&Configuration{})
+
+	assert.Nil(t, err)
+	assert.True(t, cfg.Reports.JsonFunctions)
+}
