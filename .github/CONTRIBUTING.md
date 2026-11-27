@@ -196,23 +196,19 @@ type engine interface {
 }
 ```
 
-The protobuf file is defined in the proto directory, and a corresponding Go file is generated with the `make build-protobuff` command. This file is versioned as src/NodeType.NodeType.go.
+The protobuf file is defined in the proto directory, and a corresponding Go file is generated with the `make build-protobuff` command. This file is versioned as pb/NodeType.pb.go.
 
 ## 🚩 My contribution involves updating the data structure (protobuf)
 
 The data structure is defined in protobuf files located in the proto directory.
-
-You need to install protobuf by running:
-
-```bash
-make install-protobuf
-```
 
 Once you've finished editing the protobuf files, you can generate the corresponding Go code with the command:
 
 ```bash
 make build-protobuff
 ```
+
+It downloads the pinned `protoc` into `bin/` and builds `protoc-gen-go` from the version `go.mod` declares, so the generated code always matches the protobuf runtime the project compiles against.
 
 This will also verify that the protobuf files are well-formed.
 

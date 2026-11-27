@@ -1,8 +1,8 @@
 package analyzer
 
 import (
-	"github.com/golang/protobuf/proto"
 	pb "github.com/ast-metrics/ast-metrics/pb"
+	"google.golang.org/protobuf/proto"
 )
 
 type Visitor interface {
