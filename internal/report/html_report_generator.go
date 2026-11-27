@@ -33,6 +33,10 @@ var (
 	htmlContent embed.FS
 )
 
+// htmlFiltersOnce guards the registration of the pongo2 filters, which land in
+// a process-global map.
+var htmlFiltersOnce sync.Once
+
 // Identity palette: cool hues only. Green, amber and red carry severity
 // everywhere else in the report, so a contributor must never wear them.
 // Chips print white initials at 11px on these backgrounds, so every color
@@ -73,6 +77,8 @@ type HtmlReportGenerator struct {
 	ReportPath string
 	// langCache holds pre-computed JSON per scope data key (built once in Generate)
 	langCache map[string]*cachedLangData
+	// templates is the set rooted at this run's own template directory
+	templates *pongo2.TemplateSet
 }
 
 func NewHtmlReportGenerator(reportPath string) Reporter {
@@ -94,14 +100,18 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 		return nil, err
 	}
 
-	// copy the templates from embed, to temporary folder
-	baseTemplateDir := fmt.Sprintf("%s/templates", os.TempDir())
-	err = os.MkdirAll(baseTemplateDir, os.ModePerm)
+	// Copy the templates from embed to a directory of this run's own. A path
+	// shared across runs lets two concurrent reports truncate the templates the
+	// other is still loading, and leaves the content at the mercy of whoever
+	// else can write under os.TempDir().
+	baseTemplateDir, err := os.MkdirTemp("", "ast-metrics-templates-")
 	if err != nil {
 		return nil, err
 	}
+	defer os.RemoveAll(baseTemplateDir)
+
 	// ensure partials subfolder exists under base
-	partialsDir := fmt.Sprintf("%s/partials", baseTemplateDir)
+	partialsDir := filepath.Join(baseTemplateDir, "partials")
 	if err := os.MkdirAll(partialsDir, os.ModePerm); err != nil {
 		return nil, err
 	}
@@ -159,10 +169,11 @@ func (v *HtmlReportGenerator) Generate(files []*pb.File, projectAggregated analy
 
 	// Define loader rooted at the base template directory
 	loader := pongo2.MustNewLocalFileSystemLoader(baseTemplateDir)
-	pongo2.DefaultSet = pongo2.NewSet(baseTemplateDir, loader)
+	v.templates = pongo2.NewSet(baseTemplateDir, loader)
 
-	// Custom filters
-	v.RegisterFilters()
+	// Custom filters. The pongo2 filter map is process-global, so it is written
+	// once however many reports are generated, concurrently or not.
+	htmlFiltersOnce.Do(v.RegisterFilters)
 
 	// Build the list of available scopes: the whole project, then one per
 	// programming language, then one per analyzed directory (CLI argument).
@@ -949,7 +960,7 @@ func (v *HtmlReportGenerator) GenerateScopePage(template string, scope scopeDef,
 	// The same template is rendered once per scope, so it is compiled once and
 	// kept: FromCache is thread-safe and caches by filename, FromFile parses the
 	// file and its layout again on every call.
-	tpl, err := pongo2.DefaultSet.FromCache(template)
+	tpl, err := v.templates.FromCache(template)
 	if err != nil {
 		log.Error(err)
 		return err

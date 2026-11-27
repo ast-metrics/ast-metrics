@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 
@@ -18,6 +19,10 @@ var (
 	//go:embed templates/*
 	mdContent embed.FS
 )
+
+// markdownFiltersOnce guards the registration of the pongo2 filters, which land
+// in a process-global map.
+var markdownFiltersOnce sync.Once
 
 type MarkdownReportGenerator struct {
 	// The path where the report will be generated
@@ -37,12 +42,13 @@ func (v *MarkdownReportGenerator) Generate(files []*pb.File, projectAggregated a
 		return nil, nil
 	}
 
-	// copy the templates from embed, to temporary folder
-	templateDir := fmt.Sprintf("%s/templates", os.TempDir())
-	err := os.MkdirAll(templateDir, os.ModePerm)
+	// Copy the templates from embed to a directory of this run's own, for the
+	// reasons given in the HTML generator.
+	templateDir, err := os.MkdirTemp("", "ast-metrics-templates-")
 	if err != nil {
 		return nil, err
 	}
+	defer os.RemoveAll(templateDir)
 	for _, file := range []string{"index.md"} {
 		// read the file
 		mdContent, err := mdContent.ReadFile(fmt.Sprintf("templates/markdown/%s", file))
@@ -59,13 +65,14 @@ func (v *MarkdownReportGenerator) Generate(files []*pb.File, projectAggregated a
 
 	// Define loader in order to retrieve templates in the Report/Html/templates folder
 	loader := pongo2.MustNewLocalFileSystemLoader(templateDir)
-	pongo2.DefaultSet = pongo2.NewSet(templateDir, loader)
+	templates := pongo2.NewSet(templateDir, loader)
 
-	// Custom filters
-	v.RegisterFilters()
+	// Custom filters. The pongo2 filter map is process-global, so it is written
+	// once however many reports are generated, concurrently or not.
+	markdownFiltersOnce.Do(v.RegisterFilters)
 
 	// Compile the index.md template
-	tpl, err := pongo2.DefaultSet.FromFile("index.md")
+	tpl, err := templates.FromFile("index.md")
 	if err != nil {
 		log.Error(err)
 		return nil, err
