@@ -78,10 +78,9 @@ class Cart {
 	assert.Less(t, *class.Stmts.Analyze.Maintainability.MaintainabilityIndex, float64(171))
 }
 
-// TestPhpNamedArgumentsAndPipesSurviveTheAstWalk covers the two PHP operators
-// the grammar does not hand over as plain tokens: the ":" of a named argument,
-// and the "|>" of PHP 8.5, which the bundled grammar still reads as "|" then
-// ">".
+// TestPhpNamedArgumentsAndPipesSurviveTheAstWalk covers two operators the
+// grammar buries inside a node of its own: the ":" of a named argument, and the
+// "|>" of PHP 8.5.
 func TestPhpNamedArgumentsAndPipesSurviveTheAstWalk(t *testing.T) {
 	phpSource := `<?php
 function test() {

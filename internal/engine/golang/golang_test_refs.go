@@ -2,7 +2,7 @@ package golang
 
 import (
 	pb "github.com/ast-metrics/ast-metrics/pb"
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // A Go test lives in the same package as the code it tests: it references the
@@ -61,9 +61,9 @@ func attachTestSymbolRefs(file *pb.File, adapter *TreeSitterAdapter, root *sitte
 	// declared holds the names declared by the test file itself (helpers,
 	// mocks): a reference to them is not a reference to production code.
 	declared := map[string]bool{}
-	for i := 0; i < int(root.ChildCount()); i++ {
+	for i := uint(0); i < root.ChildCount(); i++ {
 		child := root.Child(i)
-		switch child.Type() {
+		switch child.Kind() {
 		case "import_declaration":
 			for _, it := range adapter.Imports(child) {
 				imports[it.Name] = it.Module
@@ -100,7 +100,7 @@ func attachTestSymbolRefs(file *pb.File, adapter *TreeSitterAdapter, root *sitte
 		if n == nil {
 			return
 		}
-		switch n.Type() {
+		switch n.Kind() {
 		case "package_clause", "import_declaration":
 			return
 		case "qualified_type":
@@ -123,7 +123,7 @@ func attachTestSymbolRefs(file *pb.File, adapter *TreeSitterAdapter, root *sitte
 			return
 		case "call_expression":
 			if fn := n.ChildByFieldName("function"); fn != nil {
-				switch fn.Type() {
+				switch fn.Kind() {
 				case "identifier":
 					name := text(src, fn)
 					if !goBuiltinFuncs[name] && !goBuiltinTypes[name] && !declared[name] {
@@ -132,7 +132,7 @@ func attachTestSymbolRefs(file *pb.File, adapter *TreeSitterAdapter, root *sitte
 				case "selector_expression":
 					op := fn.ChildByFieldName("operand")
 					field := fn.ChildByFieldName("field")
-					if op != nil && op.Type() == "identifier" && field != nil {
+					if op != nil && op.Kind() == "identifier" && field != nil {
 						p := text(src, op)
 						if module, ok := imports[p]; ok {
 							addRef(p+"\\"+text(src, field), module)
@@ -142,7 +142,7 @@ func attachTestSymbolRefs(file *pb.File, adapter *TreeSitterAdapter, root *sitte
 			}
 			// keep walking: arguments may hold composite literals or nested calls
 		}
-		for i := 0; i < int(n.ChildCount()); i++ {
+		for i := uint(0); i < n.ChildCount(); i++ {
 			walk(n.Child(i))
 		}
 	}

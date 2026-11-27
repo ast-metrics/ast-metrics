@@ -3,19 +3,19 @@ package treesitter
 import (
 	"sync"
 
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // Classifying a node by the name of its type is what every walk does on every
 // node, several times: is it a statement, a decision, a class, a function, a
-// scope boundary. Asking `Node.Type()` is the most expensive way to ask: it
+// scope boundary. Asking `Node.Kind()` is the most expensive way to ask: it
 // crosses into C and copies the name into a fresh Go string, every time, which
 // costs a fifth of an analysis and feeds the garbage collector with strings
 // nobody keeps.
 //
 // The grammar answers the same question with an integer. Every node carries a
 // symbol id, the ids of one language form a small dense range, and
-// `Node.Type()` is defined as the name of the node's symbol. Turning the node
+// `Node.Kind()` is defined as the name of the node's symbol. Turning the node
 // names an adapter declares into a table indexed by that id therefore keeps the
 // exact same answers, while making a classification an array lookup with no
 // allocation and no string comparison.
@@ -37,10 +37,10 @@ func newSymbolTable[T any](lang *sitter.Language, byName map[string]T) symbolTab
 		return symbolTable[T]{}
 	}
 
-	count := int(lang.SymbolCount())
+	count := int(lang.NodeKindCount())
 	table := symbolTable[T]{byID: make([]T, count)}
 	for id := 0; id < count; id++ {
-		if value, ok := byName[lang.SymbolName(sitter.Symbol(id))]; ok {
+		if value, ok := byName[lang.NodeKindForId(uint16(id))]; ok {
 			table.byID[id] = value
 		}
 	}
@@ -59,7 +59,7 @@ func (t symbolTable[T]) at(n *sitter.Node) T {
 	if n == nil {
 		return none
 	}
-	id := int(n.Symbol())
+	id := int(n.KindId())
 	if id < 0 || id >= len(t.byID) {
 		return none
 	}
@@ -103,5 +103,5 @@ func (s *TypeSet) Has(n *sitter.Node) bool {
 	if s.table.ready() {
 		return s.table.at(n)
 	}
-	return s.byName[n.Type()]
+	return s.byName[n.Kind()]
 }

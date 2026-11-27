@@ -3,7 +3,7 @@ package treesitter
 import (
 	"sync"
 
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // Logical lines of code model shared by every language.
@@ -107,7 +107,7 @@ func (s *StatementSpec) Classify(n *sitter.Node) StatementKind {
 	if s.bySymbol.ready() {
 		return s.bySymbol.at(n)
 	}
-	return s.byType[n.Type()]
+	return s.byType[n.Kind()]
 }
 
 // IsStringExpression reports whether n is an expression statement whose whole
@@ -124,14 +124,14 @@ func IsStringExpression(n *sitter.Node, stringTypes ...string) bool {
 	}
 	named := 0
 	isString := false
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		ch := n.Child(i)
 		if !ch.IsNamed() {
 			continue
 		}
 		named++
 		for _, t := range stringTypes {
-			if ch.Type() == t {
+			if ch.Kind() == t {
 				isString = true
 			}
 		}

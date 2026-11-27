@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // Mock adapter for testing

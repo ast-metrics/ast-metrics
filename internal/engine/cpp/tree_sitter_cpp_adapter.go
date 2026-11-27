@@ -5,21 +5,24 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
-	sitter "github.com/smacker/go-tree-sitter"
-	tsCpp "github.com/smacker/go-tree-sitter/cpp"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type TreeSitterAdapter struct {
 	src  []byte
 	root *sitter.Node
+	own  Treesitter.OwnedTree
 }
 
-func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter   { return &TreeSitterAdapter{src: src} }
-func (a *TreeSitterAdapter) SetSource(src []byte)          { a.src, a.root = src, nil }
+func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
+func (a *TreeSitterAdapter) SetSource(src []byte) {
+	a.own.Release()
+	a.src, a.root = src, nil
+}
 func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root }
-func (a *TreeSitterAdapter) Language() *sitter.Language    { return tsCpp.GetLanguage() }
+func (a *TreeSitterAdapter) Language() *sitter.Language    { return grammar() }
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool {
-	return n != nil && n.Type() == "translation_unit"
+	return n != nil && n.Kind() == "translation_unit"
 }
 func (a *TreeSitterAdapter) NamespaceSeparator() string { return "::" }
 
@@ -28,7 +31,7 @@ func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
 	// forward declaration (`class Engine;`): it declares no members, and
 	// counting it would shadow the real definition with an empty class.
 	return n != nil &&
-		(n.Type() == "class_specifier" || n.Type() == "struct_specifier") &&
+		(n.Kind() == "class_specifier" || n.Kind() == "struct_specifier") &&
 		firstChildOfType(n, "field_declaration_list") != nil
 }
 
@@ -48,10 +51,10 @@ func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
 	if n == nil {
 		return false
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "function_definition":
 		body := n.ChildByFieldName("body")
-		if body == nil || body.Type() != "compound_statement" {
+		if body == nil || body.Kind() != "compound_statement" {
 			return false
 		}
 		declarator := n.ChildByFieldName("declarator")
@@ -62,8 +65,8 @@ func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool {
 		// between type and declarator — means the "definition" is macro
 		// fallout: the declarator may parse cleanly, but the node then spans
 		// code that is not a function at all.
-		for i := 0; i < int(n.ChildCount()); i++ {
-			switch n.FieldNameForChild(i) {
+		for i := uint(0); i < n.ChildCount(); i++ {
+			switch n.FieldNameForChild(uint32(i)) {
 			case "declarator", "body":
 				continue
 			}
@@ -106,7 +109,7 @@ func (a *TreeSitterAdapter) hasErrorDescendant(n *sitter.Node) bool {
 	if n.IsError() || n.IsMissing() {
 		return true
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		if a.hasErrorDescendant(n.Child(i)) {
 			return true
 		}
@@ -126,7 +129,7 @@ func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	if a.IsClass(n) {
 		return a.declaratorName(n.ChildByFieldName("name"))
 	}
-	if n.Type() == "compound_statement" {
+	if n.Kind() == "compound_statement" {
 		return a.testMacroBodyName(n)
 	}
 	if a.IsFunction(n) {
@@ -156,7 +159,7 @@ func (a *TreeSitterAdapter) NodeQualifiedName(n *sitter.Node) (string, string) {
 		}
 		return short, a.qualify(a.namespaceChain(n), short)
 	}
-	if n.Type() == "compound_statement" {
+	if n.Kind() == "compound_statement" {
 		short := a.testMacroBodyName(n)
 		return short, a.qualify(a.namespaceChain(n), short)
 	}
@@ -194,13 +197,13 @@ func (a *TreeSitterAdapter) qualify(namespace, name string) string {
 func (a *TreeSitterAdapter) namespaceChain(n *sitter.Node) string {
 	var segments []string
 	for p := n.Parent(); p != nil; p = p.Parent() {
-		if p.Type() == "function_definition" && a.IsFunction(p) {
+		if p.Kind() == "function_definition" && a.IsFunction(p) {
 			break
 		}
 		// an inline namespace (`inline namespace v11`) is how a library
 		// versions its ABI: its members are written and used as members of the
 		// enclosing namespace, `fmt::format_to` rather than `fmt::v11::format_to`
-		if p.Type() == "namespace_definition" && !Treesitter.HasChildOfType(p, "inline") {
+		if p.Kind() == "namespace_definition" && !Treesitter.HasChildOfType(p, "inline") {
 			if name := p.ChildByFieldName("name"); name != nil {
 				segments = append([]string{nodeText(a.src, name)}, segments...)
 			}
@@ -212,7 +215,7 @@ func (a *TreeSitterAdapter) namespaceChain(n *sitter.Node) string {
 // enclosingClass returns the nearest class definition containing n, if any.
 func (a *TreeSitterAdapter) enclosingClass(n *sitter.Node) *sitter.Node {
 	for p := n.Parent(); p != nil; p = p.Parent() {
-		if p.Type() == "function_definition" {
+		if p.Kind() == "function_definition" {
 			return nil
 		}
 		if a.IsClass(p) {
@@ -239,10 +242,10 @@ func (a *TreeSitterAdapter) qualifiedDefinitionName(fn *sitter.Node) string {
 	if d == nil {
 		return ""
 	}
-	if d.Type() == "function_declarator" {
+	if d.Kind() == "function_declarator" {
 		d = d.ChildByFieldName("declarator")
 	}
-	if d == nil || d.Type() != "qualified_identifier" {
+	if d == nil || d.Kind() != "qualified_identifier" {
 		return ""
 	}
 	global := strings.HasPrefix(nodeText(a.src, d), "::")
@@ -276,12 +279,12 @@ func (a *TreeSitterAdapter) macroTestName(fn *sitter.Node) string {
 		return ""
 	}
 	identifier := declarator
-	if identifier.Type() == "function_declarator" {
+	if identifier.Kind() == "function_declarator" {
 		if inner := identifier.ChildByFieldName("declarator"); inner != nil {
 			identifier = inner
 		}
 	}
-	if identifier.Type() != "identifier" || !testMacros[nodeText(a.src, identifier)] {
+	if identifier.Kind() != "identifier" || !testMacros[nodeText(a.src, identifier)] {
 		return ""
 	}
 	args := firstDescendantOfType(declarator, "parameter_list")
@@ -289,7 +292,7 @@ func (a *TreeSitterAdapter) macroTestName(fn *sitter.Node) string {
 		return ""
 	}
 	var names []string
-	for i := 0; i < int(args.NamedChildCount()); i++ {
+	for i := uint(0); i < args.NamedChildCount(); i++ {
 		if text := nodeText(a.src, args.NamedChild(i)); text != "" {
 			names = append(names, text)
 		}
@@ -306,11 +309,11 @@ func (a *TreeSitterAdapter) macroTestName(fn *sitter.Node) string {
 // string argument of the call.
 func (a *TreeSitterAdapter) testMacroBodyName(n *sitter.Node) string {
 	parent := n.Parent()
-	if parent == nil || (parent.Type() != "translation_unit" && parent.Type() != "declaration_list") {
+	if parent == nil || (parent.Kind() != "translation_unit" && parent.Kind() != "declaration_list") {
 		return ""
 	}
 	prev := n.PrevNamedSibling()
-	if prev == nil || prev.Type() != "expression_statement" {
+	if prev == nil || prev.Kind() != "expression_statement" {
 		return ""
 	}
 	call := firstDescendantOfType(prev, "call_expression")
@@ -318,7 +321,7 @@ func (a *TreeSitterAdapter) testMacroBodyName(n *sitter.Node) string {
 		return ""
 	}
 	function := call.ChildByFieldName("function")
-	if function == nil || function.Type() != "identifier" {
+	if function == nil || function.Kind() != "identifier" {
 		return ""
 	}
 	macro := nodeText(a.src, function)
@@ -326,7 +329,7 @@ func (a *TreeSitterAdapter) testMacroBodyName(n *sitter.Node) string {
 		return ""
 	}
 	if args := firstDescendantOfType(call, "argument_list"); args != nil {
-		for i := 0; i < int(args.NamedChildCount()); i++ {
+		for i := uint(0); i < args.NamedChildCount(); i++ {
 			if content := firstDescendantOfType(args.NamedChild(i), "string_content"); content != nil {
 				if text := nodeText(a.src, content); text != "" {
 					return text
@@ -344,7 +347,7 @@ func (a *TreeSitterAdapter) declaratorName(n *sitter.Node) string {
 	if n == nil {
 		return ""
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "identifier", "field_identifier", "type_identifier", "destructor_name", "operator_name", "literal_operator_name":
 		return nodeText(a.src, n)
 	case "operator_cast":
@@ -364,7 +367,7 @@ func (a *TreeSitterAdapter) declaratorName(n *sitter.Node) string {
 			}
 		}
 	}
-	for i := 0; i < int(n.NamedChildCount()); i++ {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
 		if name := a.declaratorName(n.NamedChild(i)); name != "" {
 			return name
 		}
@@ -376,7 +379,7 @@ func (a *TreeSitterAdapter) NodeBody(n *sitter.Node) *sitter.Node {
 	if n == nil {
 		return nil
 	}
-	if n.Type() == "compound_statement" {
+	if n.Kind() == "compound_statement" {
 		// the Catch2 macro body: the node is its own body
 		return n
 	}
@@ -390,7 +393,7 @@ func (a *TreeSitterAdapter) NodeParams(n *sitter.Node) *sitter.Node {
 	if n == nil {
 		return nil
 	}
-	if n.Type() == "compound_statement" {
+	if n.Kind() == "compound_statement" {
 		// the arguments of the Catch2 macro call precede the body
 		if prev := n.PrevNamedSibling(); prev != nil {
 			return firstDescendantOfType(prev, "argument_list")
@@ -404,10 +407,10 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	if params == nil {
 		return
 	}
-	for i := 0; i < int(params.NamedChildCount()); i++ {
+	for i := uint(0); i < params.NamedChildCount(); i++ {
 		p := params.NamedChild(i)
-		if p.Type() != "parameter_declaration" && p.Type() != "optional_parameter_declaration" &&
-			p.Type() != "variadic_parameter_declaration" {
+		if p.Kind() != "parameter_declaration" && p.Kind() != "optional_parameter_declaration" &&
+			p.Kind() != "variadic_parameter_declaration" {
 			continue
 		}
 		if name := a.declaratorName(p.ChildByFieldName("declarator")); name != "" {
@@ -430,16 +433,16 @@ func (a *TreeSitterAdapter) ModuleNameFromPath(path string) string {
 	var firstBlock string
 	var find func(*sitter.Node) (string, bool)
 	find = func(n *sitter.Node) (string, bool) {
-		if a.IsClass(n) || (n.Type() == "function_definition" && a.IsFunction(n)) {
+		if a.IsClass(n) || (n.Kind() == "function_definition" && a.IsFunction(n)) {
 			return a.namespaceChain(n), true
 		}
-		if n.Type() == "namespace_definition" && firstBlock == "" {
+		if n.Kind() == "namespace_definition" && firstBlock == "" {
 			if body := n.ChildByFieldName("body"); body != nil {
 				// the chain of a child names the block itself and its parents
 				firstBlock = a.namespaceChain(body)
 			}
 		}
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			if namespace, found := find(n.NamedChild(i)); found {
 				return namespace, true
 			}
@@ -461,7 +464,7 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	if body == nil {
 		return
 	}
-	for i := 0; i < int(body.NamedChildCount()); i++ {
+	for i := uint(0); i < body.NamedChildCount(); i++ {
 		yield(body.NamedChild(i))
 	}
 }
@@ -512,10 +515,10 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	// A method defined outside of its class, the usual shape of a .cpp, and a
 	// free function: what their body uses is theirs. A method defined inside
 	// its class is already covered by the class.
-	if n.Type() == "function_definition" && a.enclosingClass(n) == nil && a.IsFunction(n) {
+	if n.Kind() == "function_definition" && a.enclosingClass(n) == nil && a.IsFunction(n) {
 		return a.functionDependencies(n)
 	}
-	if n.Type() != "preproc_include" {
+	if n.Kind() != "preproc_include" {
 		return nil
 	}
 	path := n.ChildByFieldName("path")
@@ -591,10 +594,10 @@ func (a *TreeSitterAdapter) typeReferences(root *sitter.Node, templateParameters
 			return
 		}
 		// A nested class owns its own dependencies.
-		if node != root && a.IsClass(node) {
+		if !Treesitter.SameNode(node, root) && a.IsClass(node) {
 			return
 		}
-		switch node.Type() {
+		switch node.Kind() {
 		case "type_identifier":
 			add(nodeText(a.src, node))
 		case "template_type":
@@ -607,7 +610,7 @@ func (a *TreeSitterAdapter) typeReferences(root *sitter.Node, templateParameters
 			walk(node.ChildByFieldName("arguments"))
 			return
 		case "qualified_identifier":
-			if node.Parent() != nil && isCppTypePosition(node.Parent().Type()) {
+			if node.Parent() != nil && isCppTypePosition(node.Parent().Kind()) {
 				// in a type position, the whole name is the dependency
 				add(a.qualifiedTypeName(node))
 			} else if owner := a.typeOwningMember(node); owner != "" {
@@ -620,7 +623,7 @@ func (a *TreeSitterAdapter) typeReferences(root *sitter.Node, templateParameters
 			a.eachTemplateArguments(node, walk)
 			return
 		}
-		for i := 0; i < int(node.NamedChildCount()); i++ {
+		for i := uint(0); i < node.NamedChildCount(); i++ {
 			walk(node.NamedChild(i))
 		}
 	}
@@ -637,14 +640,14 @@ func (a *TreeSitterAdapter) typeReferences(root *sitter.Node, templateParameters
 func (a *TreeSitterAdapter) typeOwningMember(q *sitter.Node) string {
 	var segments []string
 	isType := false
-	for node := q; node != nil && node.Type() == "qualified_identifier"; node = node.ChildByFieldName("name") {
+	for node := q; node != nil && node.Kind() == "qualified_identifier"; node = node.ChildByFieldName("name") {
 		scope := node.ChildByFieldName("scope")
 		if scope == nil {
 			break
 		}
 		segment := a.referenceSegment(scope)
 		segments = append(segments, segment)
-		isType = scope.Type() == "template_type" || segment != "" && segment[0] >= 'A' && segment[0] <= 'Z'
+		isType = scope.Kind() == "template_type" || segment != "" && segment[0] >= 'A' && segment[0] <= 'Z'
 	}
 	if len(segments) == 0 || !isType {
 		return ""
@@ -658,11 +661,11 @@ func (a *TreeSitterAdapter) eachTemplateArguments(n *sitter.Node, yield func(*si
 	if n == nil {
 		return
 	}
-	if n.Type() == "template_argument_list" {
+	if n.Kind() == "template_argument_list" {
 		yield(n)
 		return
 	}
-	for i := 0; i < int(n.NamedChildCount()); i++ {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
 		a.eachTemplateArguments(n.NamedChild(i), yield)
 	}
 }
@@ -685,7 +688,7 @@ func (a *TreeSitterAdapter) referenceSegment(n *sitter.Node) string {
 	if n == nil {
 		return ""
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "template_type":
 		if name := n.ChildByFieldName("name"); name != nil {
 			return nodeText(a.src, name)
@@ -705,10 +708,10 @@ func (a *TreeSitterAdapter) referenceSegment(n *sitter.Node) string {
 func (a *TreeSitterAdapter) templateParameterNames(class *sitter.Node) map[string]bool {
 	names := map[string]bool{}
 	for p := class.Parent(); p != nil; p = p.Parent() {
-		if p.Type() == "function_definition" {
+		if p.Kind() == "function_definition" {
 			break
 		}
-		if p.Type() == "template_declaration" {
+		if p.Kind() == "template_declaration" {
 			if params := p.ChildByFieldName("parameters"); params != nil {
 				collectIdentifierTexts(a.src, params, names)
 			}
@@ -722,15 +725,15 @@ func (a *TreeSitterAdapter) templateParameterNames(class *sitter.Node) map[strin
 			return
 		}
 		// A nested class owns its own member templates.
-		if node != class && a.IsClass(node) {
+		if !Treesitter.SameNode(node, class) && a.IsClass(node) {
 			return
 		}
-		if node.Type() == "template_declaration" {
+		if node.Kind() == "template_declaration" {
 			if params := node.ChildByFieldName("parameters"); params != nil {
 				collectIdentifierTexts(a.src, params, names)
 			}
 		}
-		for i := 0; i < int(node.NamedChildCount()); i++ {
+		for i := uint(0); i < node.NamedChildCount(); i++ {
 			walk(node.NamedChild(i))
 		}
 	}
@@ -742,11 +745,11 @@ func collectIdentifierTexts(src []byte, n *sitter.Node, names map[string]bool) {
 	if n == nil {
 		return
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "identifier", "type_identifier":
 		names[nodeText(src, n)] = true
 	}
-	for i := 0; i < int(n.NamedChildCount()); i++ {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
 		collectIdentifierTexts(src, n.NamedChild(i), names)
 	}
 }
@@ -818,9 +821,7 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	if source == nil {
 		return nil, nil
 	}
-	p := sitter.NewParser()
-	p.SetLanguage(a.Language())
-	a.root = p.Parse(nil, source).RootNode()
+	a.root = a.own.Root(a, source)
 	return a.root, source
 }
 func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endLine int) ([]string, []string) {
@@ -840,21 +841,21 @@ func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endL
 // share them, there is no telling which one is measured, and the node holding
 // both is returned rather than either of them.
 func (a *TreeSitterAdapter) definitionSpanning(root *sitter.Node, startLine, endLine int) *sitter.Node {
-	start, end := uint32(startLine-1), uint32(endLine-1)
+	start, end := uint(startLine-1), uint(endLine-1)
 	for node := root; node != nil; {
-		if node.StartPoint().Row == start && node.EndPoint().Row == end && a.IsFunction(node) {
+		if node.StartPosition().Row == start && node.EndPosition().Row == end && a.IsFunction(node) {
 			return node
 		}
 		var next *sitter.Node
-		for i := 0; i < int(node.NamedChildCount()); i++ {
+		for i := uint(0); i < node.NamedChildCount(); i++ {
 			child := node.NamedChild(i)
-			if child.EndPoint().Row < start || child.StartPoint().Row > end || child.Type() == "comment" {
+			if child.EndPosition().Row < start || child.StartPosition().Row > end || child.Kind() == "comment" {
 				continue
 			}
 			if next != nil {
 				return node
 			}
-			if child.StartPoint().Row <= start && child.EndPoint().Row >= end {
+			if child.StartPosition().Row <= start && child.EndPosition().Row >= end {
 				next = child
 			}
 		}
@@ -879,12 +880,12 @@ func (a *TreeSitterAdapter) ClassDirectOperands(n *sitter.Node) []string {
 		return nil
 	}
 	var result []string
-	for i := 0; i < int(body.NamedChildCount()); i++ {
+	for i := uint(0); i < body.NamedChildCount(); i++ {
 		field := body.NamedChild(i)
-		switch field.Type() {
+		switch field.Kind() {
 		case "field_declaration":
-			for j := 0; j < int(field.ChildCount()); j++ {
-				if field.FieldNameForChild(j) != "declarator" {
+			for j := uint(0); j < field.ChildCount(); j++ {
+				if field.FieldNameForChild(uint32(j)) != "declarator" {
 					continue
 				}
 				declarator := field.Child(j)
@@ -904,7 +905,7 @@ func (a *TreeSitterAdapter) ClassDirectOperands(n *sitter.Node) []string {
 			// bodyless function_definition whose declarator is the bare
 			// field identifier (`int n_ = 0;`): it is a field
 			declarator := field.ChildByFieldName("declarator")
-			if declarator == nil || declarator.Type() != "field_identifier" {
+			if declarator == nil || declarator.Kind() != "field_identifier" {
 				continue
 			}
 			if name := a.declaratorName(declarator); name != "" {
@@ -946,9 +947,9 @@ func firstChildOfType(n *sitter.Node, types ...string) *sitter.Node {
 	if n == nil {
 		return nil
 	}
-	for i := 0; i < int(n.NamedChildCount()); i++ {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
 		for _, t := range types {
-			if n.NamedChild(i).Type() == t {
+			if n.NamedChild(i).Kind() == t {
 				return n.NamedChild(i)
 			}
 		}
@@ -959,10 +960,10 @@ func firstDescendantOfType(n *sitter.Node, typ string) *sitter.Node {
 	if n == nil {
 		return nil
 	}
-	if n.Type() == typ {
+	if n.Kind() == typ {
 		return n
 	}
-	for i := 0; i < int(n.NamedChildCount()); i++ {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
 		if found := firstDescendantOfType(n.NamedChild(i), typ); found != nil {
 			return found
 		}

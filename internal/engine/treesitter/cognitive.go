@@ -1,7 +1,7 @@
 package treesitter
 
 import (
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // parenthesizedExpression is the node type of `(e)` in every supported grammar.
@@ -44,7 +44,7 @@ func (v *Visitor) cognitiveComplexity(fn *sitter.Node) int32 {
 	var visit func(n *sitter.Node, nesting int32, elseIf bool)
 
 	children := func(n *sitter.Node, each func(ch *sitter.Node)) {
-		for i := 0; i < int(n.ChildCount()); i++ {
+		for i := uint(0); i < n.ChildCount(); i++ {
 			if ch := n.Child(i); ch != nil && !v.isScopeBoundary(ch) {
 				each(ch)
 			}
@@ -68,7 +68,7 @@ func (v *Visitor) cognitiveComplexity(fn *sitter.Node) int32 {
 			})
 		case DecElse:
 			if inner := v.elseIfIn(n); inner != nil {
-				children(n, func(ch *sitter.Node) { visit(ch, nesting, ch == inner) })
+				children(n, func(ch *sitter.Node) { visit(ch, nesting, SameNode(ch, inner)) })
 				return
 			}
 			score++
@@ -152,10 +152,10 @@ func (v *Visitor) continuesChain(n, ch *sitter.Node) bool {
 // held in the `alternative` field by grammars without an else node (Go, Java,
 // C#): an if among its statements is nested in the else, not an else-if.
 func (v *Visitor) elseIfIn(n *sitter.Node) *sitter.Node {
-	if first := n.Child(0); first == nil || first.Type() != "else" {
+	if first := n.Child(0); first == nil || first.Kind() != "else" {
 		return nil
 	}
-	for i := 0; i < int(n.NamedChildCount()); i++ {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
 		if ch := n.NamedChild(i); v.cognitiveKind(ch) == DecIf {
 			return ch
 		}
@@ -167,7 +167,7 @@ func (v *Visitor) elseIfIn(n *sitter.Node) *sitter.Node {
 // parentheses aside, and so was already counted with the outermost.
 func (v *Visitor) insideRun(n *sitter.Node) bool {
 	parent := n.Parent()
-	for parent != nil && parent.Type() == parenthesizedExpression {
+	for parent != nil && parent.Kind() == parenthesizedExpression {
 		parent = parent.Parent()
 	}
 	return parent != nil && v.ad.Decision(parent) == DecLogical
@@ -181,7 +181,7 @@ func (v *Visitor) operatorRuns(n *sitter.Node) int32 {
 	previous := ""
 	var walk func(e *sitter.Node)
 	walk = func(e *sitter.Node) {
-		for e != nil && e.Type() == parenthesizedExpression && e.NamedChildCount() == 1 {
+		for e != nil && e.Kind() == parenthesizedExpression && e.NamedChildCount() == 1 {
 			e = e.NamedChild(0)
 		}
 		if e == nil || v.ad.Decision(e) != DecLogical {

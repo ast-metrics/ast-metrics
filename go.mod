@@ -25,8 +25,16 @@ require (
 	github.com/muesli/termenv v0.15.2
 	github.com/pterm/pterm v0.12.79
 	github.com/sirupsen/logrus v1.9.3
-	github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
+	github.com/tree-sitter/go-tree-sitter v0.25.0
+	github.com/tree-sitter/tree-sitter-c-sharp v0.24.0
+	github.com/tree-sitter/tree-sitter-cpp v0.23.4
+	github.com/tree-sitter/tree-sitter-go v0.25.0
+	github.com/tree-sitter/tree-sitter-java v0.23.5
+	github.com/tree-sitter/tree-sitter-php v0.25.2
+	github.com/tree-sitter/tree-sitter-python v0.25.0
+	github.com/tree-sitter/tree-sitter-rust v0.24.2
+	github.com/tree-sitter/tree-sitter-typescript v0.23.2
 	github.com/urfave/cli/v2 v2.27.1
 	github.com/yargevad/filepathx v1.0.0
 	golang.org/x/term v0.43.0
@@ -58,6 +66,7 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.26 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect

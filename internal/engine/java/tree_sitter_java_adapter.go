@@ -5,8 +5,7 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
-	sitter "github.com/smacker/go-tree-sitter"
-	tsJava "github.com/smacker/go-tree-sitter/java"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type TreeSitterAdapter struct {
@@ -19,12 +18,16 @@ type TreeSitterAdapter struct {
 	// srcLines holds the source split into lines, so that the extractors called
 	// once per function do not split the whole file again for each of them
 	srcLines Treesitter.LineCache
+	own      Treesitter.OwnedTree
 }
 
-func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter   { return &TreeSitterAdapter{src: src} }
-func (a *TreeSitterAdapter) SetSource(src []byte)          { a.src = src; a.root = nil }
+func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
+func (a *TreeSitterAdapter) SetSource(src []byte) {
+	a.own.Release()
+	a.src, a.root = src, nil
+}
 func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root }
-func (a *TreeSitterAdapter) Language() *sitter.Language    { return tsJava.GetLanguage() }
+func (a *TreeSitterAdapter) Language() *sitter.Language    { return grammar() }
 
 // ensureRoot returns the tree shared by the runner, parsing the source when
 // the adapter is used on its own (tests).
@@ -39,9 +42,7 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	if source == nil {
 		return nil, nil
 	}
-	parser := sitter.NewParser()
-	parser.SetLanguage(a.Language())
-	a.root = parser.Parse(nil, source).RootNode()
+	a.root = a.own.Root(a, source)
 	return a.root, source
 }
 
@@ -49,18 +50,18 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 // answered by symbol id rather than by node type name. See
 // internal/engine/treesitter/symbols.go.
 var (
-	javaModules = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"program"}}
+	javaModules = &Treesitter.TypeSet{Language: grammar, Types: []string{"program"}}
 
 	// enums, records and annotation types are class-like containers in Java:
 	// they hold fields and methods, so they count as classes for metrics
-	javaClasses = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"class_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration"}}
+	javaClasses = &Treesitter.TypeSet{Language: grammar, Types: []string{"class_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration"}}
 
-	javaInterfaces = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"interface_declaration"}}
+	javaInterfaces = &Treesitter.TypeSet{Language: grammar, Types: []string{"interface_declaration"}}
 
 	// lambdas are intentionally not named functions: they have no name and would
 	// pollute method counts, and their bodies still contribute decisions to the
 	// enclosing method through the fallback recursion
-	javaFunctions = &Treesitter.TypeSet{Language: tsJava.GetLanguage, Types: []string{"method_declaration", "constructor_declaration"}}
+	javaFunctions = &Treesitter.TypeSet{Language: grammar, Types: []string{"method_declaration", "constructor_declaration"}}
 )
 
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return javaModules.Has(n) }
@@ -113,9 +114,9 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	if params == nil || a.src == nil {
 		return
 	}
-	for i := 0; i < int(params.ChildCount()); i++ {
+	for i := uint(0); i < params.ChildCount(); i++ {
 		p := params.Child(i)
-		switch p.Type() {
+		switch p.Kind() {
 		case "formal_parameter", "receiver_parameter":
 			if nm := p.ChildByFieldName("name"); nm != nil {
 				yield(text(a.src, nm))
@@ -139,24 +140,18 @@ func (a *TreeSitterAdapter) ModuleNameFromPath(path string) string {
 		return a.pkg
 	}
 	a.pkgParsed = true
-	if a.src == nil {
+	root, _ := a.ensureRoot(nil)
+	if root == nil {
 		return ""
 	}
-	parser := sitter.NewParser()
-	parser.SetLanguage(a.Language())
-	tree := parser.Parse(nil, a.src)
-	if tree == nil {
-		return ""
-	}
-	root := tree.RootNode()
-	for i := 0; i < int(root.ChildCount()); i++ {
+	for i := uint(0); i < root.ChildCount(); i++ {
 		ch := root.Child(i)
-		if ch.Type() != "package_declaration" {
+		if ch.Kind() != "package_declaration" {
 			continue
 		}
-		for j := 0; j < int(ch.ChildCount()); j++ {
+		for j := uint(0); j < ch.ChildCount(); j++ {
 			c := ch.Child(j)
-			if c.Type() == "scoped_identifier" || c.Type() == "identifier" {
+			if c.Kind() == "scoped_identifier" || c.Kind() == "identifier" {
 				a.pkg = text(a.src, c)
 				return a.pkg
 			}
@@ -179,17 +174,17 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	if body == nil {
 		return
 	}
-	switch body.Type() {
+	switch body.Kind() {
 	case "switch_block":
 		// yield only the case groups: colon style groups and arrow rules
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			ch := body.Child(i)
-			if ch.Type() == "switch_block_statement_group" || ch.Type() == "switch_rule" {
+			if ch.Kind() == "switch_block_statement_group" || ch.Kind() == "switch_rule" {
 				yield(ch)
 			}
 		}
 	default:
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			yield(body.Child(i))
 		}
 	}
@@ -204,7 +199,7 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // two labels sharing one body (`case 1: case 2:`) count as the two entry
 // points they are. switch_expression covers statements and expressions alike.
 var javaDecisions = &Treesitter.DecisionSpec{
-	Language: tsJava.GetLanguage,
+	Language: grammar,
 	If:       []string{"if_statement"},
 	Loop:     []string{"for_statement", "enhanced_for_statement", "while_statement", "do_statement"},
 	Switch:   []string{"switch_expression"},
@@ -246,14 +241,14 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	if n == nil {
 		return nil
 	}
-	if n.Type() != "import_declaration" {
+	if n.Kind() != "import_declaration" {
 		return a.typeReferences(n)
 	}
 	var path string
 	isWildcard := false
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		ch := n.Child(i)
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "scoped_identifier", "identifier":
 			path = text(a.src, ch)
 		case "asterisk":
@@ -301,7 +296,7 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 		if x == nil {
 			return
 		}
-		switch x.Type() {
+		switch x.Kind() {
 		case "type_identifier":
 			add(text(a.src, x))
 			return
@@ -314,23 +309,23 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 			}
 			return
 		}
-		for i := 0; i < int(x.NamedChildCount()); i++ {
+		for i := uint(0); i < x.NamedChildCount(); i++ {
 			typesUnder(x.NamedChild(i))
 		}
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "class_declaration", "interface_declaration", "enum_declaration", "record_declaration", "annotation_type_declaration":
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			ch := n.NamedChild(i)
-			switch ch.Type() {
+			switch ch.Kind() {
 			case "superclass", "super_interfaces", "extends_interfaces", "modifiers", "formal_parameters", "type_parameters":
 				typesUnder(ch)
 			}
 		}
 	case "method_declaration", "constructor_declaration":
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			ch := n.NamedChild(i)
-			switch ch.Type() {
+			switch ch.Kind() {
 			case "block", "constructor_body", "identifier":
 				continue
 			default:
@@ -340,12 +335,12 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 	case "type_identifier":
 		// inside a body; the ones under a declaration were read with it, and
 		// the last segment of a qualified name goes with the whole name
-		if parent := n.Parent(); parent != nil && parent.Type() == "scoped_type_identifier" {
+		if parent := n.Parent(); parent != nil && parent.Kind() == "scoped_type_identifier" {
 			return nil
 		}
 		add(text(a.src, n))
 	case "scoped_type_identifier":
-		if parent := n.Parent(); parent != nil && parent.Type() == "scoped_type_identifier" {
+		if parent := n.Parent(); parent != nil && parent.Kind() == "scoped_type_identifier" {
 			return nil
 		}
 		add(text(a.src, n))
@@ -357,7 +352,7 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 		// Util.go(), Const.MAX: a capitalised receiver is a class by
 		// convention, a variable would be written in lower case
 		if object := n.ChildByFieldName("object"); object != nil {
-			switch object.Type() {
+			switch object.Kind() {
 			case "identifier":
 				if name := text(a.src, object); looksLikeJavaType(name) {
 					add(name)
@@ -413,7 +408,7 @@ func looksLikeJavaQualifiedType(name string) bool {
 // `static_initializer`, `method_declaration` and `import_declaration` declare
 // members.
 var javaStatements = &Treesitter.StatementSpec{
-	Language: tsJava.GetLanguage,
+	Language: grammar,
 	Statement: []string{
 		"expression_statement", "local_variable_declaration",
 		"if_statement",
@@ -571,8 +566,8 @@ func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
 	if n == nil {
 		return nil
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
-		if c := n.Child(i); c.Type() == t {
+	for i := uint(0); i < n.ChildCount(); i++ {
+		if c := n.Child(i); c.Kind() == t {
 			return c
 		}
 	}

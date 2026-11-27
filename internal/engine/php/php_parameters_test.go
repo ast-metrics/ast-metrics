@@ -57,8 +57,8 @@ class ValueObject {
 `, "$amount", "$currency", "$label", "$precision")
 }
 
-// Asymmetric visibility is PHP 8.4, newer than the embedded grammar, so the
-// signature parses with an error node. The parameters must still be counted.
+// A promoted property with asymmetric visibility (PHP 8.4) carries two
+// modifiers and one name, and must be counted once.
 func Test_Asymmetric_Visibility_Does_Not_Inflate_The_Count(t *testing.T) {
 	assertParameters(t, `
 <?php
