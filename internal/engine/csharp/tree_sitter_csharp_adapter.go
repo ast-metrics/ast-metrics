@@ -5,8 +5,7 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
-	sitter "github.com/smacker/go-tree-sitter"
-	tsCSharp "github.com/smacker/go-tree-sitter/csharp"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type TreeSitterAdapter struct {
@@ -19,12 +18,16 @@ type TreeSitterAdapter struct {
 	// srcLines holds the source split into lines, so that the extractors called
 	// once per function do not split the whole file again for each of them
 	srcLines Treesitter.LineCache
+	own      Treesitter.OwnedTree
 }
 
-func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter   { return &TreeSitterAdapter{src: src} }
-func (a *TreeSitterAdapter) SetSource(src []byte)          { a.src = src; a.root = nil }
+func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
+func (a *TreeSitterAdapter) SetSource(src []byte) {
+	a.own.Release()
+	a.src, a.root = src, nil
+}
 func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root }
-func (a *TreeSitterAdapter) Language() *sitter.Language    { return tsCSharp.GetLanguage() }
+func (a *TreeSitterAdapter) Language() *sitter.Language    { return grammar() }
 
 // ensureRoot returns the tree shared by the runner, parsing the source when
 // the adapter is used on its own (tests).
@@ -39,9 +42,7 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	if source == nil {
 		return nil, nil
 	}
-	parser := sitter.NewParser()
-	parser.SetLanguage(a.Language())
-	a.root = parser.Parse(nil, source).RootNode()
+	a.root = a.own.Root(a, source)
 	return a.root, source
 }
 
@@ -51,19 +52,19 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 var (
 	// namespace_declaration bodies are reached through the fallback recursion;
 	// the namespace name itself comes from ModuleNameFromPath
-	csModules = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"compilation_unit"}}
+	csModules = &Treesitter.TypeSet{Language: grammar, Types: []string{"compilation_unit"}}
 
 	// structs, records (including record struct) and enums are class-like
 	// containers in C#: they hold fields and methods, so they count as classes
 	// for metrics
-	csClasses = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"class_declaration", "struct_declaration", "record_declaration", "enum_declaration"}}
+	csClasses = &Treesitter.TypeSet{Language: grammar, Types: []string{"class_declaration", "struct_declaration", "record_declaration", "enum_declaration"}}
 
-	csInterfaces = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"interface_declaration"}}
+	csInterfaces = &Treesitter.TypeSet{Language: grammar, Types: []string{"interface_declaration"}}
 
 	// property accessors (get/set/init) and lambdas are intentionally not named
 	// functions; their bodies still contribute decisions through the fallback
 	// recursion
-	csFunctions = &Treesitter.TypeSet{Language: tsCSharp.GetLanguage, Types: []string{"method_declaration", "constructor_declaration", "local_function_statement", "destructor_declaration"}}
+	csFunctions = &Treesitter.TypeSet{Language: grammar, Types: []string{"method_declaration", "constructor_declaration", "local_function_statement", "destructor_declaration"}}
 )
 
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return csModules.Has(n) }
@@ -119,9 +120,9 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	if params == nil || a.src == nil {
 		return
 	}
-	for i := 0; i < int(params.ChildCount()); i++ {
+	for i := uint(0); i < params.ChildCount(); i++ {
 		p := params.Child(i)
-		if p.Type() != "parameter" {
+		if p.Kind() != "parameter" {
 			continue
 		}
 		// skip type and ref/out/in modifiers; only the name field is a parameter name
@@ -148,30 +149,25 @@ func (a *TreeSitterAdapter) ModuleNameFromPath(path string) string {
 		return a.ns
 	}
 	a.nsParsed = true
-	if a.src == nil {
-		return ""
-	}
-	parser := sitter.NewParser()
-	parser.SetLanguage(a.Language())
-	tree := parser.Parse(nil, a.src)
-	if tree == nil {
+	root, _ := a.ensureRoot(nil)
+	if root == nil {
 		return ""
 	}
 	var find func(n *sitter.Node) string
 	find = func(n *sitter.Node) string {
-		if n.Type() == "namespace_declaration" || n.Type() == "file_scoped_namespace_declaration" {
+		if n.Kind() == "namespace_declaration" || n.Kind() == "file_scoped_namespace_declaration" {
 			if nm := n.ChildByFieldName("name"); nm != nil {
 				return text(a.src, nm)
 			}
 		}
-		for i := 0; i < int(n.ChildCount()); i++ {
+		for i := uint(0); i < n.ChildCount(); i++ {
 			if found := find(n.Child(i)); found != "" {
 				return found
 			}
 		}
 		return ""
 	}
-	a.ns = find(tree.RootNode())
+	a.ns = find(root)
 	return a.ns
 }
 
@@ -189,25 +185,25 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	if body == nil {
 		return
 	}
-	switch body.Type() {
+	switch body.Kind() {
 	case "switch_body":
 		// yield only the case sections
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			ch := body.Child(i)
-			if ch.Type() == "switch_section" {
+			if ch.Kind() == "switch_section" {
 				yield(ch)
 			}
 		}
 	case "switch_expression":
 		// switch expressions have no body node: arms are direct children
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			ch := body.Child(i)
-			if ch.Type() == "switch_expression_arm" {
+			if ch.Kind() == "switch_expression_arm" {
 				yield(ch)
 			}
 		}
 	default:
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			yield(body.Child(i))
 		}
 	}
@@ -222,7 +218,7 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // section, which lets a section carrying several labels count each of them.
 // `??` is deliberately not a logical operator here, as in PHP and TypeScript.
 var csDecisions = &Treesitter.DecisionSpec{
-	Language: tsCSharp.GetLanguage,
+	Language: grammar,
 	If:       []string{"if_statement"},
 	Loop:     []string{"for_statement", "foreach_statement", "while_statement", "do_statement"},
 	Switch:   []string{"switch_statement", "switch_expression"},
@@ -245,12 +241,12 @@ func (a *TreeSitterAdapter) DecisionIn(n, parent *sitter.Node) Treesitter.Decisi
 	case Treesitter.DecCase, Treesitter.DecDefault:
 		// `case` and `default` are also keywords outside of a switch (goto
 		// case, the default(T) expression): only a switch label is a branch
-		if n.Type() == "case" || n.Type() == "default" {
+		if n.Kind() == "case" || n.Kind() == "default" {
 			p := parent
 			if p == nil {
 				p = n.Parent()
 			}
-			if p == nil || p.Type() != "switch_section" {
+			if p == nil || p.Kind() != "switch_section" {
 				return Treesitter.DecNone
 			}
 		}
@@ -281,7 +277,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	if n == nil {
 		return nil
 	}
-	if n.Type() != "using_directive" {
+	if n.Kind() != "using_directive" {
 		return a.typeReferences(n)
 	}
 	// using System;                       -> {Module: "System"}
@@ -294,9 +290,9 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 		// alias form: the name field is the alias identifier
 		alias = text(a.src, nm)
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		ch := n.Child(i)
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "qualified_name":
 			module = text(a.src, ch)
 		case "identifier":
@@ -344,7 +340,7 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 		if x == nil {
 			return
 		}
-		switch x.Type() {
+		switch x.Kind() {
 		case "identifier":
 			add(text(a.src, x))
 			return
@@ -353,9 +349,9 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 			return
 		case "generic_name":
 			// the generic itself, then its arguments
-			for i := 0; i < int(x.NamedChildCount()); i++ {
+			for i := uint(0); i < x.NamedChildCount(); i++ {
 				ch := x.NamedChild(i)
-				if ch.Type() == "identifier" {
+				if ch.Kind() == "identifier" {
 					add(text(a.src, ch))
 				} else {
 					typesUnder(ch)
@@ -365,7 +361,7 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 		case "predefined_type", "implicit_type", "var", "pointer_type", "function_pointer_type":
 			return
 		}
-		for i := 0; i < int(x.NamedChildCount()); i++ {
+		for i := uint(0); i < x.NamedChildCount(); i++ {
 			typesUnder(x.NamedChild(i))
 		}
 	}
@@ -375,23 +371,23 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 			if y == nil {
 				return
 			}
-			if y.Type() == "attribute" {
+			if y.Kind() == "attribute" {
 				if name := y.ChildByFieldName("name"); name != nil {
 					add(text(a.src, name))
 				}
 				return
 			}
-			for i := 0; i < int(y.NamedChildCount()); i++ {
+			for i := uint(0); i < y.NamedChildCount(); i++ {
 				walk(y.NamedChild(i))
 			}
 		}
 		walk(x)
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "class_declaration", "struct_declaration", "record_declaration", "record_struct_declaration", "enum_declaration", "interface_declaration":
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			ch := n.NamedChild(i)
-			switch ch.Type() {
+			switch ch.Kind() {
 			case "base_list", "parameter_list", "type_parameter_constraints_clause":
 				typesUnder(ch)
 			case "attribute_list":
@@ -400,9 +396,9 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 		}
 	case "method_declaration", "constructor_declaration", "local_function_statement", "destructor_declaration",
 		"operator_declaration", "conversion_operator_declaration", "delegate_declaration", "indexer_declaration":
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			ch := n.NamedChild(i)
-			switch ch.Type() {
+			switch ch.Kind() {
 			case "block", "arrow_expression_clause", "identifier", "modifier", "type_parameter_list":
 				continue
 			case "attribute_list":
@@ -418,9 +414,9 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 		if t := n.ChildByFieldName("type"); t != nil {
 			typesUnder(t)
 		}
-		if n.Type() == "property_declaration" || n.Type() == "event_field_declaration" {
-			for i := 0; i < int(n.NamedChildCount()); i++ {
-				if ch := n.NamedChild(i); ch.Type() == "attribute_list" {
+		if n.Kind() == "property_declaration" || n.Kind() == "event_field_declaration" {
+			for i := uint(0); i < n.NamedChildCount(); i++ {
+				if ch := n.NamedChild(i); ch.Kind() == "attribute_list" {
 					attributes(ch)
 				}
 			}
@@ -428,7 +424,7 @@ func (a *TreeSitterAdapter) typeReferences(n *sitter.Node) []Treesitter.ImportIt
 	case "member_access_expression":
 		// Money.Zero, OrderStatus.Pending: a capitalised receiver that is
 		// not a variable is a type by convention
-		if object := n.ChildByFieldName("expression"); object != nil && object.Type() == "identifier" {
+		if object := n.ChildByFieldName("expression"); object != nil && object.Kind() == "identifier" {
 			if name := text(a.src, object); looksLikeCSharpType(name) {
 				add(name)
 			}
@@ -458,7 +454,7 @@ func looksLikeCSharpType(name string) bool {
 // while a `using` block inside a method does, which is why only
 // `using_statement` is listed.
 var csharpStatements = &Treesitter.StatementSpec{
-	Language: tsCSharp.GetLanguage,
+	Language: grammar,
 	Statement: []string{
 		"expression_statement", "local_declaration_statement",
 		"if_statement",
@@ -615,8 +611,8 @@ func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
 	if n == nil {
 		return nil
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
-		if c := n.Child(i); c.Type() == t {
+	for i := uint(0); i < n.ChildCount(); i++ {
+		if c := n.Child(i); c.Kind() == t {
 			return c
 		}
 	}

@@ -6,19 +6,22 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
-	sitter "github.com/smacker/go-tree-sitter"
-	tsTsx "github.com/smacker/go-tree-sitter/typescript/tsx"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type TreeSitterAdapter struct {
 	src  []byte
 	root *sitter.Node
+	own  Treesitter.OwnedTree
 }
 
-func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter   { return &TreeSitterAdapter{src: src} }
-func (a *TreeSitterAdapter) SetSource(src []byte)          { a.src = src }
+func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
+func (a *TreeSitterAdapter) SetSource(src []byte) {
+	a.own.Release()
+	a.src, a.root = src, nil
+}
 func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root }
-func (a *TreeSitterAdapter) Language() *sitter.Language    { return tsTsx.GetLanguage() }
+func (a *TreeSitterAdapter) Language() *sitter.Language    { return grammar() }
 
 // ensureRoot returns the tree shared by the runner, parsing the source when
 // the adapter is used on its own (tests).
@@ -33,9 +36,7 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	if source == nil {
 		return nil, nil
 	}
-	parser := sitter.NewParser()
-	parser.SetLanguage(a.Language())
-	a.root = parser.Parse(nil, source).RootNode()
+	a.root = a.own.Root(a, source)
 	return a.root, source
 }
 
@@ -43,10 +44,10 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 // answered by symbol id rather than by node type name. See
 // internal/engine/treesitter/symbols.go.
 var (
-	tsModules    = &Treesitter.TypeSet{Language: tsTsx.GetLanguage, Types: []string{"program"}}
-	tsClasses    = &Treesitter.TypeSet{Language: tsTsx.GetLanguage, Types: []string{"class_declaration", "abstract_class_declaration", "enum_declaration"}}
-	tsInterfaces = &Treesitter.TypeSet{Language: tsTsx.GetLanguage, Types: []string{"interface_declaration"}}
-	tsFunctions  = &Treesitter.TypeSet{Language: tsTsx.GetLanguage, Types: []string{"function_declaration", "method_definition", "generator_function_declaration", "arrow_function"}}
+	tsModules    = &Treesitter.TypeSet{Language: grammar, Types: []string{"program"}}
+	tsClasses    = &Treesitter.TypeSet{Language: grammar, Types: []string{"class_declaration", "abstract_class_declaration", "enum_declaration"}}
+	tsInterfaces = &Treesitter.TypeSet{Language: grammar, Types: []string{"interface_declaration"}}
+	tsFunctions  = &Treesitter.TypeSet{Language: grammar, Types: []string{"function_declaration", "method_definition", "generator_function_declaration", "arrow_function"}}
 )
 
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return tsModules.Has(n) }
@@ -63,15 +64,15 @@ func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	}
 
 	// Arrow functions get their name from the parent variable_declarator
-	if n.Type() == "arrow_function" || n.Type() == "function" {
+	if n.Kind() == "arrow_function" || n.Kind() == "function" {
 		p := n.Parent()
-		if p != nil && p.Type() == "variable_declarator" {
+		if p != nil && p.Kind() == "variable_declarator" {
 			if nm := p.ChildByFieldName("name"); nm != nil {
 				return text(a.src, nm)
 			}
 		}
 		// Arrow as class property: parent is public_field_definition or property_definition
-		if p != nil && (p.Type() == "public_field_definition" || p.Type() == "property_definition") {
+		if p != nil && (p.Kind() == "public_field_definition" || p.Kind() == "property_definition") {
 			if nm := p.ChildByFieldName("name"); nm != nil {
 				return text(a.src, nm)
 			}
@@ -83,7 +84,7 @@ func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	}
 
 	// method_definition: name field
-	if n.Type() == "method_definition" {
+	if n.Kind() == "method_definition" {
 		if nm := n.ChildByFieldName("name"); nm != nil {
 			return text(a.src, nm)
 		}
@@ -149,12 +150,12 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	// One yield per declared parameter: only the pattern is read. Walking the
 	// subtree would count the identifier of a default value, and would turn a
 	// single destructured parameter into one parameter per field it unpacks.
-	for i := 0; i < int(params.NamedChildCount()); i++ {
+	for i := uint(0); i < params.NamedChildCount(); i++ {
 		p := params.NamedChild(i)
 		if p == nil {
 			continue
 		}
-		switch p.Type() {
+		switch p.Kind() {
 		case "required_parameter", "optional_parameter":
 			if pattern := p.ChildByFieldName("pattern"); pattern != nil {
 				yield(text(a.src, pattern))
@@ -179,16 +180,16 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	if body == nil {
 		return
 	}
-	switch body.Type() {
+	switch body.Kind() {
 	case "switch_body":
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			ch := body.Child(i)
-			if ch.Type() == "switch_case" || ch.Type() == "switch_default" {
+			if ch.Kind() == "switch_case" || ch.Kind() == "switch_default" {
 				yield(ch)
 			}
 		}
 	default:
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			yield(body.Child(i))
 		}
 	}
@@ -202,7 +203,7 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // if is counted on its own. `??` is deliberately not a logical operator here,
 // for the same reason as in PHP.
 var tsDecisions = &Treesitter.DecisionSpec{
-	Language: tsTsx.GetLanguage,
+	Language: grammar,
 	If:       []string{"if_statement"},
 	Else:     []string{"else_clause"},
 	Loop:     []string{"for_statement", "for_in_statement", "while_statement", "do_statement"},
@@ -227,7 +228,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	if n == nil {
 		return nil
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "import_statement":
 		return a.importsFromImportStatement(n)
 	case "export_statement":
@@ -246,8 +247,8 @@ func (a *TreeSitterAdapter) moduleOf(n *sitter.Node) string {
 	if src := n.ChildByFieldName("source"); src != nil {
 		return stripQuotes(text(a.src, src))
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
-		if ch := n.Child(i); ch.Type() == "string" {
+	for i := uint(0); i < n.ChildCount(); i++ {
+		if ch := n.Child(i); ch.Kind() == "string" {
 			return stripQuotes(text(a.src, ch))
 		}
 	}
@@ -267,18 +268,18 @@ func (a *TreeSitterAdapter) importsFromImportStatement(n *sitter.Node) []Treesit
 		if cl == nil {
 			return
 		}
-		switch cl.Type() {
+		switch cl.Kind() {
 		case "import_clause":
-			for i := 0; i < int(cl.ChildCount()); i++ {
+			for i := uint(0); i < cl.ChildCount(); i++ {
 				walkClause(cl.Child(i))
 			}
 		case "identifier":
 			// default import: import X from 'module'
 			items = append(items, Treesitter.ImportItem{Module: module, Name: text(a.src, cl)})
 		case "named_imports":
-			for i := 0; i < int(cl.ChildCount()); i++ {
+			for i := uint(0); i < cl.ChildCount(); i++ {
 				spec := cl.Child(i)
-				if spec.Type() == "import_specifier" {
+				if spec.Kind() == "import_specifier" {
 					if nm := spec.ChildByFieldName("name"); nm != nil {
 						items = append(items, Treesitter.ImportItem{Module: module, Name: text(a.src, nm)})
 					} else if id := firstChildOfType(spec, "identifier"); id != nil {
@@ -295,7 +296,7 @@ func (a *TreeSitterAdapter) importsFromImportStatement(n *sitter.Node) []Treesit
 			}
 		}
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		walkClause(n.Child(i))
 	}
 
@@ -321,13 +322,13 @@ func (a *TreeSitterAdapter) importsFromExportStatement(n *sitter.Node) []Treesit
 		return nil
 	}
 	items := []Treesitter.ImportItem{}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		ch := n.Child(i)
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "export_clause":
-			for j := 0; j < int(ch.ChildCount()); j++ {
+			for j := uint(0); j < ch.ChildCount(); j++ {
 				spec := ch.Child(j)
-				if spec.Type() == "export_specifier" {
+				if spec.Kind() == "export_specifier" {
 					if nm := spec.ChildByFieldName("name"); nm != nil {
 						items = append(items, Treesitter.ImportItem{Module: module, Name: text(a.src, nm)})
 					} else if id := firstChildOfType(spec, "identifier"); id != nil {
@@ -362,7 +363,7 @@ func (a *TreeSitterAdapter) importsFromExportStatement(n *sitter.Node) []Treesit
 // runs. An `else if` is spelled as an `else_clause` holding an `if_statement`,
 // so the nested if is what counts.
 var tsStatements = &Treesitter.StatementSpec{
-	Language: tsTsx.GetLanguage,
+	Language: grammar,
 	Statement: []string{
 		"expression_statement",
 		"lexical_declaration", "variable_declaration",
@@ -498,9 +499,9 @@ func (a *TreeSitterAdapter) ClassDirectOperands(n *sitter.Node) []string {
 		return nil
 	}
 	var props []string
-	for i := 0; i < int(body.ChildCount()); i++ {
+	for i := uint(0); i < body.ChildCount(); i++ {
 		ch := body.Child(i)
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "public_field_definition", "property_definition":
 			if nm := ch.ChildByFieldName("name"); nm != nil {
 				props = append(props, text(a.src, nm))
@@ -525,8 +526,8 @@ func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
 	if n == nil {
 		return nil
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
-		if c := n.Child(i); c.Type() == t {
+	for i := uint(0); i < n.ChildCount(); i++ {
+		if c := n.Child(i); c.Kind() == t {
 			return c
 		}
 	}

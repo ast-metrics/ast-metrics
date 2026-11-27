@@ -7,8 +7,6 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/configuration"
 	pb "github.com/ast-metrics/ast-metrics/pb"
-
-	sitter "github.com/smacker/go-tree-sitter"
 )
 
 type Runner struct {
@@ -23,19 +21,14 @@ func (r Runner) ParseFile(path string) (*pb.File, error) {
 		return nil, err
 	}
 
-	parser := sitter.NewParser()
-	parser.SetLanguage(r.Adapter.Language())
-
-	tree := parser.Parse(nil, src)
-	root := tree.RootNode()
-
-	// Share the parsed tree with the adapter to avoid re-parsing
-	if ta, ok := r.Adapter.(interface{ SetRootNode(*sitter.Node) }); ok {
-		ta.SetRootNode(root)
+	parsed, err := Parse(r.Adapter, src)
+	if err != nil {
+		return nil, err
 	}
+	defer parsed.Close()
 
 	v := NewVisitor(r.Adapter, path, src)
-	v.Visit(root)
+	v.Visit(parsed.Root)
 	return v.Result(), nil
 }
 

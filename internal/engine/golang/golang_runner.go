@@ -12,8 +12,6 @@ import (
 	File "github.com/ast-metrics/ast-metrics/internal/file"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/pterm/pterm"
-
-	sitter "github.com/smacker/go-tree-sitter"
 )
 
 type GolangRunner struct {
@@ -85,12 +83,13 @@ func (r *GolangRunner) Parse(path string) (*pb.File, error) {
 		return &pb.File{Path: path, ProgrammingLanguage: "Golang"}, err
 	}
 
-	parser := sitter.NewParser()
 	adapter := NewTreeSitterAdapter(src)
-	parser.SetLanguage(adapter.Language())
-
-	tree := parser.Parse(nil, src)
-	root := tree.RootNode()
+	parsed, err := Treesitter.Parse(adapter, src)
+	if err != nil {
+		return &pb.File{Path: path, ProgrammingLanguage: "Golang"}, err
+	}
+	defer parsed.Close()
+	root := parsed.Root
 
 	v := Treesitter.NewVisitor(adapter, path, src)
 	v.Visit(root)

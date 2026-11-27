@@ -3,7 +3,7 @@ package treesitter
 import (
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // CallOperator is the operator reported for a call: Halstead counts the
@@ -100,7 +100,7 @@ func (s OperandSpec) ExtractFrom(root *sitter.Node, src []byte, startLine, endLi
 		if outsideLines(n, startLine, endLine) {
 			return
 		}
-		t := n.Type()
+		t := n.Kind()
 		if s.PruneTypes[t] {
 			return
 		}
@@ -138,8 +138,8 @@ func (s OperandSpec) ExtractFrom(root *sitter.Node, src []byte, startLine, endLi
 		// asking the grammar for a field name costs a call into tree-sitter for
 		// every child: only the languages that prune by field pay for it
 		prunesByField := len(s.PruneFields) > 0
-		for i := 0; i < int(n.ChildCount()); i++ {
-			if prunesByField && s.PruneFields[n.FieldNameForChild(i)] {
+		for i := uint(0); i < n.ChildCount(); i++ {
+			if prunesByField && s.PruneFields[n.FieldNameForChild(uint32(i))] {
 				continue
 			}
 			walk(n.Child(i))
@@ -176,8 +176,8 @@ func (s OperandSpec) MethodCalls(root *sitter.Node, src []byte, startLine, endLi
 		if outsideLines(n, startLine, endLine) {
 			return
 		}
-		if n.Type() == "call_expression" {
-			if fn := n.ChildByFieldName("function"); fn != nil && s.ChainTypes[fn.Type()] {
+		if n.Kind() == "call_expression" {
+			if fn := n.ChildByFieldName("function"); fn != nil && s.ChainTypes[fn.Kind()] {
 				if segments, _, ok := s.flatten(fn, src); ok && len(segments) == 2 {
 					if object := s.normalizeObject(segments[0]); object != "" {
 						calls = append(calls, object+"."+segments[1])
@@ -185,7 +185,7 @@ func (s OperandSpec) MethodCalls(root *sitter.Node, src []byte, startLine, endLi
 				}
 			}
 		}
-		for i := 0; i < int(n.ChildCount()); i++ {
+		for i := uint(0); i < n.ChildCount(); i++ {
 			walk(n.Child(i))
 		}
 	}
@@ -234,7 +234,7 @@ func (s OperandSpec) normalizeObject(root string) string {
 // "length"] and [".", "."]. ok is false when a link is not a plain name (a
 // call, an index, a literal).
 func (s OperandSpec) flatten(n *sitter.Node, src []byte) ([]string, []string, bool) {
-	if s.ChainTypes[n.Type()] {
+	if s.ChainTypes[n.Kind()] {
 		// every grammar shapes a chain the same way: object, separator, name
 		if n.ChildCount() != 3 {
 			return nil, nil, false
@@ -247,7 +247,7 @@ func (s OperandSpec) flatten(n *sitter.Node, src []byte) ([]string, []string, bo
 		if !ok {
 			return nil, nil, false
 		}
-		return append(segments, nodeText(src, name)), append(separators, n.Child(1).Type()), true
+		return append(segments, nodeText(src, name)), append(separators, n.Child(1).Kind()), true
 	}
 	if s.isChainLeaf(n) {
 		return []string{nodeText(src, n)}, nil, true
@@ -260,10 +260,10 @@ func (s OperandSpec) flatten(n *sitter.Node, src []byte) ([]string, []string, bo
 // anonymous token in C#), or a node the language declares as a leaf (the PHP
 // "variable_name"). A literal is not a name: "1.foo" is not an attribute.
 func (s OperandSpec) isChainLeaf(n *sitter.Node) bool {
-	if s.LeafTypes[n.Type()] {
+	if s.LeafTypes[n.Kind()] {
 		return true
 	}
-	return n.NamedChildCount() == 0 && !strings.HasSuffix(n.Type(), "literal")
+	return n.NamedChildCount() == 0 && !strings.HasSuffix(n.Kind(), "literal")
 }
 
 // chainSeparator returns the access operator of a chain whose name says
@@ -273,7 +273,7 @@ func chainSeparator(n *sitter.Node) []string {
 		return nil
 	}
 	if sep := n.Child(1); !sep.IsNamed() {
-		return []string{sep.Type()}
+		return []string{sep.Kind()}
 	}
 	return nil
 }
@@ -291,22 +291,22 @@ func isCallee(n *sitter.Node) bool {
 }
 
 func outsideLines(n *sitter.Node, startLine, endLine int) bool {
-	return int(n.EndPoint().Row)+1 < startLine || int(n.StartPoint().Row)+1 > endLine
+	return int(n.EndPosition().Row)+1 < startLine || int(n.StartPosition().Row)+1 > endLine
 }
 
 // smallestNodeCovering returns the deepest named node holding the whole line
 // range, or nil when the range reaches past it. Anchoring the walk there keeps
 // it proportional to the code being measured instead of to the file.
 func smallestNodeCovering(root *sitter.Node, startLine, endLine int) *sitter.Node {
-	start := sitter.Point{Row: uint32(startLine - 1), Column: 0}
-	end := sitter.Point{Row: uint32(endLine - 1), Column: 0}
+	start := sitter.Point{Row: uint(startLine - 1), Column: 0}
+	end := sitter.Point{Row: uint(endLine - 1), Column: 0}
 	node := root.NamedDescendantForPointRange(start, end)
 	if node == nil {
 		return nil
 	}
 	// the last line of the range may hold more than the node found (a closing
 	// brace shared with an enclosing block): only keep a node that covers it
-	if int(node.EndPoint().Row)+1 < endLine || int(node.StartPoint().Row)+1 > startLine {
+	if int(node.EndPosition().Row)+1 < endLine || int(node.StartPosition().Row)+1 > startLine {
 		return nil
 	}
 	return node

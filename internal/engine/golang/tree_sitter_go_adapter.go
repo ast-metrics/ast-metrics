@@ -6,19 +6,22 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
-	sitter "github.com/smacker/go-tree-sitter"
-	tsGo "github.com/smacker/go-tree-sitter/golang"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type TreeSitterAdapter struct {
 	src  []byte
 	root *sitter.Node
+	own  Treesitter.OwnedTree
 }
 
-func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter   { return &TreeSitterAdapter{src: src} }
-func (a *TreeSitterAdapter) SetSource(src []byte)          { a.src = src }
+func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
+func (a *TreeSitterAdapter) SetSource(src []byte) {
+	a.own.Release()
+	a.src, a.root = src, nil
+}
 func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root }
-func (a *TreeSitterAdapter) Language() *sitter.Language    { return tsGo.GetLanguage() }
+func (a *TreeSitterAdapter) Language() *sitter.Language    { return grammar() }
 
 // ensureRoot returns the tree shared by the runner, parsing the source when
 // the adapter is used on its own (tests).
@@ -33,9 +36,7 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	if source == nil {
 		return nil, nil
 	}
-	parser := sitter.NewParser()
-	parser.SetLanguage(a.Language())
-	a.root = parser.Parse(nil, source).RootNode()
+	a.root = a.own.Root(a, source)
 	return a.root, source
 }
 
@@ -43,9 +44,9 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 // by symbol id rather than by node type name. See
 // internal/engine/treesitter/symbols.go.
 var (
-	goModules      = &Treesitter.TypeSet{Language: tsGo.GetLanguage, Types: []string{"source_file"}}
-	goTypeDecls    = &Treesitter.TypeSet{Language: tsGo.GetLanguage, Types: []string{"type_declaration"}}
-	goFunctionsSet = &Treesitter.TypeSet{Language: tsGo.GetLanguage, Types: []string{"function_declaration", "method_declaration"}}
+	goModules      = &Treesitter.TypeSet{Language: grammar, Types: []string{"source_file"}}
+	goTypeDecls    = &Treesitter.TypeSet{Language: grammar, Types: []string{"type_declaration"}}
+	goFunctionsSet = &Treesitter.TypeSet{Language: grammar, Types: []string{"function_declaration", "method_declaration"}}
 )
 
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return goModules.Has(n) }
@@ -55,7 +56,7 @@ func (a *TreeSitterAdapter) IsClass(n *sitter.Node) bool {
 func (a *TreeSitterAdapter) IsFunction(n *sitter.Node) bool { return goFunctionsSet.Has(n) }
 
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
-	switch n.Type() {
+	switch n.Kind() {
 	case "function_declaration":
 		if id := firstChildOfType(n, "identifier"); id != nil {
 			return text(a.src, id)
@@ -73,7 +74,7 @@ func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 }
 
 func (a *TreeSitterAdapter) NodeBody(n *sitter.Node) *sitter.Node {
-	switch n.Type() {
+	switch n.Kind() {
 	case "function_declaration":
 		return firstChildOfType(n, "block")
 	case "method_declaration":
@@ -85,7 +86,7 @@ func (a *TreeSitterAdapter) NodeBody(n *sitter.Node) *sitter.Node {
 }
 
 func (a *TreeSitterAdapter) NodeParams(n *sitter.Node) *sitter.Node {
-	switch n.Type() {
+	switch n.Kind() {
 	case "function_declaration", "method_declaration":
 		// on a method, the first parameter_list child holds the receiver, not the
 		// parameters: rely on the field name to get the real ones
@@ -101,7 +102,7 @@ func (a *TreeSitterAdapter) NodeParams(n *sitter.Node) *sitter.Node {
 // `func (c *Counter) Add(n int)`. It is empty for a plain function. The visitor
 // uses it to attach the method to its struct, which Go declares separately.
 func (a *TreeSitterAdapter) ReceiverTypeName(n *sitter.Node) string {
-	if n == nil || n.Type() != "method_declaration" {
+	if n == nil || n.Kind() != "method_declaration" {
 		return ""
 	}
 	receiver := n.ChildByFieldName("receiver")
@@ -118,9 +119,9 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	if params == nil {
 		return
 	}
-	for i := 0; i < int(params.ChildCount()); i++ {
+	for i := uint(0); i < params.ChildCount(); i++ {
 		p := params.Child(i)
-		if p.Type() == "parameter_declaration" {
+		if p.Kind() == "parameter_declaration" {
 			// collect identifiers under this param decl
 			eachDescendantOfType(p, "identifier", func(id *sitter.Node) { yield(text(a.src, id)) })
 		}
@@ -170,7 +171,7 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	if body == nil {
 		return
 	}
-	for i := 0; i < int(body.ChildCount()); i++ {
+	for i := uint(0); i < body.ChildCount(); i++ {
 		yield(body.Child(i))
 	}
 }
@@ -184,7 +185,7 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // and `for_clause` are children of `for_statement`, which is the single loop
 // node of the grammar, so only the latter is listed.
 var goDecisions = &Treesitter.DecisionSpec{
-	Language: tsGo.GetLanguage,
+	Language: grammar,
 	If:       []string{"if_statement"},
 	Loop:     []string{"for_statement"},
 	Switch:   []string{"expression_switch_statement", "type_switch_statement", "select_statement"},
@@ -216,7 +217,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 		return nil
 	}
 	items := []Treesitter.ImportItem{}
-	switch n.Type() {
+	switch n.Kind() {
 	case "import_declaration":
 		// walk import specs
 		var walk func(*sitter.Node)
@@ -224,7 +225,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 			if x == nil {
 				return
 			}
-			if x.Type() == "import_spec" {
+			if x.Kind() == "import_spec" {
 				var module string
 				var alias string
 				// path is string_literal
@@ -250,7 +251,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 					items = append(items, Treesitter.ImportItem{Module: module, Name: name})
 				}
 			}
-			for i := 0; i < int(x.ChildCount()); i++ {
+			for i := uint(0); i < x.ChildCount(); i++ {
 				walk(x.Child(i))
 			}
 		}
@@ -262,8 +263,8 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 // helpers
 func text(src []byte, n *sitter.Node) string { return string(src[n.StartByte():n.EndByte()]) }
 func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
-	for i := 0; i < int(n.ChildCount()); i++ {
-		if c := n.Child(i); c.Type() == t {
+	for i := uint(0); i < n.ChildCount(); i++ {
+		if c := n.Child(i); c.Kind() == t {
 			return c
 		}
 	}
@@ -279,9 +280,9 @@ func firstDescendantOfType(n *sitter.Node, t string) *sitter.Node {
 	return res
 }
 func eachDescendantOfType(n *sitter.Node, t string, yield func(*sitter.Node)) {
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		c := n.Child(i)
-		if c.Type() == t {
+		if c.Kind() == t {
 			yield(c)
 		}
 		eachDescendantOfType(c, t, yield)
@@ -397,7 +398,7 @@ func goReceiverIdent(root *sitter.Node, src []byte, startLine int) string {
 		return ""
 	}
 	name := decl.ChildByFieldName("name")
-	if name == nil || name.Type() != "identifier" {
+	if name == nil || name.Kind() != "identifier" {
 		return ""
 	}
 	if ident := text(src, name); ident != "_" {
@@ -408,13 +409,13 @@ func goReceiverIdent(root *sitter.Node, src []byte, startLine int) string {
 
 // goMethodAtLine returns the method declared on the given 1-based line, or nil.
 func goMethodAtLine(n *sitter.Node, line int) *sitter.Node {
-	if int(n.EndPoint().Row)+1 < line || int(n.StartPoint().Row)+1 > line {
+	if int(n.EndPosition().Row)+1 < line || int(n.StartPosition().Row)+1 > line {
 		return nil
 	}
-	if n.Type() == "method_declaration" && int(n.StartPoint().Row)+1 == line {
+	if n.Kind() == "method_declaration" && int(n.StartPosition().Row)+1 == line {
 		return n
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		if found := goMethodAtLine(n.Child(i), line); found != nil {
 			return found
 		}
@@ -433,7 +434,7 @@ func goMethodAtLine(n *sitter.Node, line int) *sitter.Node {
 // The case clauses of a switch and of a select are labels, not instructions:
 // what they hold counts on its own lines.
 var goStatements = &Treesitter.StatementSpec{
-	Language: tsGo.GetLanguage,
+	Language: grammar,
 	Statement: []string{
 		"assignment_statement", "expression_statement", "inc_statement", "dec_statement",
 		"short_var_declaration", "send_statement",

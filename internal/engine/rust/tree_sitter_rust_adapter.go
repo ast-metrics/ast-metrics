@@ -6,22 +6,42 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
-	sitter "github.com/smacker/go-tree-sitter"
-	tsRust "github.com/smacker/go-tree-sitter/rust"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type TreeSitterAdapter struct {
 	src  []byte
 	root *sitter.Node
+	own  Treesitter.OwnedTree
 }
 
 func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
-func (a *TreeSitterAdapter) SetSource(src []byte)        { a.src = src }
+func (a *TreeSitterAdapter) SetSource(src []byte) {
+	a.own.Release()
+	a.src, a.root = src, nil
+}
 func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) {
 	a.root = root
 }
 
-func (a *TreeSitterAdapter) Language() *sitter.Language { return tsRust.GetLanguage() }
+func (a *TreeSitterAdapter) Language() *sitter.Language { return grammar() }
+
+// ensureRoot returns the tree shared by the runner, parsing the source when
+// the adapter is used on its own (tests).
+func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
+	source := a.src
+	if source == nil {
+		source = src
+	}
+	if a.root != nil {
+		return a.root, source
+	}
+	if source == nil {
+		return nil, nil
+	}
+	a.root = a.own.Root(a, source)
+	return a.root, source
+}
 
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	if a.src == nil || n == nil {
@@ -90,12 +110,12 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	// One yield per declared parameter: only the pattern is read, never the
 	// type. A recursive walk over the identifiers would count "Vec<String>" as
 	// two more parameters on top of the variable it types.
-	for i := 0; i < int(params.NamedChildCount()); i++ {
+	for i := uint(0); i < params.NamedChildCount(); i++ {
 		p := params.NamedChild(i)
 		if p == nil {
 			continue
 		}
-		switch p.Type() {
+		switch p.Kind() {
 		case "self_parameter":
 			yield("self")
 		case "variadic_parameter":
@@ -116,15 +136,15 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 // by symbol id rather than by node type name. See
 // internal/engine/treesitter/symbols.go.
 var (
-	rustModules = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"source_file"}}
+	rustModules = &Treesitter.TypeSet{Language: grammar, Types: []string{"source_file"}}
 
 	// Rust has no classes; struct, enum, union and trait are the class-like
 	// containers. An `impl` block is not one of them: it declares no type, it
 	// holds the methods of a type declared elsewhere, so its methods are bound
 	// to that type by ReceiverTypeName below.
-	rustClasses = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"struct_item", "enum_item", "union_item", "trait_item"}}
+	rustClasses = &Treesitter.TypeSet{Language: grammar, Types: []string{"struct_item", "enum_item", "union_item", "trait_item"}}
 
-	rustFunctions = &Treesitter.TypeSet{Language: tsRust.GetLanguage, Types: []string{"function_item", "function_signature_item", "method_item"}}
+	rustFunctions = &Treesitter.TypeSet{Language: grammar, Types: []string{"function_item", "function_signature_item", "method_item"}}
 )
 
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return rustModules.Has(n) }
@@ -142,7 +162,7 @@ func (a *TreeSitterAdapter) ReceiverTypeName(n *sitter.Node) string {
 		return ""
 	}
 	for p := n.Parent(); p != nil; p = p.Parent() {
-		if p.Type() != "impl_item" {
+		if p.Kind() != "impl_item" {
 			continue
 		}
 		// `impl Trait for Type` carries both; the methods belong to Type
@@ -183,26 +203,26 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	if body == nil {
 		return
 	}
-	switch body.Type() {
+	switch body.Kind() {
 	case "block", "declaration_list":
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			yield(body.Child(i))
 		}
 	case "match_expression":
 		// enumerate match arms
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			n := body.Child(i)
-			if n.Type() == "match_block" || n.Type() == "match_body" {
-				for j := 0; j < int(n.ChildCount()); j++ {
+			if n.Kind() == "match_block" || n.Kind() == "match_body" {
+				for j := uint(0); j < n.ChildCount(); j++ {
 					arm := n.Child(j)
-					if arm.Type() == "match_arm" {
+					if arm.Kind() == "match_arm" {
 						yield(arm)
 					}
 				}
 			}
 		}
 	default:
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			yield(body.Child(i))
 		}
 	}
@@ -223,7 +243,7 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // a try_expression, a node distinct from the `?Sized` of a trait bound, so a
 // relaxed bound is never mistaken for a branch.
 var rustDecisions = &Treesitter.DecisionSpec{
-	Language:  tsRust.GetLanguage,
+	Language:  grammar,
 	If:        []string{"if_expression", "if_let_expression", "try_expression"},
 	Else:      []string{"else_clause"},
 	Loop:      []string{"for_expression", "while_expression", "while_let_expression", "loop_expression"},
@@ -263,7 +283,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	if n == nil {
 		return nil
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "use_declaration":
 		return a.parseUse(n)
 	case "mod_item":
@@ -318,7 +338,7 @@ func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 		if x == nil {
 			return
 		}
-		switch x.Type() {
+		switch x.Kind() {
 		case "scoped_use_list":
 			// `a::b::{C, d::E}`: every item of the list is read under a::b.
 			// The path is absent from a bare `{C, D}`.
@@ -328,7 +348,7 @@ func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 			walk(x.ChildByFieldName("list"), prefix)
 			return
 		case "use_list":
-			for i := 0; i < int(x.NamedChildCount()); i++ {
+			for i := uint(0); i < x.NamedChildCount(); i++ {
 				walk(x.NamedChild(i), prefix)
 			}
 			return
@@ -356,7 +376,7 @@ func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 			add(join(prefix, a.text(x)))
 			return
 		}
-		for i := 0; i < int(x.ChildCount()); i++ {
+		for i := uint(0); i < x.ChildCount(); i++ {
 			walk(x.Child(i), prefix)
 		}
 	}
@@ -376,7 +396,7 @@ func (a *TreeSitterAdapter) parseUse(n *sitter.Node) []Treesitter.ImportItem {
 func (a *TreeSitterAdapter) inlineModules(n *sitter.Node) []string {
 	names := []string{}
 	for p := n.Parent(); p != nil; p = p.Parent() {
-		if p.Type() == "mod_item" && p.ChildByFieldName("body") != nil {
+		if p.Kind() == "mod_item" && p.ChildByFieldName("body") != nil {
 			names = append([]string{a.text(p.ChildByFieldName("name"))}, names...)
 		}
 	}
@@ -424,9 +444,9 @@ func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
 	if n == nil {
 		return nil
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		ch := n.Child(i)
-		if ch.Type() == t {
+		if ch.Kind() == t {
 			return ch
 		}
 	}
@@ -472,7 +492,7 @@ func dedup(in []Treesitter.ImportItem) []Treesitter.ImportItem {
 // `const_item` and `static_item` are local declarations: at file scope they
 // declare a member of the module, inside a function they are instructions.
 var rustStatements = &Treesitter.StatementSpec{
-	Language: tsRust.GetLanguage,
+	Language: grammar,
 	Statement: []string{
 		"expression_statement", "let_declaration",
 		"if_expression",
@@ -506,12 +526,12 @@ func (a *TreeSitterAdapter) isTailExpression(n *sitter.Node) bool {
 	if n == nil || !n.IsNamed() {
 		return false
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "attribute_item", "inner_attribute_item", "line_comment", "block_comment", "block":
 		return false
 	}
 	parent := n.Parent()
-	if parent == nil || parent.Type() != "block" {
+	if parent == nil || parent.Kind() != "block" {
 		return false
 	}
 	return lastNamedChild(parent) == n.StartByte()
@@ -519,9 +539,9 @@ func (a *TreeSitterAdapter) isTailExpression(n *sitter.Node) bool {
 
 // lastNamedChild returns the start byte of the last named child of n, or a
 // value no node can have when it has none.
-func lastNamedChild(n *sitter.Node) uint32 {
-	last := ^uint32(0)
-	for i := 0; i < int(n.ChildCount()); i++ {
+func lastNamedChild(n *sitter.Node) uint {
+	last := ^uint(0)
+	for i := uint(0); i < n.ChildCount(); i++ {
 		if ch := n.Child(i); ch.IsNamed() {
 			last = ch.StartByte()
 		}
@@ -603,19 +623,9 @@ var rustOperandSpec = Treesitter.OperandSpec{
 // ExtractOperatorsOperands collects Halstead operators and operands from the
 // AST within the given 1-based inclusive line range.
 func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endLine int) ([]string, []string) {
-	root := a.root
-	source := a.src
+	root, source := a.ensureRoot(src)
 	if root == nil {
-		if source == nil {
-			source = src
-		}
-		if source == nil {
-			return nil, nil
-		}
-		parser := sitter.NewParser()
-		parser.SetLanguage(a.Language())
-		tree := parser.Parse(nil, source)
-		root = tree.RootNode()
+		return nil, nil
 	}
 	return rustOperandSpec.Extract(root, source, startLine, endLine)
 }

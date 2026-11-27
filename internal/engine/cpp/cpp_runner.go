@@ -12,8 +12,7 @@ import (
 	"github.com/ast-metrics/ast-metrics/internal/file"
 	pb "github.com/ast-metrics/ast-metrics/pb"
 	"github.com/pterm/pterm"
-	sitter "github.com/smacker/go-tree-sitter"
-	tsCpp "github.com/smacker/go-tree-sitter/cpp"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // CppRunner provides initial, syntax-level C++ support through Tree-sitter.
@@ -47,13 +46,14 @@ func (r CppRunner) Parse(path string) (*pb.File, error) {
 		return &pb.File{Path: path, ProgrammingLanguage: "C++"}, err
 	}
 	src = maskSpecifierMacros(src)
-	parser := sitter.NewParser()
 	adapter := NewTreeSitterAdapter(src)
-	parser.SetLanguage(adapter.Language())
-	tree := parser.Parse(nil, src)
-	adapter.SetRootNode(tree.RootNode())
+	parsed, err := Treesitter.Parse(adapter, src)
+	if err != nil {
+		return &pb.File{Path: path, ProgrammingLanguage: "C++"}, err
+	}
+	defer parsed.Close()
 	v := Treesitter.NewVisitor(adapter, path, src)
-	v.Visit(tree.RootNode())
+	v.Visit(parsed.Root)
 	result := v.Result()
 	result.ProgrammingLanguage = "C++"
 	result.IsTest = r.isTestFile(path, src)
@@ -146,26 +146,28 @@ func looksLikeCpp(src []byte) bool {
 func cppCodeOnly(src []byte) []byte {
 	masked := append([]byte(nil), src...)
 	parser := sitter.NewParser()
-	parser.SetLanguage(tsCpp.GetLanguage())
-	tree := parser.Parse(nil, src)
+	defer parser.Close()
+	parser.SetLanguage(grammar())
+	tree := parser.Parse(src, nil)
 	if tree == nil {
 		return masked
 	}
+	defer tree.Close()
 	var walk func(*sitter.Node)
 	walk = func(node *sitter.Node) {
 		if node == nil {
 			return
 		}
-		switch node.Type() {
+		switch node.Kind() {
 		case "comment", "string_literal", "char_literal", "raw_string_literal":
-			for i := node.StartByte(); i < node.EndByte() && i < uint32(len(masked)); i++ {
+			for i := node.StartByte(); i < node.EndByte() && i < uint(len(masked)); i++ {
 				if masked[i] != '\n' && masked[i] != '\r' {
 					masked[i] = ' '
 				}
 			}
 			return
 		}
-		for i := 0; i < int(node.NamedChildCount()); i++ {
+		for i := uint(0); i < node.NamedChildCount(); i++ {
 			walk(node.NamedChild(i))
 		}
 	}

@@ -1,8 +1,7 @@
 package cpp
 
 import (
-	sitter "github.com/smacker/go-tree-sitter"
-	tsCpp "github.com/smacker/go-tree-sitter/cpp"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // maskSpecifierMacros blanks the macros a declaration is decorated with, so
@@ -22,23 +21,27 @@ import (
 // Only what the parser could not place is touched: one SCREAMING_CASE name in
 // the specifiers of a declaration holding a syntax error, and the name of a
 // class directly followed by another name and a body. `DWORD x;` and
-// `HANDLE open();` parse cleanly and are left alone. The macro is replaced by
+// `HANDLE open();` parse cleanly and are left alone. The decorated class is one
+// the grammar reads without complaining, so a file free of syntax errors is
+// still searched. The macro is replaced by
 // as many spaces, so that every line, column and byte offset stays where it
 // was in the file.
 func maskSpecifierMacros(src []byte) []byte {
 	parser := sitter.NewParser()
-	parser.SetLanguage(tsCpp.GetLanguage())
+	defer parser.Close()
+	parser.SetLanguage(grammar())
 	masked := src
 	// a pass blanks one macro per declaration, and masking one may reveal the
 	// next: a declaration rarely carries more than two, and each pass parses
 	// the whole file again
 	for pass := 0; pass < 4; pass++ {
-		tree := parser.Parse(nil, masked)
-		if tree == nil || !tree.RootNode().HasError() {
+		tree := parser.Parse(masked, nil)
+		if tree == nil {
 			return masked
 		}
-		var ranges [][2]uint32
+		var ranges [][2]uint
 		collectSpecifierMacros(tree.RootNode(), masked, &ranges)
+		tree.Close()
 		if len(ranges) == 0 {
 			return masked
 		}
@@ -54,19 +57,19 @@ func maskSpecifierMacros(src []byte) []byte {
 	return masked
 }
 
-func collectSpecifierMacros(n *sitter.Node, src []byte, ranges *[][2]uint32) {
-	switch n.Type() {
+func collectSpecifierMacros(n *sitter.Node, src []byte, ranges *[][2]uint) {
+	switch n.Kind() {
 	case "function_definition", "declaration", "field_declaration":
-		if specifier := n.ChildByFieldName("type"); specifier != nil && n.Type() == "function_definition" {
+		if specifier := n.ChildByFieldName("type"); specifier != nil && n.Kind() == "function_definition" {
 			// class MACRO Name { ... }: the class is named after the macro
 			// and its real name reads as the name of a function
-			switch specifier.Type() {
+			switch specifier.Kind() {
 			case "class_specifier", "struct_specifier", "union_specifier":
 				declarator := n.ChildByFieldName("declarator")
 				if name := specifier.ChildByFieldName("name"); name != nil && declarator != nil &&
-					declarator.Type() == "identifier" && specifier.ChildByFieldName("body") == nil &&
+					declarator.Kind() == "identifier" && specifier.ChildByFieldName("body") == nil &&
 					isCppMacroName(nodeText(src, name)) {
-					*ranges = append(*ranges, [2]uint32{name.StartByte(), name.EndByte()})
+					*ranges = append(*ranges, [2]uint{name.StartByte(), name.EndByte()})
 					return
 				}
 			}
@@ -76,20 +79,20 @@ func collectSpecifierMacros(n *sitter.Node, src []byte, ranges *[][2]uint32) {
 			// also hold a real type written in capitals, EVP_MD_CTX or
 			// DWORD, which the next parse places once the macro is gone
 			var candidates []*sitter.Node
-			for i := 0; i < int(n.ChildCount()); i++ {
-				switch n.FieldNameForChild(i) {
+			for i := uint(0); i < n.ChildCount(); i++ {
+				switch n.FieldNameForChild(uint32(i)) {
 				case "declarator", "body", "default_value", "value":
 					continue
 				}
 				collectMacroTokens(n.Child(i), src, &candidates)
 			}
 			if macro := pickMacro(candidates, src); macro != nil {
-				*ranges = append(*ranges, [2]uint32{macro.StartByte(), macro.EndByte()})
+				*ranges = append(*ranges, [2]uint{macro.StartByte(), macro.EndByte()})
 			}
 			return
 		}
 	}
-	for i := 0; i < int(n.NamedChildCount()); i++ {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
 		collectSpecifierMacros(n.NamedChild(i), src, ranges)
 	}
 }
@@ -99,8 +102,8 @@ func collectSpecifierMacros(n *sitter.Node, src []byte, ranges *[][2]uint32) {
 // or a declarator the parser had to complete with a missing token, which is
 // how `LIB_API Matrix<R, C> identity()` comes out, as `Matrix<R, C>::identity`.
 func specifiersHoldAnError(n *sitter.Node) bool {
-	for i := 0; i < int(n.ChildCount()); i++ {
-		switch n.FieldNameForChild(i) {
+	for i := uint(0); i < n.ChildCount(); i++ {
+		switch n.FieldNameForChild(uint32(i)) {
 		case "body":
 			continue
 		case "declarator":
@@ -123,7 +126,7 @@ func holdsAMissingToken(n *sitter.Node) bool {
 	if n.IsMissing() {
 		return true
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		if holdsAMissingToken(n.Child(i)) {
 			return true
 		}
@@ -156,12 +159,12 @@ func pickMacro(candidates []*sitter.Node, src []byte) *sitter.Node {
 }
 
 func collectMacroTokens(n *sitter.Node, src []byte, candidates *[]*sitter.Node) {
-	if n == nil || n.Type() == "template_argument_list" {
+	if n == nil || n.Kind() == "template_argument_list" {
 		// a template argument is a type or a value, never a decoration
 		return
 	}
 	if n.ChildCount() == 0 {
-		switch n.Type() {
+		switch n.Kind() {
 		case "identifier", "type_identifier":
 			if isCppMacroName(nodeText(src, n)) {
 				*candidates = append(*candidates, n)
@@ -169,7 +172,7 @@ func collectMacroTokens(n *sitter.Node, src []byte, candidates *[]*sitter.Node) 
 		}
 		return
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		collectMacroTokens(n.Child(i), src, candidates)
 	}
 }

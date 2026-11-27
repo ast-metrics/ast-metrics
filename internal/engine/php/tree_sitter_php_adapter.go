@@ -1,14 +1,12 @@
 package php
 
 import (
-	"bytes"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
-	sitter "github.com/smacker/go-tree-sitter"
-	tsPhp "github.com/smacker/go-tree-sitter/php"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type TreeSitterAdapter struct {
@@ -20,23 +18,20 @@ type TreeSitterAdapter struct {
 	// srcLines holds the source split into lines, so that the extractors called
 	// once per function do not split the whole file again for each of them
 	srcLines Treesitter.LineCache
-	// pipes holds the lines carrying a mis-parsed "|>", found once per file
-	pipes      []int
-	pipesFound bool
+	own      Treesitter.OwnedTree
 }
 
 func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
 func (a *TreeSitterAdapter) SetSource(src []byte) {
+	a.own.Release()
 	a.src = src
 	a.root = nil
 	a.computed = false
 	a.ns = ""
-	a.pipes = nil
-	a.pipesFound = false
 }
 func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root }
 
-func (a *TreeSitterAdapter) Language() *sitter.Language { return tsPhp.GetLanguage() }
+func (a *TreeSitterAdapter) Language() *sitter.Language { return grammar() }
 
 // ensureRoot returns the tree shared by the runner, parsing the source when
 // the adapter is used on its own (tests).
@@ -51,9 +46,7 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 	if source == nil {
 		return nil, nil
 	}
-	parser := sitter.NewParser()
-	parser.SetLanguage(a.Language())
-	a.root = parser.Parse(nil, source).RootNode()
+	a.root = a.own.Root(a, source)
 	return a.root, source
 }
 
@@ -63,10 +56,10 @@ func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
 // answered by symbol id rather than by node type name. See
 // internal/engine/treesitter/symbols.go.
 var (
-	phpModules    = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"program"}}
-	phpClasses    = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"class_declaration", "trait_declaration", "enum_declaration"}}
-	phpInterfaces = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"interface_declaration"}}
-	phpFunctions  = &Treesitter.TypeSet{Language: tsPhp.GetLanguage, Types: []string{"function_definition", "method_declaration"}}
+	phpModules    = &Treesitter.TypeSet{Language: grammar, Types: []string{"program"}}
+	phpClasses    = &Treesitter.TypeSet{Language: grammar, Types: []string{"class_declaration", "trait_declaration", "enum_declaration"}}
+	phpInterfaces = &Treesitter.TypeSet{Language: grammar, Types: []string{"interface_declaration"}}
+	phpFunctions  = &Treesitter.TypeSet{Language: grammar, Types: []string{"function_definition", "method_declaration"}}
 )
 
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool { return phpModules.Has(n) }
@@ -143,7 +136,7 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	// the default value and the "name" token nested in every variable_name, so
 	// a constructor promoting four typed properties would report twelve
 	// parameters.
-	for i := 0; i < int(params.NamedChildCount()); i++ {
+	for i := uint(0); i < params.NamedChildCount(); i++ {
 		p := params.NamedChild(i)
 		if p == nil || !isParameterNode(p) {
 			continue
@@ -157,7 +150,7 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 // isParameterNode tells the parameter declarations apart from the comments and
 // the error nodes a partially understood signature leaves in the list.
 func isParameterNode(n *sitter.Node) bool {
-	switch n.Type() {
+	switch n.Kind() {
 	case "simple_parameter", "variadic_parameter", "property_promotion_parameter":
 		return true
 	}
@@ -166,8 +159,8 @@ func isParameterNode(n *sitter.Node) bool {
 
 // paramVariableName reads the variable a parameter declares. The "name" field
 // is used when the grammar sets it, and the first variable_name below the
-// declaration otherwise: a syntax the embedded grammar does not know yet, such
-// as the asymmetric visibility of PHP 8.4, still yields its variable.
+// declaration otherwise, so that a syntax newer than the pinned grammar still
+// yields its variable.
 func (a *TreeSitterAdapter) paramVariableName(p *sitter.Node) string {
 	if n := p.ChildByFieldName("name"); n != nil {
 		return a.text(n)
@@ -178,11 +171,11 @@ func (a *TreeSitterAdapter) paramVariableName(p *sitter.Node) string {
 		if x == nil || found != nil {
 			return
 		}
-		if x.Type() == "variable_name" {
+		if x.Kind() == "variable_name" {
 			found = x
 			return
 		}
-		for i := 0; i < int(x.ChildCount()); i++ {
+		for i := uint(0); i < x.ChildCount(); i++ {
 			walk(x.Child(i))
 		}
 	}
@@ -213,7 +206,7 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 	if body == nil {
 		return
 	}
-	for i := 0; i < int(body.ChildCount()); i++ {
+	for i := uint(0); i < body.ChildCount(); i++ {
 		yield(body.Child(i))
 	}
 }
@@ -232,7 +225,7 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 // with lizard, phploc and PMD, and with the languages that have no such
 // operator.
 var phpDecisions = &Treesitter.DecisionSpec{
-	Language: tsPhp.GetLanguage,
+	Language: grammar,
 	If:       []string{"if_statement"},
 	Elif:     []string{"else_if_clause"},
 	Else:     []string{"else_clause"},
@@ -301,7 +294,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 		if x == nil {
 			return
 		}
-		switch x.Type() {
+		switch x.Kind() {
 		case "name", "qualified_name":
 			names = append(names, a.text(x))
 		}
@@ -311,7 +304,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 		if x == nil {
 			return
 		}
-		for i := 0; i < int(x.NamedChildCount()); i++ {
+		for i := uint(0); i < x.NamedChildCount(); i++ {
 			typeName(x.NamedChild(i))
 		}
 	}
@@ -322,21 +315,21 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 		if x == nil {
 			return
 		}
-		if x.Type() == "named_type" {
+		if x.Kind() == "named_type" {
 			typeName(x.NamedChild(0))
 			return
 		}
-		for i := 0; i < int(x.NamedChildCount()); i++ {
+		for i := uint(0); i < x.NamedChildCount(); i++ {
 			typesUnder(x.NamedChild(i))
 		}
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "class_declaration", "enum_declaration", "trait_declaration", "interface_declaration":
 		// the declaration itself: what it extends and implements, and its
 		// attributes; the body is visited on its own
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			ch := n.NamedChild(i)
-			switch ch.Type() {
+			switch ch.Kind() {
 			case "base_clause", "class_interface_clause":
 				namesUnder(ch)
 			case "attribute_list":
@@ -346,9 +339,9 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	case "method_declaration", "function_definition":
 		// the signature: parameter types, return type, attributes; the body
 		// is visited on its own
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			ch := n.NamedChild(i)
-			switch ch.Type() {
+			switch ch.Kind() {
 			case "compound_statement":
 				continue
 			case "attribute_list":
@@ -360,17 +353,17 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	case "arrow_function", "anonymous_function_creation_expression":
 		// the closure is a node of the body: its signature is read here, its
 		// own body is visited after it
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			ch := n.NamedChild(i)
-			switch ch.Type() {
+			switch ch.Kind() {
 			case "formal_parameters", "named_type", "optional_type", "union_type", "intersection_type", "disjunctive_normal_form_type":
 				typesUnder(ch)
 			}
 		}
 	case "property_declaration":
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			ch := n.NamedChild(i)
-			switch ch.Type() {
+			switch ch.Kind() {
 			case "named_type", "optional_type", "union_type", "intersection_type", "disjunctive_normal_form_type":
 				typesUnder(ch)
 			case "attribute_list":
@@ -392,20 +385,20 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 			// as the creation of what "Foo($x)->bar" returns, and the class
 			// sits at the bottom of that chain
 			for first != nil && first.NamedChildCount() > 0 {
-				switch first.Type() {
+				switch first.Kind() {
 				case "member_access_expression", "member_call_expression", "nullsafe_member_access_expression", "nullsafe_member_call_expression", "function_call_expression":
 					first = first.NamedChild(0)
 					continue
 				}
 				break
 			}
-			switch first.Type() {
+			switch first.Kind() {
 			case "name", "qualified_name":
 				names = append(names, a.text(first))
 			case "attribute_list", "base_clause", "class_interface_clause":
-				for i := 0; i < int(n.NamedChildCount()); i++ {
+				for i := uint(0); i < n.NamedChildCount(); i++ {
 					ch := n.NamedChild(i)
-					if ch.Type() == "base_clause" || ch.Type() == "class_interface_clause" {
+					if ch.Kind() == "base_clause" || ch.Kind() == "class_interface_clause" {
 						namesUnder(ch)
 					}
 				}
@@ -419,12 +412,12 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	case "use_declaration":
 		// inside a class body: the traits brought in. The names of the
 		// conflict resolution list are not walked: they name methods.
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			typeName(n.NamedChild(i))
 		}
 	case "binary_expression":
 		if a.isInstanceof(n) && n.NamedChildCount() >= 2 {
-			typeName(n.NamedChild(int(n.NamedChildCount()) - 1))
+			typeName(n.NamedChild(n.NamedChildCount() - 1))
 		}
 	}
 	if len(names) == 0 {
@@ -446,16 +439,16 @@ func (a *TreeSitterAdapter) attributeNames(list *sitter.Node, names *[]string) {
 		if x == nil {
 			return
 		}
-		if x.Type() == "attribute" {
+		if x.Kind() == "attribute" {
 			if x.NamedChildCount() > 0 {
 				first := x.NamedChild(0)
-				if first.Type() == "name" || first.Type() == "qualified_name" {
+				if first.Kind() == "name" || first.Kind() == "qualified_name" {
 					*names = append(*names, a.text(first))
 				}
 			}
 			return
 		}
-		for i := 0; i < int(x.NamedChildCount()); i++ {
+		for i := uint(0); i < x.NamedChildCount(); i++ {
 			walk(x.NamedChild(i))
 		}
 	}
@@ -465,7 +458,7 @@ func (a *TreeSitterAdapter) attributeNames(list *sitter.Node, names *[]string) {
 // isInstanceof tells whether a binary expression is an instanceof test: the
 // operator is an anonymous token between the two operands.
 func (a *TreeSitterAdapter) isInstanceof(n *sitter.Node) bool {
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		ch := n.Child(i)
 		if !ch.IsNamed() && a.text(ch) == "instanceof" {
 			return true
@@ -519,22 +512,17 @@ func (a *TreeSitterAdapter) collectAliases() {
 	}
 	a.computed = true
 	a.aliases = map[string]string{}
-	if a.src == nil {
-		return
-	}
-	root := a.root
+	root, _ := a.ensureRoot(nil)
 	if root == nil {
-		parser := sitter.NewParser()
-		parser.SetLanguage(tsPhp.GetLanguage())
-		root = parser.Parse(nil, a.src).RootNode()
+		return
 	}
 	// The declarations sit at the top of the file, or one level down inside
 	// a braced namespace.
 	var scan func(n *sitter.Node)
 	scan = func(n *sitter.Node) {
-		for i := 0; i < int(n.NamedChildCount()); i++ {
+		for i := uint(0); i < n.NamedChildCount(); i++ {
 			ch := n.NamedChild(i)
-			switch ch.Type() {
+			switch ch.Kind() {
 			case "namespace_definition":
 				if nm := firstChildOfType(ch, "namespace_name"); nm != nil {
 					a.ns = a.text(nm)
@@ -553,78 +541,82 @@ func (a *TreeSitterAdapter) collectAliases() {
 // collectUseDeclaration records the imports of one use statement.
 func (a *TreeSitterAdapter) collectUseDeclaration(n *sitter.Node) {
 	// use function foo; use const BAR;
-	for i := 0; i < int(n.ChildCount()); i++ {
-		ch := n.Child(i)
-		if !ch.IsNamed() {
-			switch a.text(ch) {
-			case "function", "const":
-				return
-			}
-		}
-	}
-	record := func(full string, aliasNode *sitter.Node) {
-		full = strings.TrimPrefix(strings.TrimSpace(full), "\\")
-		if full == "" {
-			return
-		}
-		alias := ""
-		if aliasNode != nil {
-			if nm := firstChildOfType(aliasNode, "name"); nm != nil {
-				alias = a.text(nm)
-			}
-		}
-		if alias == "" {
-			alias = full
-			if i := strings.LastIndex(full, "\\"); i >= 0 {
-				alias = full[i+1:]
-			}
-		}
-		a.aliases[alias] = full
+	if isFunctionOrConstUse(n) {
+		return
 	}
 	prefix := ""
-	for i := 0; i < int(n.NamedChildCount()); i++ {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
 		ch := n.NamedChild(i)
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "namespace_name":
 			// use App\Shared\{...}: the prefix of a group
 			prefix = a.text(ch)
 		case "namespace_use_clause":
-			var full string
-			var aliasNode *sitter.Node
-			for j := 0; j < int(ch.NamedChildCount()); j++ {
-				part := ch.NamedChild(j)
-				switch part.Type() {
-				case "qualified_name", "name":
-					full = a.text(part)
-				case "namespace_aliasing_clause":
-					aliasNode = part
-				}
-			}
-			record(full, aliasNode)
+			a.recordUseClause(ch, "")
 		case "namespace_use_group":
-			for j := 0; j < int(ch.NamedChildCount()); j++ {
-				clause := ch.NamedChild(j)
-				if clause.Type() != "namespace_use_group_clause" {
-					continue
-				}
-				var full string
-				var aliasNode *sitter.Node
-				for k := 0; k < int(clause.NamedChildCount()); k++ {
-					part := clause.NamedChild(k)
-					switch part.Type() {
-					case "namespace_name", "qualified_name", "name":
-						full = a.text(part)
-					case "namespace_aliasing_clause":
-						aliasNode = part
-					}
-				}
-				if prefix != "" {
-					full = prefix + "\\" + full
-				}
-				record(full, aliasNode)
+			for j := uint(0); j < ch.NamedChildCount(); j++ {
+				a.recordUseClause(ch.NamedChild(j), prefix)
 			}
 		}
 	}
+}
+
+// recordUseClause records the class one clause of a use statement imports,
+// under the name the rest of the file calls it by: its alias when it declares
+// one, the last segment of the imported name otherwise.
+func (a *TreeSitterAdapter) recordUseClause(clause *sitter.Node, prefix string) {
+	if clause == nil || clause.Kind() != "namespace_use_clause" {
+		return
+	}
+	// a group mixes kinds: use App\{Klass, function f, const C}
+	if isFunctionOrConstUse(clause) {
+		return
+	}
+	var full string
+	for i := uint(0); i < clause.NamedChildCount(); i++ {
+		part := clause.NamedChild(i)
+		if clause.FieldNameForNamedChild(uint32(i)) == "alias" {
+			continue
+		}
+		switch part.Kind() {
+		case "qualified_name", "name":
+			full = a.text(part)
+		}
+	}
+	if prefix != "" {
+		full = prefix + "\\" + full
+	}
+	full = strings.TrimPrefix(strings.TrimSpace(full), "\\")
+	if full == "" {
+		return
+	}
+	alias := ""
+	if node := clause.ChildByFieldName("alias"); node != nil {
+		alias = a.text(node)
+	}
+	if alias == "" {
+		alias = full
+		if i := strings.LastIndex(full, "\\"); i >= 0 {
+			alias = full[i+1:]
+		}
+	}
+	a.aliases[alias] = full
+}
+
+// isFunctionOrConstUse tells whether a use statement or one clause of a group
+// imports a function or a constant, which name no class.
+func isFunctionOrConstUse(n *sitter.Node) bool {
+	for i := uint(0); i < n.ChildCount(); i++ {
+		ch := n.Child(i)
+		if ch.IsNamed() {
+			continue
+		}
+		switch ch.Kind() {
+		case "function", "const":
+			return true
+		}
+	}
+	return false
 }
 
 // ---- Class operands (properties) ----
@@ -649,7 +641,7 @@ func (a *TreeSitterAdapter) ClassDirectOperands(n *sitter.Node) []string {
 		if x == nil {
 			return
 		}
-		t := x.Type()
+		t := x.Kind()
 		// property_declaration covers typical cases; class_property_declaration may appear in some grammar versions
 		if t == "property_declaration" || t == "class_property_declaration" {
 			// collect variable_name under property_element list
@@ -658,10 +650,10 @@ func (a *TreeSitterAdapter) ClassDirectOperands(n *sitter.Node) []string {
 				if y == nil {
 					return
 				}
-				if y.Type() == "variable_name" {
+				if y.Kind() == "variable_name" {
 					add(a.text(y))
 				}
-				for i := 0; i < int(y.ChildCount()); i++ {
+				for i := uint(0); i < y.ChildCount(); i++ {
 					dive(y.Child(i))
 				}
 			}
@@ -670,7 +662,7 @@ func (a *TreeSitterAdapter) ClassDirectOperands(n *sitter.Node) []string {
 		}
 		// Avoid deep traversal elsewhere to keep it limited to direct children property declarations
 	}
-	for i := 0; i < int(body.ChildCount()); i++ {
+	for i := uint(0); i < body.ChildCount(); i++ {
 		walkCollect(body.Child(i))
 	}
 	// normalize: drop leading $ if present
@@ -692,9 +684,9 @@ func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
 	if n == nil {
 		return nil
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		ch := n.Child(i)
-		if ch.Type() == t {
+		if ch.Kind() == t {
 			return ch
 		}
 	}
@@ -807,91 +799,7 @@ func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endL
 	if root == nil {
 		return nil, nil
 	}
-	ops, operands := phpOperandSpec.Extract(root, source, startLine, endLine)
-	return foldPhpPipes(a.pipeLines(root, source), ops, startLine, endLine), operands
-}
-
-// foldPhpPipes repairs the PHP 8.5 pipe operator. The bundled grammar predates
-// it and reads `'x' |> trim(...)` as a binary expression whose operator is ">"
-// and whose left side ends with an ERROR node holding a lone "|". Reporting two
-// operators where the source writes one would inflate both the vocabulary and
-// the length, so each such pair is folded back into a single "|>".
-func foldPhpPipes(pipeLines []int, ops []string, startLine, endLine int) []string {
-	pipes := 0
-	for _, line := range pipeLines {
-		if line >= startLine && line <= endLine {
-			pipes++
-		}
-	}
-	if pipes == 0 {
-		return ops
-	}
-	// the Halstead metrics read the operators as a multiset, so dropping the
-	// halves wherever they sit is enough
-	folded := make([]string, 0, len(ops))
-	remainingBars, remainingGreater := pipes, pipes
-	for _, op := range ops {
-		if op == "|" && remainingBars > 0 {
-			remainingBars--
-			continue
-		}
-		if op == ">" && remainingGreater > 0 {
-			remainingGreater--
-			continue
-		}
-		folded = append(folded, op)
-	}
-	for i := 0; i < pipes; i++ {
-		folded = append(folded, "|>")
-	}
-	return folded
-}
-
-// pipeLines returns the lines of the file carrying a mis-parsed "|>", found
-// once for the whole file.
-//
-// Looking for them per function would walk down from the root for each of them,
-// so a file would pay a pass over its top-level declarations once per function.
-// The operator is also rare enough that most files are answered by looking for
-// the two characters in the source.
-func (a *TreeSitterAdapter) pipeLines(root *sitter.Node, src []byte) []int {
-	if a.pipesFound {
-		return a.pipes
-	}
-	a.pipesFound = true
-
-	if !bytes.Contains(src, []byte("|>")) {
-		return nil
-	}
-
-	var walk func(n *sitter.Node)
-	walk = func(n *sitter.Node) {
-		if n.Type() == "binary_expression" && isPhpPipe(n, src) {
-			a.pipes = append(a.pipes, int(n.StartPoint().Row)+1)
-		}
-		for i := 0; i < int(n.ChildCount()); i++ {
-			walk(n.Child(i))
-		}
-	}
-	walk(root)
-
-	return a.pipes
-}
-
-// isPhpPipe reports whether a binary expression is a mis-parsed "|>".
-func isPhpPipe(n *sitter.Node, src []byte) bool {
-	operator := n.ChildByFieldName("operator")
-	if operator == nil || operator.Type() != ">" {
-		return false
-	}
-	for i := 0; i < int(n.ChildCount()); i++ {
-		child := n.Child(i)
-		if child.Type() == "ERROR" && int(child.EndByte()) <= len(src) &&
-			strings.TrimSpace(string(src[child.StartByte():child.EndByte()])) == "|" {
-			return true
-		}
-	}
-	return false
+	return phpOperandSpec.Extract(root, source, startLine, endLine)
 }
 
 // ExtractMethodCalls scans the function body range and returns normalized method calls
@@ -1010,7 +918,7 @@ func (a *TreeSitterAdapter) ExtractMethodCalls(src []byte, startLine, endLine in
 // elseif carries a condition of its own, exactly like the `if` it extends,
 // while `else_clause`, `catch_clause` and `finally_clause` are branch headers.
 var phpStatements = &Treesitter.StatementSpec{
-	Language: tsPhp.GetLanguage,
+	Language: grammar,
 	Statement: []string{
 		"expression_statement", "echo_statement", "unset_statement",
 		"if_statement", "else_if_clause",
@@ -1099,15 +1007,9 @@ func (a *TreeSitterAdapter) findNamespace() string {
 	if a.computed {
 		return a.ns
 	}
-	if a.src == nil {
-		return ""
-	}
-	root := a.root
+	root, _ := a.ensureRoot(nil)
 	if root == nil {
-		parser := sitter.NewParser()
-		parser.SetLanguage(tsPhp.GetLanguage())
-		tree := parser.Parse(nil, a.src)
-		root = tree.RootNode()
+		return ""
 	}
 	var ns string
 	var walk func(*sitter.Node)
@@ -1115,13 +1017,13 @@ func (a *TreeSitterAdapter) findNamespace() string {
 		if n == nil || ns != "" {
 			return
 		}
-		if n.Type() == "namespace_definition" {
+		if n.Kind() == "namespace_definition" {
 			if nm := firstChildOfType(n, "namespace_name"); nm != nil {
 				ns = a.text(nm)
 			}
 			return
 		}
-		for i := 0; i < int(n.ChildCount()); i++ {
+		for i := uint(0); i < n.ChildCount(); i++ {
 			walk(n.Child(i))
 		}
 	}

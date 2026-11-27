@@ -6,8 +6,7 @@ import (
 
 	"github.com/ast-metrics/ast-metrics/internal/engine"
 	Treesitter "github.com/ast-metrics/ast-metrics/internal/engine/treesitter"
-	sitter "github.com/smacker/go-tree-sitter"
-	tsPython "github.com/smacker/go-tree-sitter/python"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type TreeSitterAdapter struct {
@@ -16,12 +15,33 @@ type TreeSitterAdapter struct {
 	// docStringLines holds the 1-based lines on which a bare string
 	// expression begins, computed once from the tree on first use.
 	docStringLines map[int]bool
+	own            Treesitter.OwnedTree
 }
 
 func NewTreeSitterAdapter(src []byte) *TreeSitterAdapter { return &TreeSitterAdapter{src: src} }
 
-func (a *TreeSitterAdapter) SetSource(src []byte)          { a.src = src }
+func (a *TreeSitterAdapter) SetSource(src []byte) {
+	a.own.Release()
+	a.src, a.root, a.docStringLines = src, nil, nil
+}
 func (a *TreeSitterAdapter) SetRootNode(root *sitter.Node) { a.root = root; a.docStringLines = nil }
+
+// ensureRoot returns the tree shared by the runner, parsing the source when
+// the adapter is used on its own (tests).
+func (a *TreeSitterAdapter) ensureRoot(src []byte) (*sitter.Node, []byte) {
+	source := a.src
+	if source == nil {
+		source = src
+	}
+	if a.root != nil {
+		return a.root, source
+	}
+	if source == nil {
+		return nil, nil
+	}
+	a.root = a.own.Root(a, source)
+	return a.root, source
+}
 
 func (a *TreeSitterAdapter) NodeName(n *sitter.Node) string {
 	if a.src == nil || n == nil {
@@ -73,7 +93,7 @@ func (a *TreeSitterAdapter) EachParamIdent(params *sitter.Node, yield func(strin
 	// One yield per declared parameter. A recursive walk over the identifiers
 	// would also collect the annotations and the default values, so "def m(self,
 	// a: int, b: str = 'x')" would report five parameters instead of three.
-	for i := 0; i < int(params.NamedChildCount()); i++ {
+	for i := uint(0); i < params.NamedChildCount(); i++ {
 		if name := a.paramName(params.NamedChild(i)); name != "" {
 			yield(name)
 		}
@@ -87,7 +107,7 @@ func (a *TreeSitterAdapter) paramName(n *sitter.Node) string {
 	if n == nil {
 		return ""
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "identifier":
 		return a.text(n)
 	case "positional_separator", "keyword_separator", "comment":
@@ -102,15 +122,15 @@ func (a *TreeSitterAdapter) paramName(n *sitter.Node) string {
 	return a.text(n)
 }
 
-func (a *TreeSitterAdapter) Language() *sitter.Language { return tsPython.GetLanguage() }
+func (a *TreeSitterAdapter) Language() *sitter.Language { return grammar() }
 
 // These questions are asked on every node of every walk, so they are answered
 // by symbol id rather than by node type name. See
 // internal/engine/treesitter/symbols.go.
 var (
-	pythonModules   = &Treesitter.TypeSet{Language: tsPython.GetLanguage, Types: []string{"module"}}
-	pythonClasses   = &Treesitter.TypeSet{Language: tsPython.GetLanguage, Types: []string{"class_definition"}}
-	pythonFunctions = &Treesitter.TypeSet{Language: tsPython.GetLanguage, Types: []string{"function_definition", "async_function_definition"}}
+	pythonModules   = &Treesitter.TypeSet{Language: grammar, Types: []string{"module"}}
+	pythonClasses   = &Treesitter.TypeSet{Language: grammar, Types: []string{"class_definition"}}
+	pythonFunctions = &Treesitter.TypeSet{Language: grammar, Types: []string{"function_definition", "async_function_definition"}}
 )
 
 func (a *TreeSitterAdapter) IsModule(n *sitter.Node) bool   { return pythonModules.Has(n) }
@@ -132,9 +152,9 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 		return
 	}
 
-	switch body.Type() {
+	switch body.Kind() {
 	case "block":
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			yield(body.Child(i))
 		}
 
@@ -145,19 +165,19 @@ func (a *TreeSitterAdapter) EachChildBody(body *sitter.Node, yield func(*sitter.
 			if n == nil {
 				return
 			}
-			tt := n.Type()
+			tt := n.Kind()
 			if tt == "case_clause" || tt == "case_block" {
 				yield(n)
 				// do not return; there can be nested blocks to visit later if needed
 			}
-			for i := 0; i < int(n.ChildCount()); i++ {
+			for i := uint(0); i < n.ChildCount(); i++ {
 				walk(n.Child(i))
 			}
 		}
 		walk(body)
 
 	default:
-		for i := 0; i < int(body.ChildCount()); i++ {
+		for i := uint(0); i < body.ChildCount(); i++ {
 			yield(body.Child(i))
 		}
 	}
@@ -172,10 +192,10 @@ func findDescendantOfType(n *sitter.Node, t string) *sitter.Node {
 	if n == nil {
 		return nil
 	}
-	if n.Type() == t {
+	if n.Kind() == t {
 		return n
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		if got := findDescendantOfType(n.Child(i), t); got != nil {
 			return got
 		}
@@ -189,7 +209,7 @@ func findDescendantOfType(n *sitter.Node, t string) *sitter.Node {
 // `if_clause` count exactly like the statements they abbreviate. `case _:` is
 // a case_clause like any other and is demoted to a Default by Decision below.
 var pythonDecisions = &Treesitter.DecisionSpec{
-	Language:  tsPython.GetLanguage,
+	Language:  grammar,
 	If:        []string{"if_statement", "if_clause"},
 	Elif:      []string{"elif_clause"},
 	Else:      []string{"else_clause"},
@@ -233,7 +253,7 @@ func (a *TreeSitterAdapter) Imports(n *sitter.Node) []Treesitter.ImportItem {
 	if n == nil {
 		return nil
 	}
-	switch n.Type() {
+	switch n.Kind() {
 	case "import_statement":
 		return importsFromImportStatement(a, n)
 	case "import_from_statement":
@@ -251,7 +271,7 @@ func importsFromImportStatement(a *TreeSitterAdapter, n *sitter.Node) []Treesitt
 		if x == nil {
 			return
 		}
-		switch x.Type() {
+		switch x.Kind() {
 		case "aliased_import":
 			// Original symbol is in field "name"
 			if nm := x.ChildByFieldName("name"); nm != nil {
@@ -279,7 +299,7 @@ func importsFromImportStatement(a *TreeSitterAdapter, n *sitter.Node) []Treesitt
 				return
 			}
 		}
-		for i := 0; i < int(x.ChildCount()); i++ {
+		for i := uint(0); i < x.ChildCount(); i++ {
 			walk(x.Child(i))
 		}
 	}
@@ -289,9 +309,9 @@ func importsFromImportStatement(a *TreeSitterAdapter, n *sitter.Node) []Treesitt
 
 // helper: find first child of given type
 func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		ch := n.Child(i)
-		if ch.Type() == t {
+		if ch.Kind() == t {
 			return ch
 		}
 	}
@@ -299,10 +319,10 @@ func firstChildOfType(n *sitter.Node, t string) *sitter.Node {
 }
 
 // helper: find the byte offset of the `import` keyword
-func importKeywordStart(n *sitter.Node) (uint32, bool) {
-	for i := 0; i < int(n.ChildCount()); i++ {
+func importKeywordStart(n *sitter.Node) (uint, bool) {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		ch := n.Child(i)
-		if ch.Type() == "import" { // token node
+		if ch.Kind() == "import" { // token node
 			return ch.StartByte(), true
 		}
 	}
@@ -328,9 +348,9 @@ func importsFromImportFromStatement(a *TreeSitterAdapter, n *sitter.Node) []Tree
 
 	// 2) resolve module: rightmost module-like node BEFORE cut
 	var moduleNode *sitter.Node
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		ch := n.Child(i)
-		if ch.EndByte() <= cut && (ch.Type() == "dotted_name" || ch.Type() == "relative_import") {
+		if ch.EndByte() <= cut && (ch.Kind() == "dotted_name" || ch.Kind() == "relative_import") {
 			moduleNode = ch // keep the last one before `import`
 		}
 	}
@@ -346,13 +366,13 @@ func importsFromImportFromStatement(a *TreeSitterAdapter, n *sitter.Node) []Tree
 		host = n
 	}
 
-	for i := 0; i < int(host.ChildCount()); i++ {
+	for i := uint(0); i < host.ChildCount(); i++ {
 		ch := host.Child(i)
 		if ch.StartByte() <= cut {
 			continue
 		}
 
-		switch ch.Type() {
+		switch ch.Kind() {
 		case "aliased_import":
 			// original symbol in field "name"
 			if nm := ch.ChildByFieldName("name"); nm != nil {
@@ -416,7 +436,7 @@ func dedup(in []Treesitter.ImportItem) []Treesitter.ImportItem {
 // any other, and is left out by the enclosing-scope rule of the shared model,
 // not by its type.
 var pythonStatements = &Treesitter.StatementSpec{
-	Language: tsPython.GetLanguage,
+	Language: grammar,
 	Statement: []string{
 		"expression_statement", "delete_statement", "assert_statement",
 		"if_statement", "elif_clause",
@@ -433,7 +453,7 @@ func (a *TreeSitterAdapter) Statement(n *sitter.Node) Treesitter.StatementKind {
 	// instruction. Python spells with a string what the other languages spell
 	// with a comment block, and a documented function must not come out bigger
 	// for it.
-	if kind == Treesitter.IsStatement && n.Type() == "expression_statement" &&
+	if kind == Treesitter.IsStatement && n.Kind() == "expression_statement" &&
 		Treesitter.IsStringExpression(n, "string", "concatenated_string") {
 		return Treesitter.NotAStatement
 	}
@@ -465,14 +485,9 @@ func (a *TreeSitterAdapter) CommentSyntax() engine.CommentSyntax {
 // triple-quoted string standing alone on its line is documentation, as before.
 func (a *TreeSitterAdapter) isDocStringLine(line int) bool {
 	if a.docStringLines == nil {
-		root := a.root
+		root, _ := a.ensureRoot(nil)
 		if root == nil {
-			if a.src == nil {
-				return true
-			}
-			parser := sitter.NewParser()
-			parser.SetLanguage(a.Language())
-			root = parser.Parse(nil, a.src).RootNode()
+			return true
 		}
 		a.docStringLines = map[int]bool{}
 		collectDocStringLines(root, a.docStringLines)
@@ -486,13 +501,13 @@ func collectDocStringLines(n *sitter.Node, lines map[int]bool) {
 	if n == nil {
 		return
 	}
-	if n.Type() == "expression_statement" {
+	if n.Kind() == "expression_statement" {
 		if Treesitter.IsStringExpression(n, "string", "concatenated_string") {
-			lines[int(n.StartPoint().Row)+1] = true
+			lines[int(n.StartPosition().Row)+1] = true
 		}
 		return
 	}
-	for i := 0; i < int(n.NamedChildCount()); i++ {
+	for i := uint(0); i < n.NamedChildCount(); i++ {
 		collectDocStringLines(n.NamedChild(i), lines)
 	}
 }
@@ -542,19 +557,9 @@ var pythonOperandSpec = Treesitter.OperandSpec{
 // ExtractOperatorsOperands collects Halstead operators and operands from the
 // AST within the given 1-based inclusive line range.
 func (a *TreeSitterAdapter) ExtractOperatorsOperands(src []byte, startLine, endLine int) ([]string, []string) {
-	root := a.root
-	source := a.src
+	root, source := a.ensureRoot(src)
 	if root == nil {
-		if source == nil {
-			source = src
-		}
-		if source == nil {
-			return nil, nil
-		}
-		parser := sitter.NewParser()
-		parser.SetLanguage(a.Language())
-		tree := parser.Parse(nil, source)
-		root = tree.RootNode()
+		return nil, nil
 	}
 	return pythonOperandSpec.Extract(root, source, startLine, endLine)
 }

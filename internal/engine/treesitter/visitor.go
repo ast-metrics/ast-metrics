@@ -6,7 +6,7 @@ import (
 
 	engine "github.com/ast-metrics/ast-metrics/internal/engine"
 	pb "github.com/ast-metrics/ast-metrics/pb"
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 type Visitor struct {
@@ -79,7 +79,7 @@ func (v *Visitor) collectLogicalLines(node *sitter.Node) {
 			counts = inFunction
 		}
 		if counts {
-			if line := int(n.StartPoint().Row); line < len(v.logicalLines) {
+			if line := int(n.StartPosition().Row); line < len(v.logicalLines) {
 				v.logicalLines[line] = true
 			}
 		}
@@ -95,7 +95,7 @@ func (v *Visitor) collectLogicalLines(node *sitter.Node) {
 				childInClass, childInFunction = true, false
 			}
 		}
-		for i := 0; i < int(n.ChildCount()); i++ {
+		for i := uint(0); i < n.ChildCount(); i++ {
 			walk(n.Child(i), childInClass, childInFunction)
 		}
 	}
@@ -141,8 +141,8 @@ func locationOf(node *sitter.Node) *pb.StmtLocationInFile {
 		return nil
 	}
 	return &pb.StmtLocationInFile{
-		StartLine:    int32(node.StartPoint().Row) + 1,
-		EndLine:      int32(node.EndPoint().Row) + 1,
+		StartLine:    int32(node.StartPosition().Row) + 1,
+		EndLine:      int32(node.EndPosition().Row) + 1,
 		StartFilePos: int32(node.StartByte()),
 		EndFilePos:   int32(node.EndByte()),
 	}
@@ -380,7 +380,7 @@ func (v *Visitor) Visit(node *sitter.Node) {
 
 	switch {
 	case v.ad.IsModule(node):
-		for i := 0; i < int(node.ChildCount()); i++ {
+		for i := uint(0); i < node.ChildCount(); i++ {
 			v.Visit(node.Child(i))
 		}
 		return
@@ -442,7 +442,7 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		// would drop the signature line whenever the opening brace sits on a
 		// line of its own, so the very same class would shrink by one line when
 		// reformatted.
-		start, end := int(node.StartPoint().Row)+1, int(node.EndPoint().Row)+1
+		start, end := int(node.StartPosition().Row)+1, int(node.EndPosition().Row)+1
 		c.LinesOfCode = v.linesOfCodeIn(start, end)
 
 		// Pre-initialize class-level CLOC from class body to preserve expected semantics in tests
@@ -508,8 +508,8 @@ func (v *Visitor) Visit(node *sitter.Node) {
 		body := v.ad.NodeBody(node)
 		// as for a class: the declaration span, so that the signature line
 		// counts in every language and under every brace style
-		nodeStart := int(node.StartPoint().Row) + 1
-		nodeEnd := int(node.EndPoint().Row) + 1
+		nodeStart := int(node.StartPosition().Row) + 1
+		nodeEnd := int(node.EndPosition().Row) + 1
 		fn.LinesOfCode = v.linesOfCodeIn(nodeStart, nodeEnd)
 		cognitive := v.cognitiveComplexity(node)
 		fn.CognitiveComplexity = &cognitive
@@ -558,7 +558,7 @@ func (v *Visitor) Visit(node *sitter.Node) {
 	v.recordImports(node, true)
 
 	// Fallback
-	for i := 0; i < int(node.ChildCount()); i++ {
+	for i := uint(0); i < node.ChildCount(); i++ {
 		v.Visit(node.Child(i))
 	}
 }
@@ -597,14 +597,14 @@ func (v *Visitor) collectDecisions(scope *sitter.Node, target *pb.Stmts) {
 			return
 		}
 		v.recordDecision(n, parent, target)
-		for i := 0; i < int(n.ChildCount()); i++ {
+		for i := uint(0); i < n.ChildCount(); i++ {
 			if ch := n.Child(i); !v.isScopeBoundary(ch) {
 				walk(ch, n)
 			}
 		}
 	}
 	// the scope node itself is not a decision: start at its children
-	for i := 0; i < int(scope.ChildCount()); i++ {
+	for i := uint(0); i < scope.ChildCount(); i++ {
 		if ch := scope.Child(i); !v.isScopeBoundary(ch) {
 			walk(ch, scope)
 		}
@@ -635,7 +635,7 @@ func (v *Visitor) decisionLocation(n *sitter.Node, kind DecisionKind) *pb.StmtLo
 	alt := n.ChildByFieldName("alternative")
 	if alt == nil {
 		// the others (PHP, TypeScript, Python, Rust) make it a child clause
-		for i := 0; i < int(n.ChildCount()) && alt == nil; i++ {
+		for i := uint(0); i < n.ChildCount() && alt == nil; i++ {
 			switch v.decision(n.Child(i), n) {
 			case DecElse, DecElif:
 				alt = n.Child(i)
@@ -645,7 +645,7 @@ func (v *Visitor) decisionLocation(n *sitter.Node, kind DecisionKind) *pb.StmtLo
 	if alt == nil {
 		return loc
 	}
-	loc.EndLine = int32(alt.StartPoint().Row) + 1
+	loc.EndLine = int32(alt.StartPosition().Row) + 1
 	loc.EndFilePos = int32(alt.StartByte())
 	return loc
 }
@@ -788,16 +788,16 @@ func (v *Visitor) attachImportsUsedBy(c *pb.StmtClass, node *sitter.Node) {
 		if n == nil {
 			return
 		}
-		if n != node && v.ad.IsClass(n) {
+		if !SameNode(n, node) && v.ad.IsClass(n) {
 			return
 		}
 		if n.ChildCount() == 0 {
 			if n.IsNamed() {
-				named[n.Content(v.src)] = struct{}{}
+				named[n.Utf8Text(v.src)] = struct{}{}
 			}
 			return
 		}
-		for i := 0; i < int(n.ChildCount()); i++ {
+		for i := uint(0); i < n.ChildCount(); i++ {
 			walk(n.Child(i))
 		}
 	}

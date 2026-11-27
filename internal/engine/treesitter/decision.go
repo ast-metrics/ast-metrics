@@ -3,7 +3,7 @@ package treesitter
 import (
 	"sync"
 
-	sitter "github.com/smacker/go-tree-sitter"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 // Cyclomatic complexity model shared by every language.
@@ -154,7 +154,7 @@ func (s *DecisionSpec) kindOf(n *sitter.Node) DecisionKind {
 	if s.bySymbol.ready() {
 		return s.bySymbol.at(n)
 	}
-	return s.byType[n.Type()]
+	return s.byType[n.Kind()]
 }
 
 // logicalKind decides what a candidate for a short-circuit operator is worth:
@@ -174,7 +174,7 @@ func (s *DecisionSpec) IsShorthand(n *sitter.Node) bool {
 		return false
 	}
 	s.index()
-	return s.shorthand[n.Type()]
+	return s.shorthand[n.Kind()]
 }
 
 // ShorthandAware is implemented by an adapter whose language has shorthand
@@ -215,13 +215,13 @@ type ParentDecider interface {
 //
 // parent is the parent of n when the caller holds it, nil otherwise.
 func IsElseBranch(n, parent *sitter.Node, ifType string) bool {
-	if n == nil || n.Type() == ifType {
+	if n == nil || n.Kind() == ifType {
 		return false
 	}
 	if parent == nil {
 		parent = n.Parent()
 	}
-	if parent == nil || parent.Type() != ifType {
+	if parent == nil || parent.Kind() != ifType {
 		return false
 	}
 	alt := parent.ChildByFieldName("alternative")
@@ -235,9 +235,9 @@ func HasChildOfType(n *sitter.Node, types ...string) bool {
 	if n == nil {
 		return false
 	}
-	for i := 0; i < int(n.ChildCount()); i++ {
+	for i := uint(0); i < n.ChildCount(); i++ {
 		for _, t := range types {
-			if n.Child(i).Type() == t {
+			if n.Child(i).Kind() == t {
 				return true
 			}
 		}
