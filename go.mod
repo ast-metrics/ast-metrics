@@ -4,6 +4,9 @@ go 1.26.0
 
 toolchain go1.27.3
 
+// Keeps the code generator on the same version as the protobuf runtime below.
+tool google.golang.org/protobuf/cmd/protoc-gen-go
+
 require (
 	github.com/bsm/openmetrics v0.3.1
 	github.com/charmbracelet/bubbles v0.18.0
@@ -14,7 +17,6 @@ require (
 	github.com/evandro-slv/go-cli-charts v0.0.0-20191022204244-4ef8459d5f4d
 	github.com/flosch/pongo2/v5 v5.0.0
 	github.com/fsnotify/fsnotify v1.7.0
-	github.com/golang/protobuf v1.5.4
 	github.com/google/uuid v1.6.0
 	github.com/inancgumus/screen v0.0.0-20190314163918-06e984b86ed3
 	github.com/jarcoal/httpmock v1.3.1
@@ -28,7 +30,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.1
 	github.com/yargevad/filepathx v1.0.0
 	golang.org/x/term v0.43.0
-	google.golang.org/protobuf v1.33.0
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -48,7 +50,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.11.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/gookit/color v1.5.4 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect

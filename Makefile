@@ -1,7 +1,10 @@
 .PHONY: install build monkey-test bin/protoc
 
-PROTOC_VERSION=24.4
-ARCHITECTURE=linux-x86_64
+PROTOC_VERSION=36.2
+# protoc release assets are named <os>-<arch>, e.g. linux-x86_64, osx-aarch_64
+PROTOC_OS=$(shell uname -s | sed -e 's/Darwin/osx/' -e 's/Linux/linux/')
+PROTOC_ARCH=$(shell uname -m | sed -e 's/arm64/aarch_64/' -e 's/aarch64/aarch_64/' -e 's/amd64/x86_64/')
+ARCHITECTURE=$(PROTOC_OS)-$(PROTOC_ARCH)
 
 bin/protoc:
 	@echo "\e[34m\033[1m-> Downloading protobuff\033[0m\e[39m\n"
@@ -11,18 +14,15 @@ bin/protoc:
 	curl --silent -L "https://github.com/protocolbuffers/protobuf/releases/download/v$(PROTOC_VERSION)/protoc-$(PROTOC_VERSION)-$(ARCHITECTURE).zip" -o "protoc.zip"
 	unzip protoc.zip
 	rm -Rf protoc.zip include readme.txt || true
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-	go install github.com/golang/protobuf/protoc-gen-go
+	go build -o bin/protoc-gen-go google.golang.org/protobuf/cmd/protoc-gen-go
 	@echo "\e[34m\033[1mDONE \033[0m\e[39m\n"
 
 build-protobuff: bin/protoc
 	@echo "\e[34m\033[1m-> Building protobuff\033[0m\e[39m\n"
 	rm -rf pb || true
 	mkdir -p pb
-	GOPATH=$(shell go env GOPATH) PATH=$$PATH:$(shell go env GOPATH)/bin ./bin/protoc --go_out=pb proto/NodeType.proto
-	mv pb/github.com/ast-metrics/ast-metrics/pb/NodeType.pb.go pb/ || true
+	PATH="$(CURDIR)/bin:$$PATH" ./bin/protoc --go_out=. --go_opt=module=$(shell go list -m) proto/NodeType.proto
 	echo 'THIS DIRECTORY IS BUILT BY MAKEFILE (make build-protobuff)' > pb/README.md
-	rm -rf pb/github.com || true
 	@echo "\e[34m\033[1mDONE \033[0m\e[39m\n"
 
 build-go: # for local development and tests
