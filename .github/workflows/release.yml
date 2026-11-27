@@ -41,10 +41,10 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with: { go-version: "1.27" }
 
       # Toolchains pour CGO
@@ -78,8 +78,8 @@ jobs:
               mod_timestamp: "{{ .CommitTimestamp }}"
           archives:
             - id: bin
-              builds: [app]
-              format: binary
+              ids: [app]
+              formats: ["binary"]
               name_template: '{{ .ProjectName }}_{{ title .Os }}_{{ if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}'
           changelog:
             sort: asc
@@ -107,7 +107,7 @@ jobs:
         if: matrix.os == 'windows-latest'
 
       - name: GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
           args: release --clean --config "${{ runner.temp }}/goreleaser.yml"
